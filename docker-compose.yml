@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  pos-api:
+    build: .
+    container_name: paxtaobod_beeline_pos
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ./data:/app/data

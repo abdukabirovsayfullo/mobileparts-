@@ -1,0 +1,7 @@
+{
+  "name": "Paxtaobod Beeline Aksessuarlar",
+  "description": "Paxtaobod Beeline markazi uchun tovar kirim-chiqim hisoboti, ombor balansi va kunlik sof foyda hisobi tizimi.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
