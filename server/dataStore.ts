@@ -14,9 +14,6 @@ import {
 } from '../src/types';
 import { 
   INITIAL_PRODUCTS, 
-  INITIAL_MOVEMENTS, 
-  INITIAL_DEBTS, 
-  INITIAL_SUPPLIER_DEBTS, 
   DEFAULT_CATEGORIES, 
   STORE_INFO 
 } from '../src/data/initialData';
@@ -47,6 +44,12 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'pos_database.json');
 
 const DEFAULT_API_KEY = process.env.POS_API_KEY || 'pb_pos_sec_77a94d8b';
+const DEMO_PRODUCT_KEYS = new Set(
+  INITIAL_PRODUCTS.map(product => `${product.id}\u0000${product.barcode}\u0000${product.name}`)
+);
+const removeDemoProducts = (products: Product[]): Product[] => products.filter(product =>
+  !DEMO_PRODUCT_KEYS.has(`${product.id}\u0000${product.barcode}\u0000${product.name}`)
+);
 
 class DataStore {
   private state: PosDatabaseState;
@@ -65,10 +68,10 @@ class DataStore {
           apiKey: parsed.apiKey || DEFAULT_API_KEY,
           storeInfo: parsed.storeInfo || STORE_INFO,
           categories: Array.isArray(parsed.categories) ? parsed.categories : DEFAULT_CATEGORIES,
-          products: Array.isArray(parsed.products) ? parsed.products : INITIAL_PRODUCTS,
-          movements: Array.isArray(parsed.movements) ? parsed.movements : INITIAL_MOVEMENTS,
-          debts: Array.isArray(parsed.debts) ? parsed.debts : INITIAL_DEBTS,
-          supplierDebts: Array.isArray(parsed.supplierDebts) ? parsed.supplierDebts : INITIAL_SUPPLIER_DEBTS,
+          products: Array.isArray(parsed.products) ? removeDemoProducts(parsed.products) : [],
+          movements: Array.isArray(parsed.movements) ? parsed.movements : [],
+          debts: Array.isArray(parsed.debts) ? parsed.debts : [],
+          supplierDebts: Array.isArray(parsed.supplierDebts) ? parsed.supplierDebts : [],
           onlineOrders: Array.isArray(parsed.onlineOrders) ? parsed.onlineOrders : [],
           telegramConfig: parsed.telegramConfig || {
             botToken: process.env.TELEGRAM_BOT_TOKEN || '',
@@ -88,10 +91,10 @@ class DataStore {
       apiKey: DEFAULT_API_KEY,
       storeInfo: STORE_INFO,
       categories: DEFAULT_CATEGORIES,
-      products: INITIAL_PRODUCTS,
-      movements: INITIAL_MOVEMENTS,
-      debts: INITIAL_DEBTS,
-      supplierDebts: INITIAL_SUPPLIER_DEBTS,
+      products: [],
+      movements: [],
+      debts: [],
+      supplierDebts: [],
       onlineOrders: [],
       telegramConfig: {
         botToken: process.env.TELEGRAM_BOT_TOKEN || '',

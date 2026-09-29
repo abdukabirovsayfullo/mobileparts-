@@ -48,6 +48,14 @@ const STORAGE_KEYS = {
   CATEGORIES: 'pb_beeline_categories_v2'
 };
 
+const DEMO_PRODUCT_KEYS = new Set(
+  INITIAL_PRODUCTS.map(product => `${product.id}\u0000${product.barcode}\u0000${product.name}`)
+);
+
+const removeDemoProducts = (list: Product[]): Product[] => list.filter(product =>
+  !DEMO_PRODUCT_KEYS.has(`${product.id}\u0000${product.barcode}\u0000${product.name}`)
+);
+
 // Keep the browser's order history when the Render free instance restarts,
 // while letting the newest server copy win for status/print changes.
 const mergeOnlineOrders = (localOrders: OnlineOrder[], serverOrders: OnlineOrder[]): OnlineOrder[] => {
@@ -132,13 +140,13 @@ export default function App() {
     if (saved) {
       try {
         const parsed: Product[] = JSON.parse(saved);
-        return parsed.map((p) => ({
+        return removeDemoProducts(parsed).map((p) => ({
           ...p,
           wholesalePrice: p.wholesalePrice || Math.round((p.sellingPrice * 0.82) / 1000) * 1000
         }));
       } catch (e) { console.error(e); }
     }
-    return INITIAL_PRODUCTS;
+    return [];
   });
 
   const [storeInfo, setStoreInfo] = useState<StoreSettings>(() => {
@@ -243,8 +251,9 @@ export default function App() {
         if (data.success && data.state) {
           applyingServerStateRef.current = true;
           const s = data.state;
-          if (Array.isArray(s.products) && s.products.length > 0) {
-            setProducts(s.products);
+          const serverProducts = Array.isArray(s.products) ? removeDemoProducts(s.products) : [];
+          if (serverProducts.length > 0) {
+            setProducts(serverProducts);
           }
           if (Array.isArray(s.categories) && s.categories.length > 0) {
             setCategories(s.categories);
@@ -261,6 +270,11 @@ export default function App() {
           window.setTimeout(() => {
             applyingServerStateRef.current = false;
             serverSyncReadyRef.current = true;
+            // A fresh Render instance starts empty. Restore it from this
+            // device's genuine local catalog, never from bundled demo data.
+            if (serverProducts.length === 0 && products.length > 0) {
+              handleSyncWithServer(products);
+            }
           }, 0);
         }
       }
@@ -284,7 +298,7 @@ export default function App() {
   }, []);
 
   // Server REST API bilan ikki tomonlama sinxronizatsiya (Push changes to server)
-  const handleSyncWithServer = async (overrideProducts?: Product[]) => {
+  async function handleSyncWithServer(overrideProducts?: Product[]) {
     setIsSyncingWithServer(true);
     try {
       const res = await fetch('/api/v1/sync', {
@@ -311,7 +325,7 @@ export default function App() {
     } finally {
       setIsSyncingWithServer(false);
     }
-  };
+  }
 
   // Har safar foydalanuvchi tovar qo'shganda yoki o'zgartirganda darhol serverga yuborish (Debounce 500ms)
   useEffect(() => {
