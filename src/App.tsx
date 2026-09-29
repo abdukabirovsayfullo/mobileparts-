@@ -48,6 +48,17 @@ const STORAGE_KEYS = {
   CATEGORIES: 'pb_beeline_categories_v2'
 };
 
+// Keep the browser's order history when the Render free instance restarts,
+// while letting the newest server copy win for status/print changes.
+const mergeOnlineOrders = (localOrders: OnlineOrder[], serverOrders: OnlineOrder[]): OnlineOrder[] => {
+  const merged = new Map<string, OnlineOrder>();
+  localOrders.forEach(order => merged.set(order.id, order));
+  serverOrders.forEach(order => merged.set(order.id, order));
+  return Array.from(merged.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+};
+
 export default function App() {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
     return sessionStorage.getItem('pb_admin_unlocked') === 'true';
@@ -348,7 +359,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.orders)) {
-          setOnlineOrders(data.orders);
+          setOnlineOrders((current) => mergeOnlineOrders(current, data.orders));
         }
       }
     } catch (e) {

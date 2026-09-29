@@ -27,6 +27,7 @@ import {
   Play, 
   Code2, 
   ShoppingBag,
+  History,
   SlidersHorizontal,
   Volume2
 } from 'lucide-react';
@@ -61,6 +62,14 @@ export const TelegramOrdersManagementView: React.FC<TelegramOrdersManagementView
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Load the complete history as soon as this POS section opens and keep it
+  // current even when there are no pending/unprinted orders.
+  useEffect(() => {
+    onRefreshOrders();
+    const interval = window.setInterval(onRefreshOrders, 10000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   // Current domain URL for Mini App
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -233,8 +242,8 @@ export const TelegramOrdersManagementView: React.FC<TelegramOrdersManagementView
               : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
           }`}
         >
-          <ShoppingBag className="w-3.5 h-3.5" />
-          <span>Zakazlar Ro'yxati</span>
+          <History className="w-3.5 h-3.5" />
+          <span>Buyurtmalar Tarixi</span>
           {pendingCount > 0 && (
             <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-600 text-white">
               {pendingCount}
@@ -285,6 +294,15 @@ export const TelegramOrdersManagementView: React.FC<TelegramOrdersManagementView
       {/* SUB-TAB 1: ORDERS LIST */}
       {activeSubTab === 'orders' && (
         <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div>
+              <h3 className="text-base font-black text-stone-900">Telegram buyurtmalari tarixi</h3>
+              <p className="text-xs text-stone-500">Yangi va oldingi barcha buyurtmalar shu yerda saqlanib ko'rinadi.</p>
+            </div>
+            <span className="shrink-0 px-2.5 py-1 rounded-xl bg-sky-100 text-sky-800 text-xs font-black">
+              Jami: {orders.length} ta
+            </span>
+          </div>
           {/* Filters Bar */}
           <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-stone-950 border border-stone-800 rounded-2xl">
             <div className="flex items-center gap-1.5 overflow-x-auto">
@@ -295,6 +313,7 @@ export const TelegramOrdersManagementView: React.FC<TelegramOrdersManagementView
                 { id: 'chiqarildi', label: "Chiqarildi" },
                 { id: 'yetkazilmoqda', label: "Yetkazilmoqda" },
                 { id: 'bajarildi', label: "Bajarildi" },
+                { id: 'bekor_qilindi', label: "Bekor qilingan" },
               ].map((f) => (
                 <button
                   key={f.id}
