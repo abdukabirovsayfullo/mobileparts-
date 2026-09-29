@@ -51,10 +51,18 @@ const STORAGE_KEYS = {
 const DEMO_PRODUCT_KEYS = new Set(
   INITIAL_PRODUCTS.map(product => `${product.id}\u0000${product.barcode}\u0000${product.name}`)
 );
+const DEMO_MOVEMENT_IDS = new Set(INITIAL_MOVEMENTS.map(item => item.id));
+const DEMO_DEBT_IDS = new Set(INITIAL_DEBTS.map(item => item.id));
+const DEMO_SUPPLIER_DEBT_IDS = new Set(INITIAL_SUPPLIER_DEBTS.map(item => item.id));
+const DEMO_CUSTOMER_IDS = new Set(INITIAL_CUSTOMERS.map(item => item.id));
 
 const removeDemoProducts = (list: Product[]): Product[] => list.filter(product =>
   !DEMO_PRODUCT_KEYS.has(`${product.id}\u0000${product.barcode}\u0000${product.name}`)
 );
+const removeDemoMovements = (list: StockMovement[]) => list.filter(item => !DEMO_MOVEMENT_IDS.has(item.id));
+const removeDemoDebts = (list: DebtRecord[]) => list.filter(item => !DEMO_DEBT_IDS.has(item.id));
+const removeDemoSupplierDebts = (list: SupplierDebtRecord[]) => list.filter(item => !DEMO_SUPPLIER_DEBT_IDS.has(item.id));
+const removeDemoCustomers = (list: CustomerProfile[]) => list.filter(item => !DEMO_CUSTOMER_IDS.has(item.id));
 
 // Keep the browser's order history when the Render free instance restarts,
 // while letting the newest server copy win for status/print changes.
@@ -184,33 +192,33 @@ export default function App() {
   const [movements, setMovements] = useState<StockMovement[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.MOVEMENTS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try { return removeDemoMovements(JSON.parse(saved)); } catch (e) { console.error(e); }
     }
-    return INITIAL_MOVEMENTS;
+    return [];
   });
 
   const [debts, setDebts] = useState<DebtRecord[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.DEBTS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try { return removeDemoDebts(JSON.parse(saved)); } catch (e) { console.error(e); }
     }
-    return INITIAL_DEBTS;
+    return [];
   });
 
   const [supplierDebts, setSupplierDebts] = useState<SupplierDebtRecord[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.SUPPLIER_DEBTS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try { return removeDemoSupplierDebts(JSON.parse(saved)); } catch (e) { console.error(e); }
     }
-    return INITIAL_SUPPLIER_DEBTS;
+    return [];
   });
 
   const [customers, setCustomers] = useState<CustomerProfile[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try { return removeDemoCustomers(JSON.parse(saved)); } catch (e) { console.error(e); }
     }
-    return INITIAL_CUSTOMERS;
+    return [];
   });
 
   // Sync with LocalStorage
@@ -1170,21 +1178,6 @@ export default function App() {
   const handleDeleteSupplierDebt = (debtId: string) => {
     if (confirm("Ushbu ta'minotchi qarz yozuvini o'chirmoqchimisiz?")) {
       setSupplierDebts((prev) => prev.filter((d) => d.id !== debtId));
-    }
-  };
-
-  // Reset to initial demo data
-  const handleResetData = () => {
-    if (confirm('Barcha hisobot va kirim-chiqim ma\'lumotlarini namunaviy holatga qaytarasizmi?')) {
-      localStorage.clear();
-      setProducts(INITIAL_PRODUCTS);
-      setCategories(DEFAULT_CATEGORIES);
-      setMovements(INITIAL_MOVEMENTS);
-      setDebts(INITIAL_DEBTS);
-      setSupplierDebts(INITIAL_SUPPLIER_DEBTS);
-      setCustomers(INITIAL_CUSTOMERS);
-      setStoreInfo(STORE_INFO);
-      alert('Namunaviy ma\'lumotlar qayta tiklandi!');
     }
   };
 
@@ -2149,15 +2142,6 @@ export default function App() {
             </button>
             <span>•</span>
             <span>{storeInfo.address}</span>
-            <span>•</span>
-            <button
-              onClick={handleResetData}
-              className="text-stone-400 hover:text-stone-700 flex items-center gap-1 transition-colors cursor-pointer"
-              title="Namunaviy ma'lumotlarni qayta tiklash"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Namuna ma'lumotlarni tiklash</span>
-            </button>
           </div>
         </div>
       </footer>

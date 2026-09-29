@@ -14,6 +14,9 @@ import {
 } from '../src/types';
 import { 
   INITIAL_PRODUCTS, 
+  INITIAL_MOVEMENTS,
+  INITIAL_DEBTS,
+  INITIAL_SUPPLIER_DEBTS,
   DEFAULT_CATEGORIES, 
   STORE_INFO 
 } from '../src/data/initialData';
@@ -50,6 +53,12 @@ const DEMO_PRODUCT_KEYS = new Set(
 const removeDemoProducts = (products: Product[]): Product[] => products.filter(product =>
   !DEMO_PRODUCT_KEYS.has(`${product.id}\u0000${product.barcode}\u0000${product.name}`)
 );
+const DEMO_MOVEMENT_IDS = new Set(INITIAL_MOVEMENTS.map(item => item.id));
+const DEMO_DEBT_IDS = new Set(INITIAL_DEBTS.map(item => item.id));
+const DEMO_SUPPLIER_DEBT_IDS = new Set(INITIAL_SUPPLIER_DEBTS.map(item => item.id));
+const removeDemoMovements = (items: StockMovement[]) => items.filter(item => !DEMO_MOVEMENT_IDS.has(item.id));
+const removeDemoDebts = (items: DebtRecord[]) => items.filter(item => !DEMO_DEBT_IDS.has(item.id));
+const removeDemoSupplierDebts = (items: SupplierDebtRecord[]) => items.filter(item => !DEMO_SUPPLIER_DEBT_IDS.has(item.id));
 
 class DataStore {
   private state: PosDatabaseState;
@@ -69,9 +78,9 @@ class DataStore {
           storeInfo: parsed.storeInfo || STORE_INFO,
           categories: Array.isArray(parsed.categories) ? parsed.categories : DEFAULT_CATEGORIES,
           products: Array.isArray(parsed.products) ? removeDemoProducts(parsed.products) : [],
-          movements: Array.isArray(parsed.movements) ? parsed.movements : [],
-          debts: Array.isArray(parsed.debts) ? parsed.debts : [],
-          supplierDebts: Array.isArray(parsed.supplierDebts) ? parsed.supplierDebts : [],
+          movements: Array.isArray(parsed.movements) ? removeDemoMovements(parsed.movements) : [],
+          debts: Array.isArray(parsed.debts) ? removeDemoDebts(parsed.debts) : [],
+          supplierDebts: Array.isArray(parsed.supplierDebts) ? removeDemoSupplierDebts(parsed.supplierDebts) : [],
           onlineOrders: Array.isArray(parsed.onlineOrders) ? parsed.onlineOrders : [],
           telegramConfig: parsed.telegramConfig || {
             botToken: process.env.TELEGRAM_BOT_TOKEN || '',
@@ -748,14 +757,14 @@ class DataStore {
     if (Array.isArray(clientData.products) && clientData.products.length > 0) {
       this.state.products = clientData.products;
     }
-    if (Array.isArray(clientData.movements) && clientData.movements.length > 0) {
-      this.state.movements = clientData.movements;
+    if (Array.isArray(clientData.movements)) {
+      this.state.movements = removeDemoMovements(clientData.movements);
     }
     if (Array.isArray(clientData.debts)) {
-      this.state.debts = clientData.debts;
+      this.state.debts = removeDemoDebts(clientData.debts);
     }
     if (Array.isArray(clientData.supplierDebts)) {
-      this.state.supplierDebts = clientData.supplierDebts;
+      this.state.supplierDebts = removeDemoSupplierDebts(clientData.supplierDebts);
     }
     if (Array.isArray(clientData.onlineOrders)) {
       this.state.onlineOrders = clientData.onlineOrders;
