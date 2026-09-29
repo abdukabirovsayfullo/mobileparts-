@@ -222,14 +222,14 @@ export default function App() {
   }, [storeInfo]);
 
   // Server REST API bilan ikki tomonlama sinxronizatsiya
-  const handleSyncWithServer = async () => {
+  const handleSyncWithServer = async (overrideProducts?: Product[]) => {
     setIsSyncingWithServer(true);
     try {
       const res = await fetch('/api/v1/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          products,
+          products: overrideProducts || products,
           movements,
           debts,
           supplierDebts,
@@ -251,10 +251,13 @@ export default function App() {
     }
   };
 
-  // Dastur yuklanganda server bilan sinxronlash
+  // Har safar mahsulotlar yoki sozlamalar o'zgarganda avtomatik serverga sinxronlash (Debounce 600ms)
   useEffect(() => {
-    handleSyncWithServer();
-  }, []);
+    const timer = setTimeout(() => {
+      handleSyncWithServer();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [products, categories, movements, debts, supplierDebts, storeInfo]);
 
   // Today's Key Metrics for Header
   const { todayRevenue, todayProfit } = useMemo(() => {

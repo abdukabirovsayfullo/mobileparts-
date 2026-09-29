@@ -43,7 +43,16 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const tgUser = tg?.initDataUnsafe?.user;
 
   // Local state
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>(() => {
+    if (initialProducts && initialProducts.length > 0) return initialProducts;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('pb_beeline_products_v2');
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+      }
+    }
+    return [];
+  });
   const [categories, setCategories] = useState<string[]>(['Barchasi']);
   const [selectedCategory, setSelectedCategory] = useState<string>('Barchasi');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -70,7 +79,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       const res = await fetch('/api/v1/telegram/miniapp/products');
       if (res.ok) {
         const data = await res.json();
-        if (data.products && Array.isArray(data.products)) {
+        if (data.products && Array.isArray(data.products) && data.products.length > 0) {
           setProducts(data.products);
         }
         if (data.categories && Array.isArray(data.categories)) {
