@@ -221,7 +221,51 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.STORE_INFO, JSON.stringify(storeInfo));
   }, [storeInfo]);
 
-  // Server REST API bilan ikki tomonlama sinxronizatsiya
+  // Serverdan eng so'nggi ma'lumotlarni tortib olish (Pull latest live data from server)
+  const fetchLatestStateFromServer = async () => {
+    try {
+      const res = await fetch('/api/v1/sync');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.state) {
+          const s = data.state;
+          if (Array.isArray(s.products) && s.products.length > 0) {
+            setProducts(s.products);
+          }
+          if (Array.isArray(s.categories) && s.categories.length > 0) {
+            setCategories(s.categories);
+          }
+          if (Array.isArray(s.movements) && s.movements.length > 0) {
+            setMovements(s.movements);
+          }
+          if (Array.isArray(s.debts)) {
+            setDebts(s.debts);
+          }
+          if (Array.isArray(s.supplierDebts)) {
+            setSupplierDebts(s.supplierDebts);
+          }
+        }
+      }
+    } catch (err) {
+      // Offline or network blip
+    }
+  };
+
+  // Dastur yuklanganda va har 5 soniyada serverdan yangilanishlarni olish (Real vaqt rejimida telefon <-> kompyuter sinxronlash)
+  useEffect(() => {
+    fetchLatestStateFromServer();
+
+    const interval = setInterval(fetchLatestStateFromServer, 4000);
+    const handleFocus = () => fetchLatestStateFromServer();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
+
+  // Server REST API bilan ikki tomonlama sinxronizatsiya (Push changes to server)
   const handleSyncWithServer = async (overrideProducts?: Product[]) => {
     setIsSyncingWithServer(true);
     try {
@@ -251,11 +295,11 @@ export default function App() {
     }
   };
 
-  // Har safar mahsulotlar yoki sozlamalar o'zgarganda avtomatik serverga sinxronlash (Debounce 600ms)
+  // Har safar foydalanuvchi tovar qo'shganda yoki o'zgartirganda darhol serverga yuborish (Debounce 500ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       handleSyncWithServer();
-    }, 600);
+    }, 500);
     return () => clearTimeout(timer);
   }, [products, categories, movements, debts, supplierDebts, storeInfo]);
 

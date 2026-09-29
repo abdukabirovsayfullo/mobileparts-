@@ -187,6 +187,22 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
 // -----------------------------------------------------------------------------
 // Two-Way Sync Endpoint (Frontend <-> Server)
 // -----------------------------------------------------------------------------
+apiV1Router.get('/sync', (_req: Request, res: Response) => {
+  const state = dataStore.getState();
+  res.json({
+    success: true,
+    serverTimestamp: state.lastUpdated,
+    state: {
+      products: state.products,
+      movements: state.movements,
+      debts: state.debts,
+      supplierDebts: state.supplierDebts,
+      categories: state.categories,
+      storeInfo: state.storeInfo
+    }
+  });
+});
+
 apiV1Router.post('/sync', (req: Request, res: Response) => {
   try {
     const { products, movements, debts, supplierDebts, categories, storeInfo, clientTimestamp } = req.body;
