@@ -19,7 +19,10 @@ import {
   Sparkles,
   ExternalLink,
   ChevronRight,
-  Receipt
+  Receipt,
+  Copy,
+  Upload,
+  Check
 } from 'lucide-react';
 
 interface CartItem {
@@ -62,6 +65,22 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [submittingOrder, setSubmittingOrder] = useState<boolean>(false);
   const [confirmedOrder, setConfirmedOrder] = useState<any>(null);
 
+  // Store data & Click payment state
+  const [storeData, setStoreData] = useState<{
+    name: string;
+    phone: string;
+    clickPhone: string;
+    address: string;
+  }>({
+    name: "MOBILE PARTS",
+    phone: "+998 95 200 13 33, +998 91 174 13 33",
+    clickPhone: "+998 95 200 13 33",
+    address: "Z. Habibiy ko'chasi, Yoqubov stoyankasi to'g'risida"
+  });
+  const [copiedClick, setCopiedClick] = useState<boolean>(false);
+  const [clickReceiptFile, setClickReceiptFile] = useState<string>('');
+  const [clickReceiptName, setClickReceiptName] = useState<string>('');
+
   // Form fields
   const [customerName, setCustomerName] = useState<string>(
     tgUser ? `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() : ''
@@ -72,6 +91,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('click_payme');
   const [notes, setNotes] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  const handleReceiptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setClickReceiptName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setClickReceiptFile(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Fetch live products from backend to ensure catalog is always 100% up-to-date
   const fetchLiveProducts = async () => {
@@ -194,9 +225,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     setSubmittingOrder(true);
 
     try {
+      const fullNotes = [
+        notes.trim(),
+        clickReceiptFile ? `[Click Chek Yuklandi: ${clickReceiptName || 'rasm'}]` : '',
+        paymentMethod === 'click_payme' ? `To'lov: Click (${formatMoney(grandTotal)})` : `To'lov: Naqd (${formatMoney(grandTotal)})`
+      ].filter(Boolean).join(' | ');
+
       const payload = {
         items: cart.map(item => ({
           productId: item.product.id,
+          productName: item.product.name,
+          category: item.product.category,
+          barcode: item.product.barcode,
           quantity: item.quantity,
           unitPrice: item.product.sellingPrice
         })),
@@ -207,7 +247,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         paymentMethod,
         telegramUserId: tgUser?.id,
         telegramUsername: tgUser?.username,
-        notes: notes.trim()
+        notes: fullNotes
       };
 
       const res = await fetch('/api/v1/telegram/miniapp/order', {
@@ -650,47 +690,113 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
                   {/* Payment Method */}
                   <div>
-                    <label className="block text-stone-400 font-bold mb-1">
+                    <label className="block text-stone-400 font-bold mb-1.5">
                       To'lov turi:
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setPaymentMethod('click_payme')}
-                        className={`p-2 rounded-xl border text-center font-bold text-xs cursor-pointer transition-all ${
+                        className={`p-3 rounded-2xl border text-center font-bold text-xs cursor-pointer transition-all flex flex-col items-center gap-1 ${
                           paymentMethod === 'click_payme'
-                            ? 'bg-sky-500/20 border-sky-400 text-sky-300'
+                            ? 'bg-sky-500/20 border-sky-400 text-sky-300 shadow-md ring-1 ring-sky-400/50'
                             : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200'
                         }`}
                       >
-                        💳 Click / Payme
+                        <span className="text-base">💳</span>
+                        <span>Click orqali</span>
+                        <span className="text-[10px] text-sky-400 font-normal">Karta/Raqamga</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setPaymentMethod('naqd')}
-                        className={`p-2 rounded-xl border text-center font-bold text-xs cursor-pointer transition-all ${
+                        className={`p-3 rounded-2xl border text-center font-bold text-xs cursor-pointer transition-all flex flex-col items-center gap-1 ${
                           paymentMethod === 'naqd'
-                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-md ring-1 ring-emerald-400/50'
                             : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200'
                         }`}
                       >
-                        💵 Naqd pul
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethod('uzum')}
-                        className={`p-2 rounded-xl border text-center font-bold text-xs cursor-pointer transition-all ${
-                          paymentMethod === 'uzum'
-                            ? 'bg-purple-500/20 border-purple-400 text-purple-300'
-                            : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200'
-                        }`}
-                      >
-                        🍇 Uzum Bank
+                        <span className="text-base">💵</span>
+                        <span>Naqd pul</span>
+                        <span className="text-[10px] text-emerald-400 font-normal">Qabul qilganda</span>
                       </button>
                     </div>
                   </div>
+
+                  {/* Click Payment Details Card (Agar Click tanlansa) */}
+                  {paymentMethod === 'click_payme' && (
+                    <div className="p-3.5 bg-gradient-to-br from-sky-950/60 to-stone-900 border border-sky-500/40 rounded-2xl space-y-3 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-sky-500 text-stone-950 font-black flex items-center justify-center text-[10px] tracking-tight">
+                            CLICK
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-white">Click raqamimiz:</p>
+                            <p className="text-xs text-sky-300 font-mono font-bold tracking-wider">
+                              {storeData.clickPhone || "+998 95 200 13 33"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rawNum = (storeData.clickPhone || "+998 95 200 13 33").replace(/\s+/g, '');
+                            navigator.clipboard?.writeText(rawNum);
+                            setCopiedClick(true);
+                            setTimeout(() => setCopiedClick(false), 2000);
+                          }}
+                          className="px-2.5 py-1.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 rounded-xl text-xs font-bold border border-sky-500/40 cursor-pointer flex items-center gap-1 transition-all"
+                        >
+                          {copiedClick ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedClick ? "Nusxalandi!" : "Nusxa"}</span>
+                        </button>
+                      </div>
+
+                      <div className="p-2.5 bg-stone-950/70 rounded-xl border border-stone-800 text-[11px] text-stone-300 space-y-1">
+                        <div className="flex justify-between font-medium">
+                          <span>O'tkaziladigan summa:</span>
+                          <span className="font-mono text-amber-400 font-bold">{formatMoney(grandTotal)}</span>
+                        </div>
+                        <p className="text-[10px] text-stone-400 leading-snug">
+                          👆 Yuqoridagi Click raqamiga pul o'tkazing va to'lov chekini (skrinshot) biriktiring:
+                        </p>
+                      </div>
+
+                      {/* Receipt File Upload */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-300 mb-1">
+                          To'lov cheki yoki skrinshot (ixtiyoriy):
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-stone-900/90 hover:bg-stone-850 border border-dashed border-sky-500/50 rounded-xl cursor-pointer text-xs text-sky-300 font-bold transition-all truncate">
+                            <Upload className="w-4 h-4 shrink-0" />
+                            <span className="truncate">
+                              {clickReceiptName ? `Yuklandi: ${clickReceiptName}` : "Chek rasmini yuklash 📎"}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleReceiptFileChange}
+                            />
+                          </label>
+                          {clickReceiptFile && (
+                            <button
+                              type="button"
+                              onClick={() => { setClickReceiptFile(''); setClickReceiptName(''); }}
+                              className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 flex items-center justify-center shrink-0 cursor-pointer"
+                              title="O'chirish"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Order notes */}
                   <div>
