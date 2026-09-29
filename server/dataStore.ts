@@ -191,8 +191,12 @@ class DataStore {
   }
 
   public getProductById(idOrBarcode: string): Product | undefined {
-    const q = idOrBarcode.toLowerCase().trim();
-    return this.state.products.find(p => p.id.toLowerCase() === q || p.barcode.toLowerCase() === q);
+    const q = String(idOrBarcode || '').toLowerCase().trim();
+    if (!q) return undefined;
+    return this.state.products.find(p =>
+      String(p.id || '').toLowerCase().trim() === q ||
+      String(p.barcode || '').toLowerCase().trim() === q
+    );
   }
 
   public saveProduct(productData: Partial<Product> & { name: string }): Product {
@@ -296,12 +300,8 @@ class DataStore {
       const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
       let product: Product | undefined;
 
-      if (item.productId) {
-        product = this.state.products.find(p => p.id === item.productId);
-      }
-      if (!product && item.barcode) {
-        product = this.state.products.find(p => p.barcode === item.barcode);
-      }
+      if (item.productId) product = this.getProductById(item.productId);
+      if (!product && item.barcode) product = this.getProductById(item.barcode);
 
       if (!product) {
         throw new Error(`Tovar topilmadi (productId: ${item.productId || 'noma\'lum'}, barcode: ${item.barcode || 'noma\'lum'})`);
@@ -422,8 +422,9 @@ class DataStore {
         product = this.state.products.find(p => p.id === item.productId);
       }
       if (!product && item.barcode) {
-        product = this.state.products.find(p => p.barcode === item.barcode);
+        product = this.getProductById(item.barcode);
       }
+
       if (!product && item.name) {
         product = this.state.products.find(p => p.name.toLowerCase() === item.name?.toLowerCase());
       }
@@ -606,27 +607,25 @@ class DataStore {
       const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
       let product: Product | undefined;
 
-      if (item.productId) {
-        product = this.state.products.find(p => p.id === item.productId);
-      }
-      if (!product && item.barcode) {
-        product = this.state.products.find(p => p.barcode === item.barcode);
+      if (item.productId) product = this.getProductById(item.productId);
+      if (!product && item.barcode) product = this.getProductById(item.barcode);
+
+      // A cart can remain open while another device refreshes the catalog. In
+      // that case the generated id may change, but the exact product name is
+      // still enough to reconnect the order to a single server-side product.
+      if (!product && item.productName) {
+        const normalizedName = item.productName.toLowerCase().trim();
+        const sameName = this.state.products.filter(p =>
+          p.name.toLowerCase().trim() === normalizedName &&
+          (!item.category || p.category.toLowerCase().trim() === item.category.toLowerCase().trim())
+        );
+        if (sameName.length === 1) product = sameName[0];
       }
 
       if (!product) {
-        // Avtomatik ravishda buyurtmadagi tovardan mahsulot yaratib bazaga qo'shish (Xatolik bermaslik uchun)
-        product = {
-          id: item.productId || `prod-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: item.productName || (item.productId ? `Mahsulot (${item.productId})` : "Aksessuar"),
-          category: item.category || "Aksessuarlar",
-          brand: "Umumiy",
-          barcode: item.barcode || "",
-          purchasePrice: Math.round((Number(item.unitPrice || 0)) * 0.7),
-          sellingPrice: Number(item.unitPrice || 0),
-          stock: 10,
-          minStockAlert: 2
-        };
-        this.state.products.push(product);
+        // Never invent stock during checkout. A stale cart must be refreshed
+        // instead of silently creating a duplicate product with fake quantity.
+        throw new Error("Savatdagi tovar eskirgan. Mini App'ni yangilang va tovarni qayta tanlang.");
       }
 
       const unitPrice = Number(item.unitPrice || product.sellingPrice);

@@ -767,6 +767,7 @@ apiV1Router.post('/ai/chat', requireApiKey, async (req: Request, res: Response) 
 
 // 1. Mini App Products Catalog (Live products feed for Telegram Mini App)
 apiV1Router.get('/telegram/miniapp/products', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   const category = typeof req.query.category === 'string' ? req.query.category.trim() : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : (typeof req.query.q === 'string' ? req.query.q.trim() : undefined);
   const inStockOnly = req.query.in_stock === 'true';
@@ -942,7 +943,7 @@ apiV1Router.post('/telegram/miniapp/orders/:id/mark-printed', (req: Request, res
 });
 
 // 6. Update Order Status
-apiV1Router.post('/telegram/miniapp/orders/:id/status', (req: Request, res: Response) => {
+apiV1Router.patch('/telegram/miniapp/orders/:id/status', (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
   

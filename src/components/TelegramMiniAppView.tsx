@@ -107,11 +107,20 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   // Fetch live products from backend to ensure catalog is always 100% up-to-date
   const fetchLiveProducts = async () => {
     try {
-      const res = await fetch('/api/v1/telegram/miniapp/products');
+      const res = await fetch('/api/v1/telegram/miniapp/products', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         if (data.products && Array.isArray(data.products) && data.products.length > 0) {
           setProducts(data.products);
+          // Refresh product objects already held by the cart. This prevents a
+          // long-open Telegram Mini App from submitting stale ids/barcodes.
+          setCart(current => current.map(cartItem => {
+            const fresh = data.products.find((p: Product) =>
+              p.id === cartItem.product.id ||
+              (p.barcode && cartItem.product.barcode && p.barcode === cartItem.product.barcode)
+            );
+            return fresh ? { ...cartItem, product: fresh } : cartItem;
+          }));
         }
         if (data.categories && Array.isArray(data.categories)) {
           setCategories(data.categories);

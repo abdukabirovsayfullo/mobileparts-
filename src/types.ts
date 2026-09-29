@@ -226,6 +226,8 @@ export interface OnlineOrder {
 export interface TelegramMiniAppOrderPayload {
   items: Array<{
     productId?: string;
+    productName?: string;
+    category?: string;
     barcode?: string;
     quantity: number;
     unitPrice?: number;

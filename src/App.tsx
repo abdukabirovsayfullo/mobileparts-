@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings } from './types';
 import { 
   INITIAL_PRODUCTS, 
@@ -86,6 +86,8 @@ export default function App() {
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
   const [apiKey, setApiKey] = useState('pb_pos_sec_77a94d8b');
   const [isSyncingWithServer, setIsSyncingWithServer] = useState(false);
+  const serverSyncReadyRef = useRef(false);
+  const applyingServerStateRef = useRef(false);
 
   // Telegram Mini App & Online Buyurtmalar holati
   const [onlineOrders, setOnlineOrders] = useState<OnlineOrder[]>(() => {
@@ -228,6 +230,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.state) {
+          applyingServerStateRef.current = true;
           const s = data.state;
           if (Array.isArray(s.products) && s.products.length > 0) {
             setProducts(s.products);
@@ -244,6 +247,10 @@ export default function App() {
           if (Array.isArray(s.supplierDebts)) {
             setSupplierDebts(s.supplierDebts);
           }
+          window.setTimeout(() => {
+            applyingServerStateRef.current = false;
+            serverSyncReadyRef.current = true;
+          }, 0);
         }
       }
     } catch (err) {
@@ -297,6 +304,7 @@ export default function App() {
 
   // Har safar foydalanuvchi tovar qo'shganda yoki o'zgartirganda darhol serverga yuborish (Debounce 500ms)
   useEffect(() => {
+    if (!serverSyncReadyRef.current || applyingServerStateRef.current) return;
     const timer = setTimeout(() => {
       handleSyncWithServer();
     }, 500);
@@ -414,9 +422,9 @@ export default function App() {
         const res = await fetch('/api/v1/telegram/miniapp/pending-orders');
         if (!res.ok) return;
         const data = await res.json();
-        if (!isSubscribed || !Array.isArray(data.pendingOrders)) return;
+        if (!isSubscribed || !Array.isArray(data.orders)) return;
 
-        const pendingList: OnlineOrder[] = data.pendingOrders;
+        const pendingList: OnlineOrder[] = data.orders;
 
         if (pendingList.length > 0) {
           // 1. Play cash register chime sound
@@ -461,7 +469,7 @@ export default function App() {
 
           // 3. Refresh orders & products list so POS inventory and movements are immediately updated
           handleRefreshOnlineOrders();
-          fetch('/api/v1/products')
+          fetch('/api/v1/telegram/miniapp/products', { cache: 'no-store' })
             .then((r) => r.json())
             .then((d) => {
               if (d.products && Array.isArray(d.products)) {
