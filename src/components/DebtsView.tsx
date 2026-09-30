@@ -363,7 +363,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                 <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
                   {!isClosed ? (
                     <button
-                      onClick={() => setPaymentModalDebt(debt)}
+                      onClick={() => handleOpenPayment(debt)}
                       className="flex-1 py-2 px-3 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98 transition-transform"
                     >
                       <Plus className="w-4 h-4" />
@@ -535,6 +535,18 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                 </div>
               </div>
 
+              {paymentModalDebt.paymentHistory && paymentModalDebt.paymentHistory.length > 0 && (
+                <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-1">
+                  <div className="font-semibold text-stone-700">To'lovlar tarixi</div>
+                  {paymentModalDebt.paymentHistory.map((p, i) => (
+                    <div key={i} className="flex justify-between text-stone-600">
+                      <span>{formatDate(p.date)} · {p.method === 'naqd' ? 'Naqd' : 'Click / Payme'}</span>
+                      <span className="font-bold text-emerald-700">{formatMoney(p.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div>
                 <label className="block font-semibold text-stone-700 mb-1">
                   To'lanayotgan summa (so'm) *
@@ -542,9 +554,9 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                 <input
                   type="number"
                   required
-                  min="1000"
+                  min="1"
                   max={paymentModalDebt.remainingAmount}
-                  step="1000"
+                  step="1"
                   value={payAmount}
                   onChange={(e) => setPayAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"

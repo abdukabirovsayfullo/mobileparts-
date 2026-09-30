@@ -46,7 +46,20 @@ test('legacy reprint uses initial payment, not later payments', () => {
 test('thermal receipt prints paid amount, new debt and total customer debt, escaping names', () => {
   const r: SaleReceiptData = { receiptNumber: 'TEST', date: '2026-09-30', customerName: '<Akrom>', paymentMethod: 'nasiya', items: [], subtotal: 100000, total: 100000, paidAmount: 30000, isDebt: true, debtRemaining: 70000, previousCustomerDebt: 50000, customerTotalDebt: 120000 };
   const html = thermalReceiptHtml(r, { name: 'Test', address: '', phone: '', accountantName: '' }, true);
-  for (const label of ["Hozir to'langan", 'Bu savdodan qarz', 'Avvalgi qarz', 'Jami qarzdorlik']) assert.ok(html.includes(label.replaceAll("'", '&#39;')));
+  for (const label of ["Hozir to'langan", 'Bu savdodan qarz', 'Eski qarz', 'Umumiy qarzdorlik']) assert.ok(html.includes(label.replaceAll("'", '&#39;')));
   for (const n of [30000, 70000, 50000, 120000]) assert.ok(html.includes(n.toLocaleString('ru-RU')));
   assert.ok(html.includes('&lt;Akrom&gt;'));
+});
+
+test('1000 sale with 100 paid leaves 900 debt, and the next receipt prints it as old debt', () => {
+  const first = saleAccounting([1000], 100);
+  assert.equal(first.paid, 100);
+  assert.equal(first.remaining, 900);
+  const old = customerDebtTotal([debt(900)], 'Akromjon');
+  assert.equal(old, 900);
+  const second = saleAccounting([500], 0);
+  const r: SaleReceiptData = { receiptNumber: 'T2', date: '2026-09-30', customerName: 'Akromjon', paymentMethod: 'nasiya', items: [], subtotal: 500, total: 500, paidAmount: 0, isDebt: true, debtRemaining: second.remaining, previousCustomerDebt: old, customerTotalDebt: old + second.remaining };
+  const html = thermalReceiptHtml(r, { name: 'Test', address: '', phone: '', accountantName: '' }, true);
+  for (const label of ['Eski qarz', 'Umumiy qarzdorlik']) assert.ok(html.includes(label));
+  assert.ok(html.includes('1' + String.fromCharCode(160) + '400') || html.includes('1 400'));
 });

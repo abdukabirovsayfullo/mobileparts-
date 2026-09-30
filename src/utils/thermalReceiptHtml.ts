@@ -67,7 +67,7 @@ export function thermalReceiptHtml(receipt: SaleReceiptData, store: StoreSetting
           ${!receipt.isReturn ? summary("Hozir to'langan", receipt.paidAmount ?? (receipt.isDebt ? receipt.total - (receipt.debtRemaining || 0) : receipt.total)) : ''}
           ${receipt.changeAmount && !receipt.isReturn ? summary('Qaytim', receipt.changeAmount) : ''}
           ${receipt.isDebt ? summary('Bu savdodan qarz', receipt.debtRemaining || 0) + line('Muddati:', receipt.debtDueDate || '-') : ''}
-          ${!receipt.isReturn && receipt.customerTotalDebt !== undefined ? (receipt.previousCustomerDebt !== undefined ? summary('Avvalgi qarz', receipt.previousCustomerDebt) : '') + summary('Jami qarzdorlik', receipt.customerTotalDebt, true) : ''}
+          ${!receipt.isReturn && receipt.customerTotalDebt !== undefined ? (receipt.previousCustomerDebt !== undefined ? summary('Eski qarz', receipt.previousCustomerDebt) : '') + summary('Umumiy qarzdorlik', receipt.customerTotalDebt, true) : ''}
         ` : line('Jami tovar:', units + ' dona')}
         ${receipt.notes ? line('Izoh:', receipt.notes) : ''}
       </div>
