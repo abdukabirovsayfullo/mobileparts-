@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Obsidian
+obsidian-vault/.obsidian/workspace.json
