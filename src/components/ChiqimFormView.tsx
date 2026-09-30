@@ -318,14 +318,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
     const willBeDebt = paymentMethod === 'nasiya' || effectiveRemainingDebt > 0;
 
-    // Validate customer name if debt will be recorded
-    if (willBeDebt && (!customerName.trim() || customerName === 'Do\'kon mijozi')) {
-      alert(
-        `Qolgan ${formatMoney(effectiveRemainingDebt)} so'mni qarzga (nasiyaga) o'tkazish uchun xaridor ismini kiritishingiz shart!`
-      );
-      return;
-    }
-
     const receiptNum = `PB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
 
     const saleNotesWithDiscount = discountAmount > 0
@@ -1049,14 +1041,13 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               {/* Customer Name Input with Autocomplete */}
               <div className="relative">
                 <label className="text-[10px] font-bold text-stone-700 block mb-1">
-                  Kimga sotildi (Mijoz / Do'kon / Usta ismi) *
+                  Kimga sotildi (Mijoz / Do'kon / Usta ismi) — ixtiyoriy
                 </label>
                 <div className="relative">
                   <User className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2.5" />
                   <input
                     type="text"
-                    required
-                    placeholder="Ismini yozing: Akromjon, Rustam usta..."
+                    placeholder="Ixtiyoriy: Akromjon, Rustam usta..."
                     value={customerName}
                     onFocus={() => setShowCustomerDropdown(true)}
                     onChange={(e) => {
