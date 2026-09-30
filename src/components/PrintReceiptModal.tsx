@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { thermalReceiptHtml } from '../utils/thermalReceiptHtml';
 import { SaleReceiptData, StoreSettings } from '../types';
 import { STORE_INFO } from '../data/initialData';
 import { formatMoney, formatDate } from '../utils/formatters';
@@ -89,37 +90,43 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     try {
       const doc = frame.contentDocument!;
       const win = frame.contentWindow!;
-      const clone = source.cloneNode(true) as HTMLElement;
-      const originals = [source, ...Array.from(source.querySelectorAll('*'))];
-      const copies = [clone, ...Array.from(clone.querySelectorAll('*'))];
-      originals.forEach((node, index) => {
-        const computed = window.getComputedStyle(node);
-        const target = copies[index] as HTMLElement;
-        for (const property of Array.from(computed)) {
-          if (!['width','height','min-width','max-width','min-height','max-height'].includes(property)) {
-            target.style.setProperty(property, computed.getPropertyValue(property));
-          }
-        }
-      });
-      doc.body.appendChild(clone);
-      const style = doc.createElement('style');
-      style.textContent = `
-        html, body { margin:0!important; padding:0!important; background:white!important; }
-        #printable-receipt { box-sizing:border-box!important; width:${printFormat === 'pos' ? '80mm' : '190mm'}!important;
-          max-width:none!important; margin:0!important; padding:${printFormat === 'pos' ? '3mm 4mm 5mm' : '0'}!important;
-          border:0!important; border-radius:0!important; box-shadow:none!important; }
-        #printable-receipt * { color:black!important; background:transparent!important; border-color:black!important;
-          box-shadow:none!important; text-shadow:none!important; min-width:0!important; overflow-wrap:anywhere!important;
-          font-family:Arial,sans-serif!important; }
-        #printable-receipt .flex { gap:2mm!important; }
-        #printable-receipt tr { break-inside:avoid; }
-        #printable-receipt svg { width:12px!important; height:12px!important; }
-      `;
-      doc.head.appendChild(style);
-      // Never depend on requestAnimationFrame inside an invisible iframe.
+      let printedRoot: HTMLElement;
+      if (printFormat === 'pos') {
+        // Dedicated flow layout: screen-computed sizes/line boxes must never enter a thermal receipt.
+        doc.open();
+        doc.write(thermalReceiptHtml(receipt!, storeInfo || STORE_INFO, showPrices));
+        doc.close();
+        printedRoot = doc.getElementById('thermal-receipt')!;
+      } else {
+        const clone = source.cloneNode(true) as HTMLElement;
+        const originals = [source, ...Array.from(source.querySelectorAll('*'))];
+        const copies = [clone, ...Array.from(clone.querySelectorAll('*'))];
+        originals.forEach((node, index) => {
+          const computed = window.getComputedStyle(node);
+          const target = copies[index] as HTMLElement;
+          const properties = ['display', 'font-family', 'font-size', 'font-weight', 'text-align',
+            'padding', 'margin', 'border', 'border-collapse', 'grid-template-columns', 'gap'];
+          for (const property of properties) target.style.setProperty(property, computed.getPropertyValue(property));
+        });
+        doc.body.appendChild(clone);
+        const css = doc.createElement('style');
+        css.textContent = `
+          @page { size:A4; margin:10mm; }
+          html,body {margin:0;padding:0;background:white;color:black}
+          #printable-receipt {box-sizing:border-box;width:190mm;margin:0;padding:0;border:0;}
+          #printable-receipt * {height:auto;line-height:1.5;overflow-wrap:break-word;color:black;background:white}
+          svg {width:12px;height:12px} tr {break-inside:avoid}
+        `;
+        doc.head.appendChild(css);
+        printedRoot = clone;
+      }
       await new Promise(resolve => window.setTimeout(resolve, 100));
-      const height = Math.max(50, Math.ceil(clone.getBoundingClientRect().height * 25.4 / 96) + 2);
-      style.textContent += `@page {size:${printFormat === 'pos' ? '80mm ' + height + 'mm' : 'A4'};margin:${printFormat === 'pos' ? '0' : '10mm'};}`;
+      if (printFormat === 'pos') {
+        const height = Math.max(50, Math.ceil(printedRoot.getBoundingClientRect().height * 25.4 / 96) + 2);
+        const page = doc.createElement('style');
+        page.textContent = `@page {size:80mm ${height}mm;margin:0;}`;
+        doc.head.appendChild(page);
+      }
       win.addEventListener('afterprint', cleanup, {once:true});
       window.setTimeout(cleanup, 300000);
       win.focus();
@@ -129,7 +136,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
       console.error('[Print] Failed:', error);
       setPrintError("Printer oynasi ochilmadi. CRM-AvtoPrint yorlig'idan oching yoki PDF nusxasidan foydalaning.");
     }
-  }, [printFormat]);
+  }, [printFormat, receipt, storeInfo, showPrices]);
 
   React.useEffect(() => {
     if (!autoPrint || !receipt || autoPrintedReceipt.current === receipt) return;
