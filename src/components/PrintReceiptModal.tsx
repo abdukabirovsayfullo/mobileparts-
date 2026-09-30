@@ -47,19 +47,99 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
+
+  const [printError, setPrintError] = useState('');
+  const printingRef = React.useRef(false);
+
+  const handlePrint = React.useCallback(async () => {
+    if (printingRef.current) return;
+    const source = document.getElementById('printable-receipt');
+    if (!source) return;
+    printingRef.current = true;
+    setPrintError('');
+    const frame = document.createElement('iframe');
+    frame.title = 'Chek chop etish';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:800px;height:600px;border:0';
+    document.body.appendChild(frame);
+    const cleanup = () => {
+      frame.remove();
+      printingRef.current = false;
+    };
+    try {
+      const doc = frame.contentDocument!;
+      const win = frame.contentWindow!;
+      doc.open();
+      doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Chek</title></head><body></body></html>');
+      doc.close();
+      const clone = source.cloneNode(true) as HTMLElement;
+      // Capture the visible receipt only, without CRM print rules or modal ancestors.
+      const originals = [source, ...Array.from(source.querySelectorAll('*'))];
+      const copies = [clone, ...Array.from(clone.querySelectorAll('*'))];
+      originals.forEach((node, index) => {
+        const computed = window.getComputedStyle(node);
+        const target = copies[index] as HTMLElement;
+        for (let i = 0; i < computed.length; i++) {
+          const property = computed[i];
+          if (!['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height'].includes(property)) {
+            target.style.setProperty(property, computed.getPropertyValue(property));
+          }
+        }
+      });
+      const thermal = printFormat === 'pos';
+      doc.body.appendChild(clone);
+      const style = doc.createElement('style');
+      style.textContent = `
+        html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
+        #printable-receipt {
+          box-sizing: border-box !important; width: ${thermal ? '80mm' : '190mm'} !important;
+          max-width: none !important; margin: 0 !important; padding: ${thermal ? '3mm 4mm 5mm' : '0'} !important;
+          border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+          font-family: Arial, sans-serif !important; font-size: ${thermal ? '11px' : '12px'} !important;
+        }
+        #printable-receipt * {
+          color: black !important; background-color: transparent !important;
+          box-shadow: none !important; text-shadow: none !important;
+          border-color: black !important; overflow-wrap: anywhere !important;
+          min-width: 0 !important;
+          font-family: Arial, sans-serif !important;
+        }
+        #printable-receipt .flex { gap: 2mm !important; }
+        #printable-receipt .flex > span:last-child { text-align: right; }
+        #printable-receipt tr { break-inside: avoid; }
+        #printable-receipt thead { display: table-header-group !important; }
+        #printable-receipt svg { width: 12px !important; height: 12px !important; }
+      `;
+      doc.head.appendChild(style);
+      await doc.fonts.ready;
+      await new Promise<void>(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve())));
+      // A custom roll page avoids a fixed 297 mm tail on short receipts.
+      const heightMm = Math.max(50, Math.ceil(clone.getBoundingClientRect().height * 25.4 / 96) + 2);
+      style.textContent += `@page { size: ${thermal ? '80mm ' + heightMm + 'mm' : 'A4'}; margin: ${thermal ? '0' : '10mm'}; }`;
+      win.addEventListener('afterprint', cleanup, { once: true });
+      // Fallback for browsers that do not dispatch afterprint.
+      window.setTimeout(cleanup, 300000);
+      win.focus();
+      win.print();
+    } catch (error) {
+      cleanup();
+      console.error('[Print] Receipt printing failed:', error);
+      setPrintError("Chop etish oynasi ochilmadi. Qayta urinib ko'ring.");
+    }
+  }, [printFormat]);
+
   // Auto-print when autoPrint is enabled (e.g. for incoming Telegram Mini App orders)
   React.useEffect(() => {
     if (autoPrint && receipt) {
       const timer = setTimeout(() => {
         try {
-          window.print();
+          void handlePrint();
         } catch (e) {
           console.warn('[Print] Auto-print window.print error:', e);
         }
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [autoPrint, receipt]);
+  }, [autoPrint, receipt, handlePrint]);
 
   if (!receipt) return null;
 
@@ -72,9 +152,6 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     onToggleShowPrices?.(next);
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
 
   const handleDownloadPdf = () => {
     setDownloadingPdf(true);
@@ -89,7 +166,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
       triggerPdfDownload(doc, `${prefix}_${cleanNum}.pdf`);
     } catch (err) {
       console.error('PDF error:', err);
-      window.print();
+      void handlePrint();
     } finally {
       setTimeout(() => setDownloadingPdf(false), 500);
     }
@@ -228,7 +305,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                 }`}
               >
                 <Receipt className="w-3.5 h-3.5" />
-                <span>Termo Chek</span>
+                <span>Xprinter XP-80 (80 mm)</span>
               </button>
               <button
                 type="button"
@@ -329,6 +406,15 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
             {!showPrices ? "Ta'minotchi rejimi (Narxlarsiz tovar ro'yxati)" : "Kassa rejimi (To'liq hisob-kitob)"}
           </div>
         </div>
+
+        {printFormat === 'pos' && (
+          <div className="no-print px-5 py-2 bg-amber-50 text-xs text-stone-800">
+            Xprinter XP-80 • 80 mm rulon, 72 mm chek maydoni.
+            Chop etishda XP-80, 80 mm qog'oz, 100% masshtab va hoshiyasiz rejimni tanlang.
+            Brauzer sarlavha va taglavhalarini o'chiring. Sozlamalar brauzer va printer drayverida saqlanadi.
+          </div>
+        )}
+        {printError && <div role="alert" className="no-print px-5 py-2 text-sm text-red-700">{printError}</div>}
 
         {/* Printable View Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-stone-200 flex justify-center">
