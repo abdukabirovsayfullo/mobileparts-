@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { DebtRecord, PaymentMethod } from '../types';
 import { STORE_INFO } from '../data/initialData';
+import { customerDebtTotal } from '../utils/saleAccounting';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
 import { 
   BookOpen, 
@@ -344,6 +345,10 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                       {formatMoney(debt.remainingAmount)} so'm
                     </span>
                   </div>
+                  <div className="flex justify-between font-black text-red-700 border-t border-stone-200 pt-1">
+                    <span>Mijozning jami qarzi:</span>
+                    <span>{formatMoney(customerDebtTotal(debts, debt.customerName) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))} so'm</span>
+                  </div>
                 </div>
 
                 {/* Due Date & Notes */}
@@ -441,6 +446,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
                       <td className="py-3 px-4 text-right font-black text-amber-600 whitespace-nowrap">
                         {formatMoney(debt.remainingAmount)}
+                        <div className="text-[10px] text-red-700">Mijoz jami: {formatMoney(customerDebtTotal(debts, debt.customerName) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))}</div>
                       </td>
 
                       <td className="py-3 px-4 whitespace-nowrap">
