@@ -33,6 +33,7 @@ import { TelegramMiniAppView } from './components/TelegramMiniAppView';
 import { TelegramOrdersManagementView } from './components/TelegramOrdersManagementView';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary } from './utils/saleAccounting';
 import { 
   RotateCcw, Smartphone, ShieldCheck, HelpCircle, Monitor, Lock, ShieldAlert,
   ShoppingBag, ArrowDownLeft, Package, BookOpen, SlidersHorizontal, X, Truck, BarChart3, Calculator, FileText, KeyRound, FileSpreadsheet, Camera, Code2, Sparkles
@@ -658,12 +659,13 @@ export default function App() {
         unitPrice: item.unitPrice,
         total: item.totalRevenue
       })),
-      subtotal: totalRev,
+      subtotal: totalRev + relatedMovements.reduce((sum, row) => sum + (row.discountAmount || 0), 0),
       total: totalRev,
       notes: m.notes,
       cashierName: 'Sayfullo (Hisobchi)',
       isReturn: isReturn,
-      returnReason: m.returnReason
+      returnReason: m.returnReason,
+      ...(!isReturn && m.type === 'chiqim' ? movementPaymentSummary(m, relatedMovements, debts) : {})
     };
 
     setActiveReceiptToPrint(receipt);
@@ -684,13 +686,18 @@ export default function App() {
     debtDetails?: {
       paidNow: number;
       dueDate: string;
+      discountAmount?: number;
+      receiptNumber?: string;
     }
   ) => {
     const nowISO = new Date().toISOString();
     const newMovements: StockMovement[] = [];
-    let saleTotalRevenue = 0;
+    const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const accounting = saleAccounting(items.map(item => item.quantity * item.unitPrice), debtDetails?.paidNow ?? (paymentMethod === 'nasiya' ? 0 : subtotal), debtDetails?.discountAmount);
+    const saleTotalRevenue = accounting.total;
+    const previousCustomerDebt = customerDebtTotal(debts, customerName);
     const batchId = `batch-${Date.now()}`;
-    const receiptNum = `PB-${nowISO.slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+    const receiptNum = debtDetails?.receiptNumber || `PB-${nowISO.slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
 
     setProducts((prevProducts) => {
       return prevProducts.map((p) => {
@@ -705,11 +712,11 @@ export default function App() {
       });
     });
 
-    items.forEach((item) => {
-      const totalRev = item.quantity * item.unitPrice;
+    items.forEach((item, index) => {
+      const line = accounting.lines[index];
+      const totalRev = line.revenue;
       const totalCost = item.quantity * item.product.purchasePrice;
       const profit = totalRev - totalCost;
-      saleTotalRevenue += totalRev;
 
       newMovements.push({
         id: `mov-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -722,6 +729,12 @@ export default function App() {
         unitPrice: item.unitPrice,
         totalCost,
         totalRevenue: totalRev,
+        discountAmount: line.discount,
+        paidAmount: line.paid,
+        debtRemaining: line.debt,
+        previousCustomerDebt,
+        customerTotalDebt: previousCustomerDebt + accounting.remaining,
+        debtDueDate: accounting.remaining > 0 ? debtDetails?.dueDate : undefined,
         profit,
         timestamp: nowISO,
         paymentMethod,
@@ -769,8 +782,8 @@ export default function App() {
     }
 
     // If Nasiya (Debt) or partial payment left as debt
-    if ((paymentMethod === 'nasiya' || (debtDetails && debtDetails.paidNow < saleTotalRevenue)) && debtDetails) {
-      const remaining = Math.max(0, saleTotalRevenue - debtDetails.paidNow);
+    if (accounting.remaining > 0 && debtDetails) {
+      const remaining = accounting.remaining;
       if (remaining > 0) {
         const newDebt: DebtRecord = {
           id: `debt-${Date.now()}`,
@@ -778,16 +791,16 @@ export default function App() {
           customerName,
           customerPhone: customerPhone || '+998',
           totalDebt: saleTotalRevenue,
-          paidAmount: debtDetails.paidNow,
+          paidAmount: accounting.paid,
           remainingAmount: remaining,
           dueDate: debtDetails.dueDate,
           createdAt: nowISO,
-          status: debtDetails.paidNow > 0 ? 'qisman_tolandi' : 'faol',
+          status: accounting.paid > 0 ? 'qisman_tolandi' : 'faol',
           notes: items.map((i) => `${i.product.name} (${i.quantity} ta)`).join(', '),
-          paymentHistory: debtDetails.paidNow > 0 ? [
+          paymentHistory: accounting.paid > 0 ? [
             {
               date: nowISO,
-              amount: debtDetails.paidNow,
+              amount: accounting.paid,
               method: 'naqd'
             }
           ] : []

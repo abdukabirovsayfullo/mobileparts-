@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, CustomerProfile } from '../types';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { PrintReceiptModal } from './PrintReceiptModal';
+import { customerDebtTotal } from '../utils/saleAccounting';
 import { 
   ArrowUpRight, 
   Search, 
@@ -53,6 +54,8 @@ interface ChiqimFormViewProps {
     debtDetails?: {
       paidNow: number;
       dueDate: string;
+      discountAmount?: number;
+      receiptNumber?: string;
     }
   ) => void;
   onPrintReceipt?: (movement: StockMovement) => void;
@@ -111,7 +114,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [quickPayMethod, setQuickPayMethod] = useState<'naqd' | 'click_payme'>('naqd');
 
   // Nasiya inputs if paymentMethod === 'nasiya'
-  const [nasiyaPaidNow, setNasiyaPaidNow] = useState<number>(0);
   const [nasiyaDueDate, setNasiyaDueDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() + 10);
@@ -129,7 +131,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const activeDebts = debts.filter(
       (d) => d.customerName.trim().toLowerCase() === cleanName && d.status !== 'yopildi'
     );
-    const totalDebt = activeDebts.reduce((sum, d) => sum + d.remainingAmount, 0);
+    const totalDebt = customerDebtTotal(debts, customerName);
 
     // Find known customer profile
     const customerRecord = customers.find(
@@ -312,11 +314,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
     // Determine how much is paid and if debt should be generated
     const effectivePaid = paymentMethod === 'nasiya'
-      ? (cashReceived || 0)
+      ? Math.min(Math.max(0, cashReceived || 0), grandTotalRevenue)
       : (cashReceived > 0 ? Math.min(cashReceived, grandTotalRevenue) : grandTotalRevenue);
     const effectiveRemainingDebt = Math.max(0, grandTotalRevenue - effectivePaid);
 
-    const willBeDebt = paymentMethod === 'nasiya' || effectiveRemainingDebt > 0;
+    const willBeDebt = effectiveRemainingDebt > 0;
+    const salePaymentMethod = willBeDebt ? 'nasiya' : paymentMethod === 'nasiya' ? 'naqd' : paymentMethod;
 
     const receiptNum = `PB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -326,17 +329,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
     onConfirmChiqim(
       cart,
-      willBeDebt ? 'nasiya' : paymentMethod,
+      salePaymentMethod,
       currentCustomer,
       currentPhone,
       currentAddress,
       saleNotesWithDiscount,
-      willBeDebt
-        ? {
-            paidNow: effectivePaid,
-            dueDate: nasiyaDueDate
-          }
-        : undefined
+      { paidNow: effectivePaid, dueDate: nasiyaDueDate, discountAmount, receiptNumber: receiptNum }
     );
 
     // If autoPrintReceipt is active, open the receipt modal immediately
@@ -347,7 +345,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         customerName: currentCustomer,
         customerPhone: currentPhone,
         customerAddress: currentAddress,
-        paymentMethod: willBeDebt ? 'nasiya' : paymentMethod,
+        paymentMethod: salePaymentMethod,
         items: cart.map((c) => ({
           id: c.product.id,
           name: c.product.name,
@@ -364,6 +362,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         cashierName: 'Sayfullo (Hisobchi)',
         isDebt: willBeDebt,
         debtRemaining: effectiveRemainingDebt,
+        previousCustomerDebt: customerDebtInfo.totalDebt,
+        customerTotalDebt: customerDebtInfo.totalDebt + effectiveRemainingDebt,
         debtDueDate: willBeDebt ? nasiyaDueDate : undefined,
         showPrices: receiptPriceView
       };
@@ -402,7 +402,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       subtotal: subtotalRevenue,
       discount: discountAmount,
       total: grandTotalRevenue,
-      paidAmount: cashReceived > 0 ? cashReceived : grandTotalRevenue,
+      paidAmount: paymentMethod === 'nasiya' ? Math.min(Math.max(0, cashReceived), grandTotalRevenue) : cashReceived > 0 ? Math.min(cashReceived, grandTotalRevenue) : grandTotalRevenue,
+      isDebt: unpaidRemaining > 0,
+      debtRemaining: unpaidRemaining,
+      previousCustomerDebt: customerDebtInfo.totalDebt,
+      customerTotalDebt: customerDebtInfo.totalDebt + unpaidRemaining,
+      debtDueDate: unpaidRemaining > 0 ? nasiyaDueDate : undefined,
       notes: notes,
       cashierName: 'Sayfullo (Hisobchi)',
       showPrices: showPricesOnly
@@ -929,7 +934,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     step="1000"
                     placeholder={`To'liq: ${grandTotalRevenue}`}
                     value={cashReceived || ''}
-                    onChange={(e) => setCashReceived(Number(e.target.value))}
+                    min="0"
+                    onChange={(e) => setCashReceived(Math.max(0, Number(e.target.value)))}
                     className="w-32 px-2 py-1 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                   <span className="text-[10px] text-stone-500 font-bold">so'm</span>
@@ -937,6 +943,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
 
               {/* Exact Change Calculation */}
+              <div className="space-y-1 text-xs font-bold border-t border-stone-200 pt-2">
+                <div className="flex justify-between"><span>Avvalgi qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt)} so'm</span></div>
+                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining)} so'm</span></div>
+                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(customerDebtInfo.totalDebt + unpaidRemaining)} so'm</span></div>
+              </div>
               {changeAmount > 0 && (
                 <div className="flex justify-between font-black text-amber-700 pt-1.5 border-t border-stone-200">
                   <span>Qaytim (sdacha):</span>
@@ -1224,8 +1235,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <input
                       type="number"
                       placeholder="0"
-                      value={nasiyaPaidNow || ''}
-                      onChange={(e) => setNasiyaPaidNow(Number(e.target.value))}
+                      min="0"
+                      value={cashReceived || ''}
+                      onChange={(e) => setCashReceived(Math.max(0, Number(e.target.value)))}
                       className="w-full px-2.5 py-1.5 bg-white border border-red-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none"
                     />
                   </div>
@@ -1427,6 +1439,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        if (onPrintReceipt) { onPrintReceipt(m); return; }
                         const rec: SaleReceiptData = {
                           receiptNumber: m.receiptNumber || `PB-${m.id.slice(-6)}`,
                           date: m.timestamp,

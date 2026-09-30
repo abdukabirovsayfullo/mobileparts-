@@ -27,6 +27,11 @@ export interface StockMovement {
   unitPrice: number;      // Sotish narxi (kirimda tan narxiga teng bo'lishi mumkin)
   priceType?: 'chakana' | 'optom' | 'maxsus';
   discountAmount?: number;// Qilingan chegirma summasi
+  paidAmount?: number; // Ushbu tovar uchun sotuv paytida to'langan qism
+  debtRemaining?: number; // Ushbu tovardan qolgan qarz
+  previousCustomerDebt?: number; // Savdo oldidan mijozning jami qarzi
+  customerTotalDebt?: number; // Savdo paytidagi jami qarzdorlik
+  debtDueDate?: string;
   totalCost: number;      // Jami tan narx (unitCost * quantity)
   totalRevenue: number;   // Jami tushum (unitPrice * quantity - discount)
   profit: number;         // Sof foyda = totalRevenue - totalCost
@@ -78,6 +83,8 @@ export interface SaleReceiptData {
   cashierName?: string;
   isDebt?: boolean;
   debtRemaining?: number;
+  previousCustomerDebt?: number;
+  customerTotalDebt?: number;
   debtDueDate?: string;
   isReturn?: boolean;
   returnReason?: string;
