@@ -49,7 +49,6 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
 
 
   const [printError, setPrintError] = useState('');
-  const autoSavedReceipt = React.useRef<SaleReceiptData | null>(null);
 
   const handleDownloadPdf = React.useCallback(() => {
     if (!receipt) return false;
@@ -74,17 +73,72 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     }
   }, [receipt, storeInfo, showPrices, printFormat]);
 
-  // Save once when a receipt opens, including automatic Telegram receipts.
-  // Recording success inside the timer avoids duplicate downloads in StrictMode.
+
+  const printingRef = React.useRef(false);
+  const autoPrintedReceipt = React.useRef<SaleReceiptData | null>(null);
+  const handlePrint = React.useCallback(async () => {
+    const source = document.getElementById('printable-receipt');
+    if (!source || printingRef.current) return;
+    printingRef.current = true;
+    setPrintError('');
+    const frame = document.createElement('iframe');
+    frame.title = 'XP-80 chek';
+    frame.style.cssText = 'position:fixed;left:0;top:0;width:80mm;height:1px;opacity:0;pointer-events:none;border:0';
+    document.body.appendChild(frame);
+    const cleanup = () => { frame.remove(); printingRef.current = false; };
+    try {
+      const doc = frame.contentDocument!;
+      const win = frame.contentWindow!;
+      const clone = source.cloneNode(true) as HTMLElement;
+      const originals = [source, ...Array.from(source.querySelectorAll('*'))];
+      const copies = [clone, ...Array.from(clone.querySelectorAll('*'))];
+      originals.forEach((node, index) => {
+        const computed = window.getComputedStyle(node);
+        const target = copies[index] as HTMLElement;
+        for (const property of Array.from(computed)) {
+          if (!['width','height','min-width','max-width','min-height','max-height'].includes(property)) {
+            target.style.setProperty(property, computed.getPropertyValue(property));
+          }
+        }
+      });
+      doc.body.appendChild(clone);
+      const style = doc.createElement('style');
+      style.textContent = `
+        html, body { margin:0!important; padding:0!important; background:white!important; }
+        #printable-receipt { box-sizing:border-box!important; width:${printFormat === 'pos' ? '80mm' : '190mm'}!important;
+          max-width:none!important; margin:0!important; padding:${printFormat === 'pos' ? '3mm 4mm 5mm' : '0'}!important;
+          border:0!important; border-radius:0!important; box-shadow:none!important; }
+        #printable-receipt * { color:black!important; background:transparent!important; border-color:black!important;
+          box-shadow:none!important; text-shadow:none!important; min-width:0!important; overflow-wrap:anywhere!important;
+          font-family:Arial,sans-serif!important; }
+        #printable-receipt .flex { gap:2mm!important; }
+        #printable-receipt tr { break-inside:avoid; }
+        #printable-receipt svg { width:12px!important; height:12px!important; }
+      `;
+      doc.head.appendChild(style);
+      // Never depend on requestAnimationFrame inside an invisible iframe.
+      await new Promise(resolve => window.setTimeout(resolve, 100));
+      const height = Math.max(50, Math.ceil(clone.getBoundingClientRect().height * 25.4 / 96) + 2);
+      style.textContent += `@page {size:${printFormat === 'pos' ? '80mm ' + height + 'mm' : 'A4'};margin:${printFormat === 'pos' ? '0' : '10mm'};}`;
+      win.addEventListener('afterprint', cleanup, {once:true});
+      window.setTimeout(cleanup, 300000);
+      win.focus();
+      win.print();
+    } catch (error) {
+      cleanup();
+      console.error('[Print] Failed:', error);
+      setPrintError("Printer oynasi ochilmadi. CRM-AvtoPrint yorlig'idan oching yoki PDF nusxasidan foydalaning.");
+    }
+  }, [printFormat]);
+
   React.useEffect(() => {
-    if (!receipt || autoSavedReceipt.current === receipt) return;
+    if (!autoPrint || !receipt || autoPrintedReceipt.current === receipt) return;
     const timer = window.setTimeout(() => {
-      if (handleDownloadPdf()) autoSavedReceipt.current = receipt;
+      autoPrintedReceipt.current = receipt;
+      void handlePrint();
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [receipt, handleDownloadPdf]);
-
-  const handlePrint = handleDownloadPdf;
+  }, [autoPrint, receipt, handlePrint]);
 
   if (!receipt) return null;
 
@@ -310,7 +364,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>PDF saqlash (Printer uchun)</span>
+              <span>Printerga chiqarish</span>
             </button>
 
             {/* Copy order list as text for Telegram / WhatsApp */}
@@ -332,8 +386,9 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
 
         {printFormat === 'pos' && (
           <div className="no-print px-5 py-2 bg-amber-50 text-xs text-stone-800">
-            Chek ochilganda 80 mm PDF avtomatik yuklab olinadi. PDF faylini ochib XP-80 printerini va 100% masshtabni tanlang.
-            Brauzerda “Har bir faylni saqlash joyini so'rash” yoqilgan bo'lsa, saqlash oynasi chiqadi.
+            Savdo tasdiqlangach chek avtomatik printerga yuboriladi. Oynasiz chiqarish uchun
+            CRM-AvtoPrint yorlig'idan kiring; XP-80 Windows asosiy printeri va qog'oz 80 mm bo'lsin.
+            Oddiy Chrome oynasida chop etish tasdig'i chiqadi.
           </div>
         )}
         {printError && <div role="alert" className="no-print px-5 py-2 text-sm text-red-700">{printError}</div>}
