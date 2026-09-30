@@ -92,6 +92,8 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
       'Tan narxi',
       'Sotish / Qaytarish narxi',
       'Jami summa',
+      "Sotuv paytida to'langan",
+      'Bu savdodan qarz',
       'To\'lov usuli',
       'Ta\'minotchi / Mijoz',
       'Qaytarish sababi / Izoh'
@@ -112,6 +114,8 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
         m.unitCost.toString(),
         m.unitPrice.toString(),
         (m.type === 'kirim' ? m.totalCost : m.totalRevenue).toString(),
+        m.paidAmount?.toString() ?? '',
+        m.debtRemaining?.toString() ?? '',
         m.paymentMethod || '-',
         m.counterparty,
         m.returnReason ? `${m.returnReason} | ${m.notes || ''}` : (m.notes || '')
@@ -325,6 +329,8 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
                     <span className={`text-sm font-black ${isVazvrat ? 'text-rose-600' : 'text-stone-950'}`}>
                       {isKirim ? formatMoney(m.totalCost) : isVazvrat ? `-${formatMoney(m.totalRevenue)}` : formatMoney(m.totalRevenue)}
                     </span>
+                    {!isKirim && !isVazvrat && m.paidAmount !== undefined && <div className="text-[11px] text-emerald-700">To'langan: {formatMoney(m.paidAmount)}</div>}
+                    {!isKirim && !isVazvrat && m.debtRemaining !== undefined && <div className="text-[11px] text-red-700">Qarz: {formatMoney(m.debtRemaining)}</div>}
                   </div>
                 </div>
 
@@ -502,6 +508,8 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
                             ? formatMoney(m.totalCost)
                             : formatMoney(m.totalRevenue)}
                         </span>
+                        {!isKirim && !isVazvrat && m.paidAmount !== undefined && <div className="text-[11px] text-emerald-700">To'langan: {formatMoney(m.paidAmount)}</div>}
+                        {!isKirim && !isVazvrat && m.debtRemaining !== undefined && <div className="text-[11px] text-red-700">Qarz: {formatMoney(m.debtRemaining)}</div>}
                       </td>
 
                       <td className="py-3 px-4 text-stone-700 whitespace-nowrap">
@@ -567,3 +575,4 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
     </div>
   );
 };
+
