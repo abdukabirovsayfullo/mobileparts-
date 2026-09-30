@@ -45,3 +45,54 @@ export function movementPaymentSummary(m: StockMovement, related: StockMovement[
     debtDueDate: m.debtDueDate || debt?.dueDate
   };
 }
+
+const DAY_MS = 86400000;
+
+/** Muddati o'tgan kunlar soni (muddati o'tmagan yoki yopilgan qarz uchun 0). */
+export function debtOverdueDays(debt: DebtRecord, now = Date.now()): number {
+  if (debt.status === 'yopildi') return 0;
+  const due = new Date(debt.dueDate).getTime();
+  if (isNaN(due)) return 0;
+  return Math.max(0, Math.floor((now - due) / DAY_MS));
+}
+
+export interface CustomerDebtSummary {
+  key: string;
+  name: string;
+  phone: string;
+  remaining: number;
+  paid: number;
+  activeCount: number;
+  maxOverdueDays: number;
+  nearestDue: string;
+}
+
+/** Faol qarzlarni mijoz bo'yicha jamlaydi (eng katta qarz birinchi). "Do'kon mijozi" alohida qatorlarda qoladi. */
+export function groupDebtsByCustomer(debts: DebtRecord[], now = Date.now()): CustomerDebtSummary[] {
+  const anonymous = cleanName("Do'kon mijozi");
+  const map = new Map<string, CustomerDebtSummary>();
+  for (const d of debts) {
+    if (d.status === 'yopildi' || d.remainingAmount <= 0) continue;
+    const name = cleanName(d.customerName);
+    const key = !name || name === anonymous ? `id:${d.id}` : name;
+    const overdue = debtOverdueDays(d, now);
+    const current = map.get(key);
+    if (!current) {
+      map.set(key, { key, name: d.customerName.trim(), phone: d.customerPhone, remaining: d.remainingAmount, paid: d.paidAmount, activeCount: 1, maxOverdueDays: overdue, nearestDue: d.dueDate });
+    } else {
+      current.remaining += d.remainingAmount;
+      current.paid += d.paidAmount;
+      current.activeCount += 1;
+      current.maxOverdueDays = Math.max(current.maxOverdueDays, overdue);
+      if (d.dueDate && (!current.nearestDue || d.dueDate < current.nearestDue)) current.nearestDue = d.dueDate;
+      if (!current.phone && d.customerPhone) current.phone = d.customerPhone;
+    }
+  }
+  return [...map.values()].sort((a, b) => b.remaining - a.remaining);
+}
+
+/** To'lovni qoldiq bilan cheklaydi: ortiqcha to'lov va manfiy summa qabul qilinmaydi. */
+export function clampDebtPayment(debt: DebtRecord, amount: number): number {
+  if (debt.status === 'yopildi' || !(amount > 0)) return 0;
+  return Math.min(amount, Math.max(0, debt.remainingAmount));
+}
