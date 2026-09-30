@@ -96,6 +96,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(true);
   // Toggle 'Price View' mode for sales receipt: true = full prices, false = only product names, quantities, and categories
   const [receiptPriceView, setReceiptPriceView] = useState<boolean>(true);
+  const [printOnOpen, setPrintOnOpen] = useState(false);
   const [receiptToPrint, setReceiptToPrint] = useState<SaleReceiptData | null>(null);
 
   // Mobile view tab toggle: 'catalog' vs 'cart'
@@ -374,6 +375,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         debtDueDate: willBeDebt ? nasiyaDueDate : undefined,
         showPrices: receiptPriceView
       };
+      setPrintOnOpen(true);
       setReceiptToPrint(generatedReceipt);
     }
 
@@ -415,6 +417,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     };
 
     setReceiptPriceView(showPricesOnly);
+    setPrintOnOpen(false);
     setReceiptToPrint(tempReceipt);
   };
 
@@ -1455,6 +1458,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           cashierName: 'Sayfullo (Hisobchi)',
                           showPrices: receiptPriceView
                         };
+                        setPrintOnOpen(false);
                         setReceiptToPrint(rec);
                       }}
                       className="p-1.5 bg-amber-50 hover:bg-amber-400 text-stone-800 hover:text-stone-950 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 font-bold text-[11px] border border-amber-200"
@@ -1475,9 +1479,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       {receiptToPrint && (
         <PrintReceiptModal
           receipt={receiptToPrint}
+          autoPrint={printOnOpen}
           showPrices={receiptPriceView}
           onToggleShowPrices={(val) => setReceiptPriceView(val)}
-          onClose={() => setReceiptToPrint(null)}
+          onClose={() => { setReceiptToPrint(null); setPrintOnOpen(false); }}
         />
       )}
 
