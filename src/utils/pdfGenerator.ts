@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { StoreSettings, OrderItem, Product, DebtRecord, SupplierDebtRecord, StockMovement, SaleReceiptData } from '../types';
 import { formatMoney } from './formatters';
@@ -930,5 +930,73 @@ export function generateReceiptPdf(params: GenerateReceiptPdfParams): jsPDF {
     );
   }
 
+  return doc;
+}
+
+/** Monochrome vector receipt sized for an 80 mm thermal roll. */
+export function generateThermalReceiptPdf(params: GenerateReceiptPdfParams): jsPDF {
+  const { receipt, storeInfo, showPrices } = params;
+  const measure = new jsPDF({ unit: 'mm', format: [80, 297] });
+  measure.setFont('helvetica', 'normal');
+  measure.setFontSize(9);
+  const lines: string[] = [];
+  const add = (value: string) => {
+    lines.push(...measure.splitTextToSize(sanitizeText(value), 72));
+  };
+  const separator = () => add('----------------------------------------');
+  add(storeInfo.name);
+  add(storeInfo.address);
+  add('Tel: ' + storeInfo.phone);
+  separator();
+  add(receipt.isReturn ? 'TOVAR QAYTARISH' : showPrices ? 'SAVDO CHEKI' : "BUYURTMA RO'YXATI");
+  add('Chek: ' + receipt.receiptNumber);
+  add('Sana: ' + receipt.date);
+  add('Kassir: ' + (receipt.cashierName || storeInfo.accountantName || ''));
+  add('Mijoz: ' + receipt.customerName);
+  if (receipt.customerPhone) add('Tel: ' + receipt.customerPhone);
+  if (receipt.customerAddress) add('Manzil: ' + receipt.customerAddress);
+  if (receipt.returnReason) add('Sabab: ' + receipt.returnReason);
+  separator();
+  receipt.items.forEach((item, index) => {
+    add(`${index + 1}. ${item.name}`);
+    if (item.category) add('Toifa: ' + item.category);
+    add(showPrices
+      ? `${item.quantity} dona x ${formatMoney(item.unitPrice)} = ${formatMoney(item.total)}`
+      : `${item.quantity} dona`);
+  });
+  separator();
+  if (showPrices) {
+    if (receipt.subtotal && receipt.subtotal > receipt.total) {
+      add('Mahsulotlar: ' + formatMoney(receipt.subtotal));
+      add('Chegirma: ' + formatMoney(receipt.subtotal - receipt.total));
+    }
+    add((receipt.isReturn ? "MIJOZGA TO'LANDI: " : 'JAMI: ') + formatMoney(receipt.total));
+    add("To'lov: " + receipt.paymentMethod);
+    if (receipt.paidAmount !== undefined) add('Berilgan pul: ' + formatMoney(receipt.paidAmount));
+    if (receipt.changeAmount) add('Qaytim: ' + formatMoney(receipt.changeAmount));
+    if (receipt.isDebt) {
+      add('Qarz: ' + formatMoney(receipt.debtRemaining || 0));
+      add('Muddati: ' + (receipt.debtDueDate || '-'));
+    }
+  } else {
+    add('Jami: ' + receipt.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0) + ' dona');
+  }
+  if (receipt.notes) add('Izoh: ' + receipt.notes);
+  separator();
+  add(receipt.isReturn ? 'Tovar qabul qilindi.' : 'Xaridingiz uchun rahmat!');
+  const step = 4;
+  const height = Math.min(297, Math.max(50, lines.length * step + 12));
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [80, height] });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  let y = 7;
+  for (const line of lines) {
+    if (y > height - 5) {
+      doc.addPage([80, height], 'portrait');
+      y = 7;
+    }
+    doc.text(line, 4, y);
+    y += step;
+  }
   return doc;
 }
