@@ -64,12 +64,14 @@ export function thermalReceiptHtml(receipt: SaleReceiptData, store: StoreSetting
         ${showPrices ? `
           ${summary(receipt.isReturn ? "Qaytarildi (so'm)" : "Jami (so'm)", receipt.total, true)}
           ${receipt.subtotal && receipt.subtotal > receipt.total ? summary('Chegirma', receipt.subtotal - receipt.total) : ''}
-          ${!receipt.isReturn ? summary(payment, receipt.paidAmount ?? (receipt.isDebt ? receipt.total - (receipt.debtRemaining || 0) : receipt.total)) : ''}
+          ${!receipt.isReturn ? summary("Hozir to'langan", receipt.paidAmount ?? (receipt.isDebt ? receipt.total - (receipt.debtRemaining || 0) : receipt.total)) : ''}
           ${receipt.changeAmount && !receipt.isReturn ? summary('Qaytim', receipt.changeAmount) : ''}
-          ${receipt.isDebt ? summary('Qarz', receipt.debtRemaining || 0) + line('Muddati:', receipt.debtDueDate || '-') : ''}
+          ${receipt.isDebt ? summary('Bu savdodan qarz', receipt.debtRemaining || 0) + line('Muddati:', receipt.debtDueDate || '-') : ''}
+          ${!receipt.isReturn && receipt.customerTotalDebt !== undefined ? (receipt.previousCustomerDebt !== undefined ? summary('Avvalgi qarz', receipt.previousCustomerDebt) : '') + summary('Jami qarzdorlik', receipt.customerTotalDebt, true) : ''}
         ` : line('Jami tovar:', units + ' dona')}
         ${receipt.notes ? line('Izoh:', receipt.notes) : ''}
       </div>
       <div class="footer">${receipt.isReturn ? 'Tovar qabul qilindi.' : 'Xaridingiz uchun rahmat!'}</div>
     </div></body></html>`;
 }
+
