@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { SaleReceiptData, StoreSettings } from '../types';
 import { STORE_INFO } from '../data/initialData';
 import { formatMoney, formatDate } from '../utils/formatters';
-import { generateReceiptPdf, triggerPdfDownload, openPdfInNewTab } from '../utils/pdfGenerator';
+import { generateReceiptPdf, generateThermalReceiptPdf, triggerPdfDownload, openPdfInNewTab } from '../utils/pdfGenerator';
 import { 
   Printer, 
   X, 
@@ -49,97 +49,42 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
 
 
   const [printError, setPrintError] = useState('');
-  const printingRef = React.useRef(false);
+  const autoSavedReceipt = React.useRef<SaleReceiptData | null>(null);
 
-  const handlePrint = React.useCallback(async () => {
-    if (printingRef.current) return;
-    const source = document.getElementById('printable-receipt');
-    if (!source) return;
-    printingRef.current = true;
+  const handleDownloadPdf = React.useCallback(() => {
+    if (!receipt) return false;
+    setDownloadingPdf(true);
     setPrintError('');
-    const frame = document.createElement('iframe');
-    frame.title = 'Chek chop etish';
-    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:800px;height:600px;border:0';
-    document.body.appendChild(frame);
-    const cleanup = () => {
-      frame.remove();
-      printingRef.current = false;
-    };
     try {
-      const doc = frame.contentDocument!;
-      const win = frame.contentWindow!;
-      doc.open();
-      doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Chek</title></head><body></body></html>');
-      doc.close();
-      const clone = source.cloneNode(true) as HTMLElement;
-      // Capture the visible receipt only, without CRM print rules or modal ancestors.
-      const originals = [source, ...Array.from(source.querySelectorAll('*'))];
-      const copies = [clone, ...Array.from(clone.querySelectorAll('*'))];
-      originals.forEach((node, index) => {
-        const computed = window.getComputedStyle(node);
-        const target = copies[index] as HTMLElement;
-        for (let i = 0; i < computed.length; i++) {
-          const property = computed[i];
-          if (!['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height'].includes(property)) {
-            target.style.setProperty(property, computed.getPropertyValue(property));
-          }
-        }
+      const doc = (printFormat === 'pos' ? generateThermalReceiptPdf : generateReceiptPdf)({
+        receipt, storeInfo: storeInfo || STORE_INFO, showPrices
       });
-      const thermal = printFormat === 'pos';
-      doc.body.appendChild(clone);
-      const style = doc.createElement('style');
-      style.textContent = `
-        html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
-        #printable-receipt {
-          box-sizing: border-box !important; width: ${thermal ? '80mm' : '190mm'} !important;
-          max-width: none !important; margin: 0 !important; padding: ${thermal ? '3mm 4mm 5mm' : '0'} !important;
-          border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
-          font-family: Arial, sans-serif !important; font-size: ${thermal ? '11px' : '12px'} !important;
-        }
-        #printable-receipt * {
-          color: black !important; background-color: transparent !important;
-          box-shadow: none !important; text-shadow: none !important;
-          border-color: black !important; overflow-wrap: anywhere !important;
-          min-width: 0 !important;
-          font-family: Arial, sans-serif !important;
-        }
-        #printable-receipt .flex { gap: 2mm !important; }
-        #printable-receipt .flex > span:last-child { text-align: right; }
-        #printable-receipt tr { break-inside: avoid; }
-        #printable-receipt thead { display: table-header-group !important; }
-        #printable-receipt svg { width: 12px !important; height: 12px !important; }
-      `;
-      doc.head.appendChild(style);
-      await doc.fonts.ready;
-      await new Promise<void>(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve())));
-      // A custom roll page avoids a fixed 297 mm tail on short receipts.
-      const heightMm = Math.max(50, Math.ceil(clone.getBoundingClientRect().height * 25.4 / 96) + 2);
-      style.textContent += `@page { size: ${thermal ? '80mm ' + heightMm + 'mm' : 'A4'}; margin: ${thermal ? '0' : '10mm'}; }`;
-      win.addEventListener('afterprint', cleanup, { once: true });
-      // Fallback for browsers that do not dispatch afterprint.
-      window.setTimeout(cleanup, 300000);
-      win.focus();
-      win.print();
+      const prefix = printFormat === 'pos' ? 'Chek-80mm' : 'Nakladnoy-A4';
+      const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
+      if (!triggerPdfDownload(doc, `${prefix}_${cleanNum}.pdf`)) {
+        throw new Error('PDF download failed');
+      }
+      return true;
     } catch (error) {
-      cleanup();
-      console.error('[Print] Receipt printing failed:', error);
-      setPrintError("Chop etish oynasi ochilmadi. Qayta urinib ko'ring.");
+      console.error('[PDF] Receipt download failed:', error);
+      setPrintError("PDF saqlanmadi. PDF tugmasini qayta bosing va brauzer yuklab olish ruxsatini tekshiring.");
+      return false;
+    } finally {
+      setDownloadingPdf(false);
     }
-  }, [printFormat]);
+  }, [receipt, storeInfo, showPrices, printFormat]);
 
-  // Auto-print when autoPrint is enabled (e.g. for incoming Telegram Mini App orders)
+  // Save once when a receipt opens, including automatic Telegram receipts.
+  // Recording success inside the timer avoids duplicate downloads in StrictMode.
   React.useEffect(() => {
-    if (autoPrint && receipt) {
-      const timer = setTimeout(() => {
-        try {
-          void handlePrint();
-        } catch (e) {
-          console.warn('[Print] Auto-print window.print error:', e);
-        }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [autoPrint, receipt, handlePrint]);
+    if (!receipt || autoSavedReceipt.current === receipt) return;
+    const timer = window.setTimeout(() => {
+      if (handleDownloadPdf()) autoSavedReceipt.current = receipt;
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [receipt, handleDownloadPdf]);
+
+  const handlePrint = handleDownloadPdf;
 
   if (!receipt) return null;
 
@@ -152,37 +97,15 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     onToggleShowPrices?.(next);
   };
 
-
-  const handleDownloadPdf = () => {
-    setDownloadingPdf(true);
-    try {
-      const doc = generateReceiptPdf({
-        receipt,
-        storeInfo: currentStore,
-        showPrices
-      });
-      const prefix = showPrices ? 'Chek-Nakladnoy' : 'Buyurtma-Royxati';
-      const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
-      triggerPdfDownload(doc, `${prefix}_${cleanNum}.pdf`);
-    } catch (err) {
-      console.error('PDF error:', err);
-      void handlePrint();
-    } finally {
-      setTimeout(() => setDownloadingPdf(false), 500);
-    }
-  };
-
   const handleOpenInNewTab = () => {
     try {
-      const doc = generateReceiptPdf({
-        receipt,
-        storeInfo: currentStore,
-        showPrices
+      const doc = (printFormat === 'pos' ? generateThermalReceiptPdf : generateReceiptPdf)({
+        receipt, storeInfo: currentStore, showPrices
       });
       openPdfInNewTab(doc);
-    } catch (err) {
-      console.error('PDF open error:', err);
-      window.print();
+    } catch (error) {
+      console.error('[PDF] Preview failed:', error);
+      setPrintError("PDF ochilmadi. PDF yuklab olish tugmasidan foydalaning.");
     }
   };
 
@@ -363,7 +286,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               disabled={downloadingPdf}
               onClick={handleDownloadPdf}
               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              title="A4 formatdagi toza PDF hujjatini yuklab olish"
+              title={printFormat === 'pos' ? "80 mm chek PDF faylini saqlash" : "A4 nakladnoy PDF faylini saqlash"}
             >
               <Download className="w-3.5 h-3.5" />
               <span>{downloadingPdf ? 'Yuklanmoqda...' : 'PDF Yuklab Olish'}</span>
@@ -387,7 +310,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Chop etish</span>
+              <span>PDF saqlash (Printer uchun)</span>
             </button>
 
             {/* Copy order list as text for Telegram / WhatsApp */}
@@ -409,9 +332,8 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
 
         {printFormat === 'pos' && (
           <div className="no-print px-5 py-2 bg-amber-50 text-xs text-stone-800">
-            Xprinter XP-80 • 80 mm rulon, 72 mm chek maydoni.
-            Chop etishda XP-80, 80 mm qog'oz, 100% masshtab va hoshiyasiz rejimni tanlang.
-            Brauzer sarlavha va taglavhalarini o'chiring. Sozlamalar brauzer va printer drayverida saqlanadi.
+            Chek ochilganda 80 mm PDF avtomatik yuklab olinadi. PDF faylini ochib XP-80 printerini va 100% masshtabni tanlang.
+            Brauzerda “Har bir faylni saqlash joyini so'rash” yoqilgan bo'lsa, saqlash oynasi chiqadi.
           </div>
         )}
         {printError && <div role="alert" className="no-print px-5 py-2 text-sm text-red-700">{printError}</div>}
