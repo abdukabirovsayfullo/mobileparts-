@@ -246,7 +246,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
     if (isDebtCase) {
       alert(
-        `Tovar kirimi omborga qabul qilindi! Ta'minotchidan ${formatMoney(effectiveDebtRemaining)} so'm qarzga olingani Ta'minotchi Qarz Daftariga kiritildi.`
+        `Tovar kirimi omborga qabul qilindi! Ta'minotchidan ${formatMoney(effectiveDebtRemaining)} qarzga olingani Ta'minotchi Qarz Daftariga kiritildi.`
       );
     } else {
       alert('Tovar kirimi muvaffaqiyatli qabul qilindi va omborga qo\'shildi!');

@@ -940,7 +940,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
                 {discountAmount > 0 && (
                   <div className="px-2 py-1 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded-lg font-black text-xs shrink-0">
-                    -{formatMoney(discountAmount)} so'm
+                    -{formatMoney(discountAmount)}
                   </div>
                 )}
               </div>
@@ -972,14 +972,14 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
               {/* Exact Change Calculation */}
               <div className="space-y-1 text-xs font-bold border-t border-stone-200 pt-2">
-                <div className="flex justify-between"><span>Avvalgi qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt)} so'm</span></div>
-                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining)} so'm</span></div>
-                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(customerDebtInfo.totalDebt + unpaidRemaining)} so'm</span></div>
+                <div className="flex justify-between"><span>Eski qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt)}</span></div>
+                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining)}</span></div>
+                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(customerDebtInfo.totalDebt + unpaidRemaining)}</span></div>
               </div>
               {changeAmount > 0 && (
                 <div className="flex justify-between font-black text-amber-700 pt-1.5 border-t border-stone-200">
                   <span>Qaytim (sdacha):</span>
-                  <span className="text-sm">{formatMoney(changeAmount)} so'm</span>
+                  <span className="text-sm">{formatMoney(changeAmount)}</span>
                 </div>
               )}
 
@@ -991,9 +991,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <span>BERILGAN PUL KAM: QOLGAN SUMMA QARZGA O'TADI!</span>
                   </div>
                   <div className="text-[11px] text-stone-700">
-                    Mijoz to'lagan: <strong className="text-emerald-700">{formatMoney(cashReceived)} so'm</strong>.
+                    Mijoz to'lagan: <strong className="text-emerald-700">{formatMoney(cashReceived)}</strong>.
                     <br />
-                    Qolgan qarz: <strong className="text-red-700 text-xs font-black">{formatMoney(unpaidRemaining)} so'm</strong> avtomatik ravishda Nasiya (Qarz) ro'yxatiga yoziladi.
+                    Qolgan qarz: <strong className="text-red-700 text-xs font-black">{formatMoney(unpaidRemaining)}</strong> avtomatik ravishda Nasiya (Qarz) ro'yxatiga yoziladi.
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-red-800 block mb-1">
@@ -1215,7 +1215,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       <span>OGOHLANTIRISH: Ushbu mijozda avvaldan to'lanmagan qarz bor!</span>
                     </div>
                     <span className="px-2.5 py-0.5 bg-red-600 text-white rounded-full font-black text-xs whitespace-nowrap shadow-xs">
-                      {formatMoney(customerDebtInfo.totalDebt)} so'm
+                      {formatMoney(customerDebtInfo.totalDebt)}
                     </span>
                   </div>
 
@@ -1230,7 +1230,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           </span>
                         </div>
                         <span className="font-black text-red-600">
-                          {formatMoney(d.remainingAmount)} so'm
+                          {formatMoney(d.remainingAmount)}
                         </span>
                       </div>
                     ))}
@@ -1358,11 +1358,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <div className="text-[10px] uppercase tracking-wider text-stone-400 font-bold">
                     {cart.length} xil / {cart.reduce((s, i) => s + i.quantity, 0)} dona
                   </div>
-                  <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue)} so'm</div>
+                  <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue)}</div>
                 </div>
                 {unpaidRemaining > 0 && (
                   <div className="text-right text-[10px] text-red-300 font-bold">
-                    Qarzga: {formatMoney(unpaidRemaining)} so'm
+                    Qarzga: {formatMoney(unpaidRemaining)}
                   </div>
                 )}
               </div>
@@ -1531,7 +1531,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
               <div className="flex justify-between text-stone-600">
                 <span>Qolgan jami qarz:</span>
-                <span className="font-black text-red-600 text-sm">{formatMoney(selectedDebtToPay.remainingAmount)} so'm</span>
+                <span className="font-black text-red-600 text-sm">{formatMoney(selectedDebtToPay.remainingAmount)}</span>
               </div>
             </div>
 

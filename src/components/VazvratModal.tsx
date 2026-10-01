@@ -387,7 +387,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
                 Mijozga Qaytariladigan Jami Summa:
               </div>
               <div className="text-xl sm:text-2xl font-black text-rose-700">
-                {formatMoney(totalRefund)} so'm
+                {formatMoney(totalRefund)}
               </div>
             </div>
             <div className="text-right text-[11px] text-rose-900/80">
@@ -515,7 +515,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
                 <div className="flex items-center gap-2">
                   <BookOpen className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>
-                    Ushbu mijozda <strong>{formatMoney(matchingCustomerDebt.remainingAmount)} so'm</strong> nasiya bor!
+                    Ushbu mijozda <strong>{formatMoney(matchingCustomerDebt.remainingAmount)}</strong> nasiya bor!
                   </span>
                 </div>
                 {paymentMethod !== 'nasiya' && (
@@ -572,7 +572,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
               className="px-6 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-98 disabled:opacity-50 text-white font-black shadow-lg shadow-rose-600/20 flex items-center gap-2 transition-all cursor-pointer text-xs"
             >
               <RotateCcw className="w-4 h-4 stroke-[2.5]" />
-              <span>Vazvratni Tasdiqlash ({formatMoney(totalRefund)} so'm)</span>
+              <span>Vazvratni Tasdiqlash ({formatMoney(totalRefund)})</span>
             </button>
           </div>
         </form>

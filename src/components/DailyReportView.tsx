@@ -439,7 +439,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                   Ushbu davrda mijozlar qaytargan tovarlar (Vazvrat)
                 </div>
                 <div className="text-xs text-rose-900/80 mt-0.5">
-                  Jami <strong>{totalVazvratQty} dona</strong> tovar qaytarilgan va <strong>{formatMoney(totalVazvratRevenue)} so'm</strong> pul qaytarilgan (Sof tushum va foydadan chegirildi)
+                  Jami <strong>{totalVazvratQty} dona</strong> tovar qaytarilgan va <strong>{formatMoney(totalVazvratRevenue)}</strong> pul qaytarilgan (Sof tushum va foydadan chegirildi)
                 </div>
               </div>
             </div>
@@ -641,7 +641,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
               </h3>
             </div>
             <span className="text-xs font-black text-rose-700 bg-white px-2.5 py-1 rounded-xl border border-rose-200">
-              Jami: {totalVazvratQty} dona • -{formatMoney(totalVazvratRevenue)} so'm
+              Jami: {totalVazvratQty} dona • -{formatMoney(totalVazvratRevenue)}
             </span>
           </div>
 
