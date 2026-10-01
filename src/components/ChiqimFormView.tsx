@@ -32,7 +32,8 @@ import {
   Package,
   Eye,
   EyeOff,
-  FileText
+  FileText,
+  SlidersHorizontal
 } from 'lucide-react';
 
 interface ChiqimFormViewProps {
@@ -101,6 +102,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [receiptPriceView, setReceiptPriceView] = useState<boolean>(true);
   const [printOnOpen, setPrintOnOpen] = useState(false);
   const [receiptToPrint, setReceiptToPrint] = useState<SaleReceiptData | null>(null);
+  const [showAdditional, setShowAdditional] = useState(false);
 
   // Mobile view tab toggle: 'catalog' vs 'cart'
   const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
@@ -856,7 +858,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
+                    onClick={() => {
+                      setPaymentMethod(m.id as PaymentMethod);
+                      if (m.id === 'nasiya') setShowAdditional(true);
+                    }}
                     className={`py-1.5 rounded-xl font-bold text-center cursor-pointer transition-colors ${
                       paymentMethod === m.id
                         ? m.id === 'nasiya'
@@ -871,8 +876,27 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
             </div>
 
+            {/* Optional checkout details */}
+            <button
+              type="button"
+              onClick={() => setShowAdditional((current) => !current)}
+              aria-expanded={showAdditional}
+              className="w-full flex items-center justify-between gap-3 p-3 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-left transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-stone-900 text-amber-400 flex items-center justify-center">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </span>
+                <span>
+                  <span className="block text-xs font-black text-stone-900">Qo'shimcha</span>
+                  <span className="block text-[10px] text-stone-500">Chegirma, mijoz, izoh va chek sozlamalari</span>
+                </span>
+              </span>
+              <ChevronDown className={`w-4 h-4 text-stone-500 transition-transform ${showAdditional ? 'rotate-180' : ''}`} />
+            </button>
+
             {/* Skitka (Chegirma qilish) - 5-talab */}
-            <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
+            {showAdditional && <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-stone-800 flex items-center gap-1.5">
                   <Percent className="w-3.5 h-3.5 text-amber-600" />
@@ -920,7 +944,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   </div>
                 )}
               </div>
-            </div>
+            </div>}
 
             {/* If Cash or partial payment: Amount Received & Auto-Debt Logic (1-talab) */}
             <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
@@ -935,7 +959,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     placeholder={`To'liq: ${grandTotalRevenue}`}
                     value={cashReceived || ''}
                     min="0"
-                    onChange={(e) => setCashReceived(Math.max(0, Number(e.target.value)))}
+                    onChange={(e) => {
+                      const nextAmount = Math.max(0, Number(e.target.value));
+                      setCashReceived(nextAmount);
+                      if (nextAmount > 0 && nextAmount < grandTotalRevenue) setShowAdditional(true);
+                    }}
                     className="w-32 px-2 py-1 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                   <span className="text-[10px] text-stone-500 font-bold">so'm</span>
@@ -980,10 +1008,24 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   </div>
                 </div>
               )}
+
+              {(paymentMethod === 'nasiya' || isUnderpaid) && (
+                <div className="pt-2 border-t border-stone-200">
+                  <label className="text-[10px] font-bold text-red-700 block mb-1">
+                    Qarzni qaytarish sanasi
+                  </label>
+                  <input
+                    type="date"
+                    value={nasiyaDueDate}
+                    onChange={(e) => setNasiyaDueDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white border border-red-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-red-400"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Customer & Delivery / Destination Information (Kimga & Qayerga) with CRM Memory & Debt Auto-Detection */}
-            <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200 space-y-3">
+            {showAdditional && <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs text-amber-950 flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-amber-700" />
@@ -1225,39 +1267,25 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               ) : null}
 
-              {/* If Nasiya: Additional Debt Details */}
-              {paymentMethod === 'nasiya' && (
-                <div className="pt-2 mt-1 border-t border-amber-200 grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] font-bold text-red-700 block mb-1">
-                      Hozir to'langan qismi (so'm)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="0"
-                      min="0"
-                      value={cashReceived || ''}
-                      onChange={(e) => setCashReceived(Math.max(0, Number(e.target.value)))}
-                      className="w-full px-2.5 py-1.5 bg-white border border-red-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-red-700 block mb-1">
-                      Qaytarish sanasi
-                    </label>
-                    <input
-                      type="date"
-                      value={nasiyaDueDate}
-                      onChange={(e) => setNasiyaDueDate(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-red-300 rounded-lg text-xs text-stone-900 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            </div>}
+
+            {showAdditional && (
+              <div className="p-3 bg-stone-50 rounded-xl border border-stone-200">
+                <label className="text-[10px] font-bold text-stone-700 block mb-1">
+                  Qo'shimcha izoh
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Savdo yoki mijoz haqida ixtiyoriy izoh..."
+                  className="w-full resize-none px-2.5 py-2 bg-white border border-stone-300 rounded-lg text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                />
+              </div>
+            )}
 
             {/* Chek va Nakladnoy Sozlamalari (Receipt & Order List Options) */}
-            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2.5">
+            {showAdditional && <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
                   {receiptPriceView ? (
@@ -1321,52 +1349,36 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 <Printer className="w-3.5 h-3.5 text-stone-500 shrink-0" />
                 <span>Sotuvdan so'ng darhol chek oynasini ochish</span>
               </label>
-            </div>
+            </div>}
 
-            {/* Summary details (Customer-safe & Transparent) */}
-            <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 space-y-1.5 text-xs">
-              <div className="flex justify-between text-stone-500">
-                <span>Tanlangan tovarlar:</span>
-                <span className="font-bold text-stone-700">
-                  {cart.length} xil / {cart.reduce((s, i) => s + i.quantity, 0)} dona
-                </span>
-              </div>
-              <div className="flex justify-between text-stone-500">
-                <span>Oraliq jami summa:</span>
-                <span className="font-bold text-stone-700">{formatMoney(subtotalRevenue)} so'm</span>
-              </div>
-              {discountAmount > 0 && (
-                <div className="flex justify-between text-emerald-700 font-bold">
-                  <span>Berilgan skitka (chegirma):</span>
-                  <span>-{formatMoney(discountAmount)} so'm</span>
+            {/* Sticky sale action panel */}
+            <div className="sticky bottom-16 lg:bottom-4 z-20 p-3 bg-stone-950/95 backdrop-blur rounded-2xl border border-stone-700 shadow-2xl space-y-2">
+              <div className="flex items-center justify-between gap-3 text-white">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-stone-400 font-bold">
+                    {cart.length} xil / {cart.reduce((s, i) => s + i.quantity, 0)} dona
+                  </div>
+                  <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue)} so'm</div>
                 </div>
-              )}
-              <div className="flex justify-between font-black text-base text-stone-900 pt-1.5 border-t border-stone-200">
-                <span>Yakuniy To'lov Summasi:</span>
-                <span className="text-amber-600 text-lg">{formatMoney(grandTotalRevenue)} so'm</span>
+                {unpaidRemaining > 0 && (
+                  <div className="text-right text-[10px] text-red-300 font-bold">
+                    Qarzga: {formatMoney(unpaidRemaining)} so'm
+                  </div>
+                )}
               </div>
-
-              {isUnderpaid && (
-                <div className="pt-1.5 border-t border-red-200 flex justify-between font-bold text-red-600 text-xs">
-                  <span>Qarzga o'tadigan summa:</span>
-                  <span className="font-black text-sm">{formatMoney(unpaidRemaining)} so'm</span>
-                </div>
-              )}
+              <button
+                type="submit"
+                disabled={cart.length === 0}
+                className={`w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  cart.length > 0
+                    ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md active:scale-[0.99]'
+                    : 'bg-stone-700 text-stone-400 cursor-not-allowed'
+                }`}
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                <span>Sotish</span>
+              </button>
             </div>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={cart.length === 0}
-              className={`w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                cart.length > 0
-                  ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md'
-                  : 'bg-stone-200 text-stone-400 cursor-not-allowed'
-              }`}
-            >
-              <CheckCircle2 className="w-5 h-5" />
-              <span>Chiqimni Tasdiqlash &amp; {autoPrintReceipt ? 'Chek Chiqarish' : 'Sotuvni Saqlash'}</span>
-            </button>
           </form>
         </div>
       </div>
