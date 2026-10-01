@@ -116,6 +116,7 @@ export default function App() {
   const [isSyncingWithServer, setIsSyncingWithServer] = useState(false);
   const serverSyncReadyRef = useRef(false);
   const applyingServerStateRef = useRef(false);
+  const serverRevisionRef = useRef<string | null>(null);
 
   // Telegram Mini App & Online Buyurtmalar holati
   const [onlineOrders, setOnlineOrders] = useState<OnlineOrder[]>(() => {
@@ -260,16 +261,11 @@ export default function App() {
         if (data.success && data.state) {
           applyingServerStateRef.current = true;
           const s = data.state;
+          serverRevisionRef.current = data.serverTimestamp || s.lastUpdated || null;
           const serverProducts = Array.isArray(s.products) ? removeDemoProducts(s.products) : [];
-          if (serverProducts.length > 0) {
-            setProducts(serverProducts);
-          }
-          if (Array.isArray(s.categories) && s.categories.length > 0) {
-            setCategories(s.categories);
-          }
-          if (Array.isArray(s.movements) && s.movements.length > 0) {
-            setMovements(s.movements);
-          }
+          setProducts(serverProducts);
+          if (Array.isArray(s.categories)) setCategories(s.categories);
+          if (Array.isArray(s.movements)) setMovements(s.movements);
           if (Array.isArray(s.debts)) {
             setDebts(s.debts);
           }
@@ -279,11 +275,6 @@ export default function App() {
           window.setTimeout(() => {
             applyingServerStateRef.current = false;
             serverSyncReadyRef.current = true;
-            // A fresh Render instance starts empty. Restore it from this
-            // device's genuine local catalog, never from bundled demo data.
-            if (serverProducts.length === 0 && products.length > 0) {
-              handleSyncWithServer(products);
-            }
           }, 0);
         }
       }
@@ -320,11 +311,17 @@ export default function App() {
           supplierDebts,
           categories,
           storeInfo,
+          baseRevision: serverRevisionRef.current,
           clientTimestamp: new Date().toISOString()
         })
       });
+      if (res.status === 409) {
+        await fetchLatestStateFromServer();
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        serverRevisionRef.current = data.serverTimestamp || data.state?.lastUpdated || serverRevisionRef.current;
         if (data.success && data.apiKey) {
           setApiKey(data.apiKey);
         }

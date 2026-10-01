@@ -205,7 +205,16 @@ apiV1Router.get('/sync', (_req: Request, res: Response) => {
 
 apiV1Router.post('/sync', (req: Request, res: Response) => {
   try {
-    const { products, movements, debts, supplierDebts, categories, storeInfo, clientTimestamp } = req.body;
+    const { products, movements, debts, supplierDebts, categories, storeInfo, baseRevision, clientTimestamp } = req.body;
+    const currentRevision = dataStore.getState().lastUpdated;
+
+    if (typeof baseRevision !== 'string' || baseRevision !== currentRevision) {
+      return res.status(409).json({
+        success: false,
+        error: "Brauzerdagi ma'lumot nusxasi eskirgan. Serverdagi eng yangi holat qayta yuklanadi.",
+        serverTimestamp: currentRevision
+      });
+    }
 
     const updatedState = dataStore.syncFromClient({
       products,

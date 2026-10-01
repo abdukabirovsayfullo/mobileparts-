@@ -754,7 +754,7 @@ class DataStore {
 
   // --- Sync with frontend ---
   public syncFromClient(clientData: Partial<PosDatabaseState>): PosDatabaseState {
-    if (Array.isArray(clientData.products) && clientData.products.length > 0) {
+    if (Array.isArray(clientData.products)) {
       this.state.products = clientData.products;
     }
     if (Array.isArray(clientData.movements)) {
@@ -769,7 +769,7 @@ class DataStore {
     if (Array.isArray(clientData.onlineOrders)) {
       this.state.onlineOrders = clientData.onlineOrders;
     }
-    if (Array.isArray(clientData.categories) && clientData.categories.length > 0) {
+    if (Array.isArray(clientData.categories)) {
       this.state.categories = clientData.categories;
     }
     if (clientData.storeInfo) {
