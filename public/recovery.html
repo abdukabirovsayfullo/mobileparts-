@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Mobileparts — lokal ma'lumotlarni tiklash</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: #0c0a09; color: #fafaf9; display: grid; place-items: center; padding: 20px; }
+      main { width: min(680px, 100%); background: #1c1917; border: 1px solid #44403c; border-radius: 24px; padding: 24px; box-shadow: 0 24px 70px rgba(0,0,0,.45); }
+      h1 { margin: 0 0 8px; font-size: clamp(24px, 5vw, 36px); }
+      p { color: #d6d3d1; line-height: 1.55; }
+      .badge { display: inline-flex; padding: 6px 10px; border-radius: 999px; background: #fbbf24; color: #1c1917; font-size: 12px; font-weight: 900; margin-bottom: 16px; }
+      .card { margin: 20px 0; padding: 18px; border-radius: 18px; border: 1px solid #57534e; background: #292524; }
+      .card.ok { border-color: #16a34a; background: #052e16; }
+      .card.empty { border-color: #dc2626; background: #450a0a; }
+      .count { font-size: clamp(32px, 8vw, 52px); font-weight: 950; color: #fbbf24; }
+      .meta { margin-top: 8px; color: #d6d3d1; font-size: 14px; }
+      button { width: 100%; border: 0; border-radius: 14px; padding: 15px 18px; background: #fbbf24; color: #1c1917; font-weight: 950; font-size: 16px; cursor: pointer; }
+      button:hover { background: #fcd34d; }
+      button:disabled { cursor: not-allowed; background: #57534e; color: #a8a29e; }
+      .warning { margin-top: 16px; padding: 12px 14px; border-radius: 14px; background: #292524; color: #fca5a5; font-size: 13px; line-height: 1.5; }
+      code { color: #fde68a; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="badge">XAVFSIZ TIKLASH REJIMI</div>
+      <h1>Mobileparts ma'lumotlarini chiqarish</h1>
+      <p>
+        Bu sahifa oddiy POS ilovasini ishga tushirmaydi va server bilan sinxronlashmaydi.
+        U faqat shu brauzer profilida saqlangan eski katalogni faylga chiqaradi.
+      </p>
+
+      <section id="result" class="card">
+        <div id="count" class="count">Tekshirilmoqda…</div>
+        <div id="details" class="meta"></div>
+      </section>
+
+      <button id="download" type="button" disabled>Tiklash faylini yuklab olish</button>
+
+      <div class="warning">
+        Fayl yuklangach brauzer tarixi, cookie yoki sayt ma'lumotlarini tozalamang.
+        Yuklangan <code>mobileparts-recovery-*.json</code> faylini Codex chatiga biriktiring.
+      </div>
+    </main>
+
+    <script>
+      (() => {
+        const keys = {
+          products: 'pb_beeline_products_v2',
+          movements: 'pb_beeline_movements_v2',
+          debts: 'pb_beeline_debts_v2',
+          supplierDebts: 'pb_beeline_supplier_debts_v2',
+          customers: 'pb_beeline_customers_v2',
+          categories: 'pb_beeline_categories_v2',
+          storeInfo: 'pb_beeline_store_info_v2',
+          onlineOrders: 'pb_beeline_online_orders_v1'
+        };
+
+        const readJson = (key, fallback) => {
+          const raw = localStorage.getItem(key);
+          if (!raw) return fallback;
+          try { return JSON.parse(raw); } catch { return fallback; }
+        };
+
+        const data = Object.fromEntries(
+          Object.entries(keys).map(([name, key]) => [name, readJson(key, name === 'storeInfo' ? {} : [])])
+        );
+        const products = Array.isArray(data.products) ? data.products : [];
+        const totalUnits = products.reduce((sum, product) => sum + (Number(product?.stock) || 0), 0);
+        const result = document.getElementById('result');
+        const count = document.getElementById('count');
+        const details = document.getElementById('details');
+        const download = document.getElementById('download');
+
+        if (products.length > 0) {
+          result.classList.add('ok');
+          count.textContent = `${products.length.toLocaleString('uz-UZ')} tur mahsulot topildi`;
+          details.textContent = `Jami qoldiq: ${totalUnits.toLocaleString('uz-UZ')} dona. Manba: ${location.origin}`;
+          download.disabled = false;
+        } else {
+          result.classList.add('empty');
+          count.textContent = 'Mahsulot topilmadi';
+          details.textContent = "To'g'ri kompyuter, brauzer va profil ochilganini tekshiring. Hozircha keshni tozalamang.";
+        }
+
+        download.addEventListener('click', () => {
+          const payload = {
+            recoveryVersion: 1,
+            exportedAt: new Date().toISOString(),
+            sourceOrigin: location.origin,
+            summary: { productTypes: products.length, totalUnits },
+            data
+          };
+          const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `mobileparts-recovery-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+        });
+      })();
+    </script>
+  </body>
+</html>
