@@ -33,7 +33,7 @@ import { TelegramMiniAppView } from './components/TelegramMiniAppView';
 import { TelegramOrdersManagementView } from './components/TelegramOrdersManagementView';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary } from './utils/saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
 import { 
   RotateCcw, Smartphone, ShieldCheck, HelpCircle, Monitor, Lock, ShieldAlert,
   ShoppingBag, ArrowDownLeft, Package, BookOpen, SlidersHorizontal, X, Truck, BarChart3, Calculator, FileText, KeyRound, FileSpreadsheet, Camera, Code2, Sparkles
@@ -1094,7 +1094,9 @@ export default function App() {
     setDebts((prev) =>
       prev.map((d) => {
         if (d.id === debtId) {
-          const newPaid = d.paidAmount + amount;
+          const accepted = clampDebtPayment(d, amount);
+          if (accepted <= 0) return d;
+          const newPaid = d.paidAmount + accepted;
           const newRemaining = Math.max(0, d.totalDebt - newPaid);
           const history = d.paymentHistory || [];
           return {
@@ -1106,7 +1108,7 @@ export default function App() {
               ...history,
               {
                 date: new Date().toISOString(),
-                amount,
+                amount: accepted,
                 method
               }
             ]
