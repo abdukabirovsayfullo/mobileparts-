@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { DebtRecord, PaymentMethod } from '../types';
 import { STORE_INFO } from '../data/initialData';
-import { customerDebtTotal } from '../utils/saleAccounting';
+import { customerDebtTotal, debtOverdueDays, groupDebtsByCustomer } from '../utils/saleAccounting';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
 import { 
   BookOpen, 
@@ -32,6 +32,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'barchasi' | 'faol' | 'yopildi'>('faol');
+  const [sortBy, setSortBy] = useState<'muddat' | 'summa' | 'yangi'>('muddat');
+  const [viewMode, setViewMode] = useState<'qarzlar' | 'mijozlar'>('qarzlar');
   
   // Payment modal state
   const [paymentModalDebt, setPaymentModalDebt] = useState<DebtRecord | null>(null);
@@ -58,10 +60,13 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
   const totalCollectedDebt = debts.reduce((sum, d) => sum + d.paidAmount, 0);
   const activeDebtorsCount = debts.filter((d) => d.status !== 'yopildi').length;
+  const overdueDebts = debts.filter((d) => debtOverdueDays(d) > 0);
+  const overdueTotal = overdueDebts.reduce((sum, d) => sum + d.remainingAmount, 0);
+  const customerSummaries = useMemo(() => groupDebtsByCustomer(debts), [debts]);
 
   // Filter debts
   const filteredDebts = useMemo(() => {
-    return debts.filter((d) => {
+    const list = debts.filter((d) => {
       if (statusFilter === 'faol' && d.status === 'yopildi') return false;
       if (statusFilter === 'yopildi' && d.status !== 'yopildi') return false;
 
@@ -75,7 +80,12 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
       }
       return true;
     });
-  }, [debts, statusFilter, searchQuery]);
+    const sorted = [...list];
+    if (sortBy === 'summa') sorted.sort((a, b) => b.remainingAmount - a.remainingAmount);
+    else if (sortBy === 'yangi') sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    else sorted.sort((a, b) => (a.status === 'yopildi' ? 1 : 0) - (b.status === 'yopildi' ? 1 : 0) || a.dueDate.localeCompare(b.dueDate));
+    return sorted;
+  }, [debts, statusFilter, searchQuery, sortBy]);
 
   const handleOpenPayment = (debt: DebtRecord) => {
     setPaymentModalDebt(debt);
@@ -92,7 +102,9 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   };
 
   const handleCopyReminder = (debt: DebtRecord) => {
-    const text = `Assalomu alaykum, ${debt.customerName}! Paxtaobod Beeline aksessuarlar markazidan olingan mahsulotlar bo'yicha ${formatMoney(debt.remainingAmount)} miqdoridagi nasiya to'lovini eslatib o'tamiz. To'lov muddati: ${debt.dueDate}. Murojaat uchun: ${STORE_INFO.phone}`;
+    const customerTotal = customerDebtTotal(debts, debt.customerName);
+    const totalLine = customerTotal > debt.remainingAmount ? ` Umumiy qarzdorligingiz: ${formatMoney(customerTotal)}.` : '';
+    const text = `Assalomu alaykum, ${debt.customerName}! ${STORE_INFO.name} do'konidan olingan mahsulotlar bo'yicha ${formatMoney(debt.remainingAmount)} miqdoridagi nasiya to'lovini eslatib o'tamiz.${totalLine} To'lov muddati: ${debt.dueDate}. Murojaat uchun: ${STORE_INFO.phone}`;
     navigator.clipboard.writeText(text);
     setCopiedId(debt.id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -192,14 +204,14 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
         <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
           <div className="flex justify-between items-center text-stone-500 text-xs font-bold uppercase">
-            <span>Qarzdorlar soni</span>
-            <BookOpen className="w-4 h-4 text-stone-400" />
+            <span>Muddati o'tgan qarzlar</span>
+            <BookOpen className="w-4 h-4 text-red-400" />
           </div>
-          <div className="text-2xl font-black text-stone-900 mt-2">
-            {activeDebtorsCount} kishi
+          <div className="text-2xl font-black text-red-600 mt-2">
+            {formatMoney(overdueTotal)}
           </div>
           <div className="text-xs text-stone-500 mt-1">
-            Paxtaobod Beeline doimiy mijozlari
+            {overdueDebts.length} ta qarz, {customerSummaries.length} ta mijoz faol qarzda
           </div>
         </div>
       </div>
@@ -247,6 +259,32 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
             </button>
           </div>
 
+          <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl text-xs font-bold">
+            <button
+              onClick={() => setViewMode('qarzlar')}
+              className={`px-3 py-1 rounded-lg cursor-pointer transition-colors ${viewMode === 'qarzlar' ? 'bg-stone-950 text-white' : 'text-stone-700'}`}
+            >
+              Qarzlar
+            </button>
+            <button
+              onClick={() => setViewMode('mijozlar')}
+              className={`px-3 py-1 rounded-lg cursor-pointer transition-colors ${viewMode === 'mijozlar' ? 'bg-stone-950 text-white' : 'text-stone-700'}`}
+            >
+              Mijozlar bo'yicha
+            </button>
+          </div>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'muddat' | 'summa' | 'yangi')}
+            className="px-2.5 py-1.5 bg-stone-100 text-stone-800 text-xs font-bold rounded-xl cursor-pointer focus:outline-none"
+            aria-label="Saralash"
+          >
+            <option value="muddat">Muddat bo'yicha</option>
+            <option value="summa">Summa bo'yicha</option>
+            <option value="yangi">Yangilari avval</option>
+          </select>
+
           <button
             onClick={handleExportCSV}
             className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -265,6 +303,50 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
         </div>
       </div>
 
+      {viewMode === 'mijozlar' && (
+        <div className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-stone-700">
+              <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
+                <tr>
+                  <th className="py-3 px-4">Mijoz</th>
+                  <th className="py-3 px-4">Telefon</th>
+                  <th className="py-3 px-4 text-center">Faol qarzlar</th>
+                  <th className="py-3 px-4 text-right">Jami qoldiq</th>
+                  <th className="py-3 px-4">Eng yaqin muddat</th>
+                  <th className="py-3 px-4">Holati</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {customerSummaries.length === 0 ? (
+                  <tr><td colSpan={6} className="py-8 text-center text-stone-400">Faol qarzi bor mijoz yo'q</td></tr>
+                ) : (
+                  customerSummaries
+                    .filter((c) => !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.phone.includes(searchQuery.trim()))
+                    .map((c) => (
+                      <tr key={c.key} className="hover:bg-stone-50/70">
+                        <td className="py-3 px-4 font-bold text-stone-900">{c.name}</td>
+                        <td className="py-3 px-4 whitespace-nowrap">{c.phone}</td>
+                        <td className="py-3 px-4 text-center">{c.activeCount}</td>
+                        <td className="py-3 px-4 text-right font-black text-red-600 whitespace-nowrap">{formatMoney(c.remaining)}</td>
+                        <td className="py-3 px-4 whitespace-nowrap">{c.nearestDue || '-'}</td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          {c.maxOverdueDays > 0 ? (
+                            <span className="bg-red-100 text-red-700 font-bold text-[10px] px-2 py-0.5 rounded">{c.maxOverdueDays} kun kechikdi</span>
+                          ) : (
+                            <span className="bg-amber-100 text-amber-800 font-bold text-[10px] px-2 py-0.5 rounded">Muddatida</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'qarzlar' && (<>
       {/* Mobile Debt Cards List (Telefonda Nasiya Kartalari) */}
       <div className="md:hidden space-y-3">
         {filteredDebts.length === 0 ? (
@@ -318,7 +400,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                     ) : isOverdue ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-700 animate-pulse">
                         <AlertCircle className="w-3 h-3" />
-                        <span>Kechikkan!</span>
+                        <span>{debtOverdueDays(debt)} kun kechikdi</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
@@ -333,21 +415,21 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                 <div className="bg-stone-50 rounded-xl p-3 border border-stone-200/80 space-y-1.5 text-xs">
                   <div className="flex justify-between items-center text-stone-600">
                     <span>Jami nasiya:</span>
-                    <span className="font-semibold text-stone-800">{formatMoney(debt.totalDebt)} so'm</span>
+                    <span className="font-semibold text-stone-800">{formatMoney(debt.totalDebt)}</span>
                   </div>
                   <div className="flex justify-between items-center text-stone-600">
                     <span>To'langan:</span>
-                    <span className="font-semibold text-emerald-700">{formatMoney(debt.paidAmount)} so'm ({percentPaid}%)</span>
+                    <span className="font-semibold text-emerald-700">{formatMoney(debt.paidAmount)} ({percentPaid}%)</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t border-stone-200">
                     <span className="font-bold text-stone-900">Qoldiq qarz:</span>
                     <span className="font-black text-sm text-red-600">
-                      {formatMoney(debt.remainingAmount)} so'm
+                      {formatMoney(debt.remainingAmount)}
                     </span>
                   </div>
                   <div className="flex justify-between font-black text-red-700 border-t border-stone-200 pt-1">
                     <span>Mijozning jami qarzi:</span>
-                    <span>{formatMoney(customerDebtTotal(debts, debt.customerName) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))} so'm</span>
+                    <span>{formatMoney(customerDebtTotal(debts, debt.customerName) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))}</span>
                   </div>
                 </div>
 
@@ -458,7 +540,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                         </div>
                         {isOverdue && (
                           <span className="text-[9px] text-red-600 font-bold uppercase tracking-wider">
-                            Muddati o'tgan!
+                            {debtOverdueDays(debt)} kun kechikdi
                           </span>
                         )}
                       </td>
@@ -512,6 +594,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
         </div>
       </div>
 
+      </>)}
+
       {/* Payment Acceptance Modal */}
       {paymentModalDebt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
@@ -561,6 +645,14 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   onChange={(e) => setPayAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
                 />
+              </div>
+
+              <div className="flex items-center gap-2 -mt-1">
+                <button type="button" onClick={() => setPayAmount(paymentModalDebt.remainingAmount)} className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 rounded-lg font-bold text-stone-700 cursor-pointer">To'liq</button>
+                <button type="button" onClick={() => setPayAmount(Math.floor(paymentModalDebt.remainingAmount / 2))} className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 rounded-lg font-bold text-stone-700 cursor-pointer">Yarmi</button>
+                <span className="ml-auto text-stone-500">
+                  Qoladi: <strong className="text-red-600">{formatMoney(Math.max(0, paymentModalDebt.remainingAmount - (payAmount || 0)))}</strong>
+                </span>
               </div>
 
               <div>

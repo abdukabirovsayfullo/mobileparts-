@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary } from './saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment } from './saleAccounting';
 import { thermalReceiptHtml } from './thermalReceiptHtml';
 import { DebtRecord, StockMovement, SaleReceiptData } from '../types';
 
@@ -62,4 +62,26 @@ test('1000 sale with 100 paid leaves 900 debt, and the next receipt prints it as
   const html = thermalReceiptHtml(r, { name: 'Test', address: '', phone: '', accountantName: '' }, true);
   for (const label of ['Eski qarz', 'Umumiy qarzdorlik']) assert.ok(html.includes(label));
   assert.ok(html.includes('1' + String.fromCharCode(160) + '400') || html.includes('1 400'));
+});
+
+test('overdue days, customer grouping and payment clamping', () => {
+  const now = new Date('2026-10-20T12:00:00Z').getTime();
+  const a = { ...debt(50000, 'Akromjon'), dueDate: '2026-10-10' };
+  const b = { ...debt(30000, ' akromjon '), dueDate: '2026-10-25' };
+  const c = { ...debt(70000, 'Rustam'), dueDate: '2026-10-30' };
+  const closed = { ...debt(0, 'Akromjon'), status: 'yopildi' as const };
+  assert.equal(debtOverdueDays(a, now), 10);
+  assert.equal(debtOverdueDays(b, now), 0);
+  assert.equal(debtOverdueDays(closed, now), 0);
+  const groups = groupDebtsByCustomer([a, b, c, closed], now);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].name, 'Akromjon');
+  assert.equal(groups[0].remaining, 80000);
+  assert.equal(groups[1].remaining, 70000);
+  assert.equal(groups[0].activeCount, 2);
+  assert.equal(groups[0].maxOverdueDays, 10);
+  assert.equal(groups[0].nearestDue, '2026-10-10');
+  assert.equal(clampDebtPayment(a, 999999), 50000);
+  assert.equal(clampDebtPayment(a, -5), 0);
+  assert.equal(clampDebtPayment(closed, 1000), 0);
 });
