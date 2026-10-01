@@ -7,6 +7,7 @@ import { apiV1Router } from "./server/apiV1";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PRIMARY_POS_URL = "https://77-81-138-243.sslip.io";
 
 // Security: Hide Express framework signature
 app.disable("x-powered-by");
@@ -15,6 +16,20 @@ app.disable("x-powered-by");
 app.use((_req: Request, res: Response, next: NextFunction) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-XSS-Protection", "1; mode=block");
+  next();
+});
+
+// The old Render deployment is kept only as a redirect so every bookmark and
+// installed shortcut lands on the owner's VPS, which is the single source of truth.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const rawHost = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || req.headers.host || "";
+  const hostname = rawHost.split(",")[0].trim().split(":")[0].toLowerCase();
+
+  if (hostname === "mobileparts-pos.onrender.com") {
+    return res.redirect(308, new URL(req.originalUrl, PRIMARY_POS_URL).toString());
+  }
+
   next();
 });
 
