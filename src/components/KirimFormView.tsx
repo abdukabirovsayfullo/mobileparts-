@@ -290,7 +290,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   return (
     <div className="space-y-6 pb-20">
       {/* Header Banner */}
-      <div className="bg-emerald-900 text-white rounded-3xl p-6 sm:p-8 shadow-lg border border-emerald-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
+      <div className="bg-emerald-900 text-white rounded-3xl p-4 sm:p-8 shadow-lg border border-emerald-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
         <div className="space-y-1 z-10">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/30 text-emerald-200 text-xs font-bold uppercase tracking-wider">
             <ArrowDownLeft className="w-3.5 h-3.5" />
@@ -299,7 +299,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
           <h2 className="text-2xl font-black tracking-tight text-white">
             Yangi Tovar Kirimi
           </h2>
-          <p className="text-xs sm:text-sm text-emerald-200/90 max-w-xl">
+          <p className="hidden sm:block text-xs sm:text-sm text-emerald-200/90 max-w-xl">
             Ta'minotchidan yoki ulgurji bazadan yangi aksessuarlar kelganda kirim qiling. Tan narxi, sotish narxi va miqdori darhol omborga yoziladi.
           </p>
           <div className="pt-2 flex flex-wrap items-center gap-2">

@@ -296,14 +296,14 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
   return (
     <div className="space-y-6 pb-20">
       {/* Top Warehouse Valuation Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
-          <div className="text-xs font-bold text-stone-500 uppercase flex items-center justify-between">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-5 shadow-xs">
+          <div className="text-[10px] sm:text-xs font-bold text-stone-500 uppercase flex items-center justify-between">
             <span>Ombor Kapitali (Tan narxida)</span>
             {!isAdminUnlocked && <Lock className="w-3.5 h-3.5 text-amber-500" />}
           </div>
           {isAdminUnlocked ? (
-            <div className="text-2xl font-black text-stone-900 mt-2">
+            <div className="text-lg sm:text-2xl font-black text-stone-900 mt-2">
               {formatMoney(totalCapitalAtCost)}
             </div>
           ) : (
@@ -325,11 +325,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
-          <div className="text-xs font-bold text-stone-500 uppercase">
+        <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-5 shadow-xs">
+          <div className="text-[10px] sm:text-xs font-bold text-stone-500 uppercase">
             Kutilayotgan Umumiy Tushum
           </div>
-          <div className="text-2xl font-black text-amber-600 mt-2">
+          <div className="text-lg sm:text-2xl font-black text-amber-600 mt-2">
             {formatMoney(totalExpectedRetail)}
           </div>
           <div className="text-xs text-stone-500 mt-1">
@@ -337,12 +337,12 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
-          <div className="text-xs font-bold text-stone-500 uppercase flex items-center justify-between">
+        <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-5 shadow-xs">
+          <div className="text-[10px] sm:text-xs font-bold text-stone-500 uppercase flex items-center justify-between">
             <span>Yetarli Qoldiqdagi Tovarlar</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-black text-emerald-600 mt-2">
+          <div className="text-lg sm:text-2xl font-black text-emerald-600 mt-2">
             {products.length - lowStockCount} xil
           </div>
           <div className="text-xs text-stone-500 mt-1">
@@ -359,12 +359,12 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
               : 'border-stone-200 hover:border-amber-300'
           }`}
         >
-          <div className="text-xs font-bold text-stone-500 uppercase flex items-center justify-between">
+          <div className="text-[10px] sm:text-xs font-bold text-stone-500 uppercase flex items-center justify-between">
             <span>Tanqidiy Qoldiq (≤3 dona)</span>
             <AlertTriangle className={`w-4 h-4 ${criticalStockCount > 0 ? 'text-amber-500 animate-pulse' : 'text-stone-400'}`} />
           </div>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className={`text-2xl font-black ${criticalStockCount > 0 ? 'text-amber-600' : 'text-stone-900'}`}>
+            <span className={`text-lg sm:text-2xl font-black ${criticalStockCount > 0 ? 'text-amber-600' : 'text-stone-900'}`}>
               {criticalStockCount} ta tovar
             </span>
             {criticalStockCount > 0 && (
@@ -418,7 +418,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
           </div>
 
           {/* Action Buttons: Manage Categories & Add Product */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 lg:shrink-0 [&>button]:px-3 [&>button]:py-2 sm:[&>button]:px-3.5 sm:[&>button]:py-2.5">
             <button
               onClick={() => setIsCategoryManagerOpen(true)}
               className="px-3.5 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-stone-200"
@@ -737,14 +737,14 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => onQuickKirimForProduct(p)}
-                      className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+                      className="px-3.5 py-2.5 sm:px-2.5 sm:py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
                     >
                       <ArrowDownLeft className="w-3.5 h-3.5" />
                       <span>+ Kirim</span>
                     </button>
                     <button
                       onClick={() => handleOpenEdit(p)}
-                      className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg transition-colors cursor-pointer"
+                      className="p-2.5 sm:p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg transition-colors cursor-pointer"
                       title="Tahrirlash"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
@@ -755,7 +755,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                           onDeleteProduct(p.id);
                         }
                       }}
-                      className="p-1.5 bg-stone-100 hover:bg-red-50 text-stone-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
+                      className="p-2.5 sm:p-1.5 bg-stone-100 hover:bg-red-50 text-stone-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
                       title="O'chirish"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

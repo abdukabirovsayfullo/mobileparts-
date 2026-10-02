@@ -266,16 +266,16 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
   return (
     <div className="space-y-6 pb-20">
       {/* Top Banner & Context */}
-      <div className="bg-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-lg border border-stone-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
+      <div className="bg-stone-900 text-white rounded-3xl p-4 sm:p-8 shadow-lg border border-stone-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
         <div className="space-y-1.5 z-10">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 text-xs font-bold uppercase tracking-wider border border-amber-400/30">
             <Truck className="w-3.5 h-3.5" />
             <span>Ta'minotchilar Bilan Hisob-Kitob Daftari</span>
           </div>
-          <h2 className="text-2xl font-black tracking-tight text-white">
+          <h2 className="text-lg sm:text-2xl font-black tracking-tight text-white">
             Ta'minotchilardan Olingan Qarzlar (Bizning Qarzimiz)
           </h2>
-          <p className="text-xs sm:text-sm text-stone-300 max-w-xl">
+          <p className="hidden sm:block text-xs sm:text-sm text-stone-300 max-w-xl">
             Dilerlar va ulgurji ta'minotchilardan (Abu Saxiy, Malika, Ucell, Beeline optomchilar) nasiyaga olingan tovarlar partiyasi, to'langan summalar va qolgan qarzlar hisobi.
           </p>
         </div>

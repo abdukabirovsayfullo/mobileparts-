@@ -70,7 +70,7 @@ export const CashExpensePanel: React.FC<Props> = ({ user, cashRevenue }) => {
   };
 
   return (
-    <section className="mb-3 rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+    <section className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
       <button type="button" onClick={() => setExpanded(value => !value)} className="w-full p-3 sm:p-4 flex items-center gap-3 text-left">
         <span className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center"><BanknoteArrowDown className="w-5 h-5" /></span>
         <span className="min-w-0 flex-1">

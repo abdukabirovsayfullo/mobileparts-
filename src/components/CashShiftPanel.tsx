@@ -57,7 +57,7 @@ export const CashShiftPanel: React.FC<{ user: AuthUser }> = ({ user }) => {
     if (!response.ok) return window.alert(body.error || 'Smena qayta ochilmadi.');
     await load(openingCash);
   };
-  return <section className="mb-3 rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+  return <section className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
     <button type="button" onClick={() => { setExpanded(value => !value); if (!expanded) load(openingCash).catch(() => undefined); }} className="w-full p-3 sm:p-4 flex items-center gap-3 text-left">
       <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${data?.closedShift ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{data?.closedShift ? <CheckCircle2 className="w-5 h-5" /> : <LockKeyhole className="w-5 h-5" />}</span>
       <span className="flex-1"><span className="block text-sm font-black">Kassani yopish</span><span className="block text-[11px] text-stone-500">{data?.closedShift ? `Smena yopilgan • Farq ${formatMoney(data.closedShift.difference)}` : 'Kun oxirida sanalgan pulni tekshirish'}</span></span>

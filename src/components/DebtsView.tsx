@@ -175,13 +175,13 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   return (
     <div className="space-y-6 pb-16">
       {/* Top Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
+        <div className="col-span-2 sm:col-span-1 bg-white rounded-2xl border border-stone-200 p-3 sm:p-5 shadow-xs">
           <div className="flex justify-between items-center text-stone-500 text-xs font-bold uppercase">
             <span>Kutilayotgan Nasiya Qoldig'i</span>
             <AlertCircle className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="text-2xl font-black text-amber-600 mt-2">
+          <div className="text-lg sm:text-2xl font-black text-amber-600 mt-2">
             {formatMoney(totalRemainingDebt)}
           </div>
           <div className="text-xs text-stone-500 mt-1">
@@ -189,12 +189,12 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
+        <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-5 shadow-xs">
           <div className="flex justify-between items-center text-stone-500 text-xs font-bold uppercase">
             <span>Qaytarilgan / To'langan Qarzlar</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
-          <div className="text-2xl font-black text-emerald-600 mt-2">
+          <div className="text-lg sm:text-2xl font-black text-emerald-600 mt-2">
             {formatMoney(totalCollectedDebt)}
           </div>
           <div className="text-xs text-stone-500 mt-1">
@@ -202,12 +202,12 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
+        <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-5 shadow-xs">
           <div className="flex justify-between items-center text-stone-500 text-xs font-bold uppercase">
             <span>Muddati o'tgan qarzlar</span>
             <BookOpen className="w-4 h-4 text-red-400" />
           </div>
-          <div className="text-2xl font-black text-red-600 mt-2">
+          <div className="text-lg sm:text-2xl font-black text-red-600 mt-2">
             {formatMoney(overdueTotal)}
           </div>
           <div className="text-xs text-stone-500 mt-1">

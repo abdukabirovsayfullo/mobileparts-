@@ -142,7 +142,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-200">
       {/* Top Banner */}
-      <div className="bg-stone-900 text-white rounded-2xl p-6 border border-stone-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-stone-900 text-white rounded-2xl p-4 sm:p-6 border border-stone-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-stone-950 text-xs font-black tracking-wider uppercase">
@@ -150,16 +150,16 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
             </span>
             <span className="text-xs text-stone-400">Buxgalteriya & Kassa Sozlamalari</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight mt-1 text-white flex items-center gap-2">
+          <h1 className="text-lg sm:text-2xl font-black tracking-tight mt-1 text-white flex items-center gap-2">
             <Calculator className="w-6 h-6 text-amber-400" />
             <span>Hisobchi Paneli & Do'kon Sozlamalari</span>
           </h1>
-          <p className="text-sm text-stone-300 mt-1 max-w-2xl">
+          <p className="hidden sm:block text-sm text-stone-300 mt-1 max-w-2xl">
             Do'kon nomi, manzili, chekdagi ma'lumotlar, tovarlarning kirim (tan), optom va chakana narxlarini to'g'ridan-to'g'ri shu yerdan boshqaring.
           </p>
         </div>
 
-        <div className="bg-stone-950/80 p-3 rounded-xl border border-stone-800 text-right shrink-0">
+        <div className="bg-stone-950/80 p-3 rounded-xl border border-stone-800 text-left md:text-right shrink-0 w-full md:w-auto">
           <div className="text-[11px] text-stone-400 uppercase tracking-wider font-semibold">Korxona Sof Qoldig'i</div>
           <div className="text-lg font-black text-amber-400 mt-0.5">
             {formatMoney(netEnterpriseBalance)}

@@ -1517,7 +1517,7 @@ export default function App() {
         />
 
         {/* Main Container */}
-        <main className={`flex-1 w-full mx-auto px-2.5 sm:px-6 pt-3 sm:pt-6 pb-28 lg:pb-12 ${activeTab === 'chiqim' ? 'max-w-[1700px]' : 'max-w-7xl'}`}>
+        <main className={`flex-1 w-full mx-auto px-2.5 sm:px-6 pt-3 sm:pt-6 pb-28 lg:pb-12 overflow-x-clip ${activeTab === 'chiqim' ? 'max-w-[1700px]' : 'max-w-7xl'}`}>
         {activeTab === 'report' && (
           !isAdminUnlocked ? (
             <div className="py-16 px-4 text-center max-w-md mx-auto space-y-4">
@@ -1565,7 +1565,7 @@ export default function App() {
             <ChiqimFormView
               presetCustomer={presetCustomer}
               topSlot={
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-3 items-start">
             <CashExpensePanel
               user={authUser}
               cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
