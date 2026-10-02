@@ -98,7 +98,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [customerAddress, setCustomerAddress] = useState('Do\'kondan olib ketildi (Paxtaobod)');
   const [cashReceived, setCashReceived] = useState<number>(0);
   const [notes, setNotes] = useState('');
-  const [autoPrintReceipt, setAutoPrintReceipt] = useState(true);
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
   // Toggle 'Price View' mode for sales receipt: true = full prices, false = only product names, quantities, and categories
   const [receiptPriceView, setReceiptPriceView] = useState<boolean>(true);
   const [printOnOpen, setPrintOnOpen] = useState(false);
