@@ -24,7 +24,7 @@ import { formatMoney } from '../utils/formatters';
 import { STORE_INFO } from '../data/initialData';
 import { StoreSettings } from '../types';
 
-export type AccountingTab = 'report' | 'kirim' | 'chiqim' | 'journal' | 'stock' | 'debts' | 'supplier-debts' | 'hisobchi' | 'ai-analyst' | 'telegram-orders';
+export type AccountingTab = 'report' | 'kirim' | 'chiqim' | 'journal' | 'stock' | 'debts' | 'supplier-debts' | 'hisobchi' | 'ai-analyst' | 'telegram-orders' | 'customers';
 
 interface HeaderProps {
   activeTab: AccountingTab;

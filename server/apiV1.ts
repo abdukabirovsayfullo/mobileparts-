@@ -293,7 +293,9 @@ apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
   // Ishchi: tovar qaytarish va nasiya (faqat qidirish + to'lov qabul qilish; ro'yxat/jami/o'chirish yo'q)
   const canReturn = (req.path === '/returns/search' && req.method === 'GET') || (req.path === '/returns' && req.method === 'POST');
   const canUseDebts = (req.path === '/debts/lookup' && req.method === 'GET') || (/^\/debts\/[^/]+\/pay$/.test(req.path) && req.method === 'POST');
-  if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift || canReturn || canUseDebts) return next();
+  // Ishchi: doimiy mijozlarni ko'rish, qidirish va yangisini qo'shish (o'chirish va ommaviy import yo'q)
+  const canUseCustomers = req.path === '/customers' && (req.method === 'GET' || req.method === 'POST');
+  if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift || canReturn || canUseDebts || canUseCustomers) return next();
   return res.status(403).json({ success: false, error: 'Kassir uchun bu bo\'lim yopiq.' });
 });
 
@@ -568,6 +570,8 @@ apiV1Router.post('/sales', (req: Request, res: Response) => {
       employeeName: employee?.name
     });
 
+    dataStore.rememberSaleCustomer(customerName, customerPhone, customerAddress);
+
     res.status(201).json({
       success: true,
       message: "Savdo muvaffaqiyatli qayd etildi va kassa jurnaliga kiritildi",
@@ -646,6 +650,42 @@ apiV1Router.get('/debts/lookup', (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
   const query = typeof req.query.q === 'string' ? req.query.q : '';
   res.json({ success: true, data: dataStore.lookupDebts(query) });
+});
+
+// --- Doimiy mijozlar reestri ---
+apiV1Router.get('/customers', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  const query = typeof req.query.q === 'string' ? req.query.q : '';
+  res.json({ success: true, data: dataStore.listCustomers(query) });
+});
+
+apiV1Router.post('/customers', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  try {
+    const { name, phone, address, notes } = req.body || {};
+    res.status(201).json({ success: true, data: dataStore.upsertCustomer({ name, phone, address, notes }) });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || 'Mijoz saqlanmadi.' });
+  }
+});
+
+apiV1Router.post('/customers/import', requireOwner, (req: Request, res: Response) => {
+  const list = Array.isArray(req.body?.customers) ? req.body.customers.slice(0, 2000) : [];
+  let added = 0;
+  let skipped = 0;
+  const before = dataStore.listCustomers('', 100000).length;
+  for (const item of list) {
+    try { dataStore.upsertCustomer({ name: item?.name, phone: item?.phone, address: item?.address, notes: item?.notes }); } catch { skipped += 1; }
+  }
+  added = dataStore.listCustomers('', 100000).length - before;
+  res.json({ success: true, data: { added, skipped, total: dataStore.listCustomers('', 100000).length } });
+});
+
+apiV1Router.delete('/customers/:id', requireOwner, (req: Request, res: Response) => {
+  if (!dataStore.deleteCustomer(req.params.id)) return res.status(404).json({ success: false, error: 'Mijoz topilmadi.' });
+  res.json({ success: true });
 });
 
 apiV1Router.post('/debts/:id/pay', (req: Request, res: Response) => {

@@ -41,6 +41,7 @@ interface ChiqimFormViewProps {
   products: Product[];
   recentChiqimMovements: StockMovement[];
   topSlot?: React.ReactNode;
+  presetCustomer?: { name: string; phone: string; address: string; nonce: number } | null;
   customers?: CustomerProfile[];
   debts?: DebtRecord[];
   onConfirmChiqim: (
@@ -76,6 +77,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   products,
   recentChiqimMovements,
   topSlot,
+  presetCustomer,
   customers = [],
   debts = [],
   onConfirmChiqim,
@@ -159,6 +161,14 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         c.address.toLowerCase().includes(q)
     );
   }, [customerName, customers]);
+
+  // «Doimiy mijozlar» bo'limidan tanlangan mijoz sotuv formasiga to'ldiriladi
+  React.useEffect(() => {
+    if (!presetCustomer) return;
+    setCustomerName(presetCustomer.name);
+    setCustomerPhone(presetCustomer.phone || '+998 ');
+    setCustomerAddress(presetCustomer.address || 'Paxtaobod');
+  }, [presetCustomer?.nonce]);
 
   // Helper to select a customer
   const handleSelectCustomer = (c: CustomerProfile) => {

@@ -13,7 +13,7 @@ import {
   OnlineOrderStatus,
   SaleReceiptData
 } from '../src/types';
-import type { AuthUser, CashExpense, CashExpenseCategory, CashShift } from '../src/types';
+import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, CustomerProfile } from '../src/types';
 import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity } from './returnLogic';
 import { tashkentDate } from './expenseLogic';
 
@@ -56,6 +56,7 @@ export interface PosDatabaseState {
   onlineOrders: OnlineOrder[];
   expenses: CashExpense[];
   cashShifts: CashShift[];
+  customers: CustomerProfile[];
   telegramConfig?: TelegramConfig;
   lastUpdated: string;
 }
@@ -110,6 +111,7 @@ class DataStore {
           onlineOrders: Array.isArray(parsed.onlineOrders) ? parsed.onlineOrders : [],
           expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
           cashShifts: Array.isArray(parsed.cashShifts) ? parsed.cashShifts : [],
+          customers: Array.isArray(parsed.customers) ? parsed.customers : [],
           telegramConfig: parsed.telegramConfig || {
             botToken: process.env.TELEGRAM_BOT_TOKEN || '',
             chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -135,6 +137,7 @@ class DataStore {
       onlineOrders: [],
       expenses: [],
       cashShifts: [],
+      customers: [],
       telegramConfig: {
         botToken: process.env.TELEGRAM_BOT_TOKEN || '',
         chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -199,6 +202,72 @@ class DataStore {
     this.state.lastUpdated = new Date().toISOString();
     this.scheduleSave();
     return this.state.categories;
+  }
+
+  // --- Doimiy mijozlar reestri (serverda saqlanadi, Rahbar va ishchi uchun umumiy) ---
+  private static customerKey(name: string, phone: string): string {
+    const digits = (phone || '').replace(/\D/g, '');
+    return digits.length >= 9 ? `p:${digits.slice(-9)}` : `n:${normalizeName(name)}`;
+  }
+
+  private static isGenericCustomer(name: string): boolean {
+    const n = normalizeName(name);
+    return !n || n.includes('dokon mijozi') || n.includes("do'kon mijozi") || n.includes('chakana mijoz');
+  }
+
+  public listCustomers(query = '', limit = 200): CustomerProfile[] {
+    const tokens = normalizeName(query).split(' ').filter(Boolean);
+    const list = (this.state.customers || []).filter(c => {
+      if (tokens.length === 0) return true;
+      const text = normalizeName(`${c.name} ${c.phone} ${c.address}`);
+      return tokens.every(t => text.includes(t));
+    });
+    return list
+      .slice()
+      .sort((a, b) => (b.lastVisit || b.createdAt || '').localeCompare(a.lastVisit || a.createdAt || '') || a.name.localeCompare(b.name))
+      .slice(0, limit);
+  }
+
+  public upsertCustomer(input: { name: string; phone?: string; address?: string; notes?: string; visited?: boolean }): CustomerProfile {
+    const name = String(input.name || '').trim().slice(0, 80);
+    const phone = String(input.phone || '').trim().slice(0, 30);
+    const address = String(input.address || '').trim().slice(0, 160);
+    const notes = String(input.notes || '').trim().slice(0, 300);
+    if (name.length < 2) throw new Error("Mijoz ismi kamida 2 ta belgidan iborat bo'lishi kerak.");
+    if (DataStore.isGenericCustomer(name)) throw new Error("Umumiy nom (Do'kon mijozi) doimiy mijoz bo'la olmaydi.");
+    const now = new Date().toISOString();
+    this.state.customers ||= [];
+    const key = DataStore.customerKey(name, phone);
+    const existing = this.state.customers.find(c => DataStore.customerKey(c.name, c.phone) === key);
+    if (existing) {
+      existing.name = name;
+      if (phone.replace(/\D/g, '').length >= 9) existing.phone = phone;
+      if (address) existing.address = address;
+      if (notes) existing.notes = notes;
+      if (input.visited) existing.lastVisit = now;
+      this.scheduleSave();
+      return existing;
+    }
+    const customer: CustomerProfile = { id: `cust-${crypto.randomUUID()}`, name, phone, address, notes: notes || undefined, createdAt: now, lastVisit: input.visited ? now : undefined };
+    this.state.customers.push(customer);
+    this.scheduleSave();
+    return customer;
+  }
+
+  public deleteCustomer(id: string): boolean {
+    const before = (this.state.customers || []).length;
+    this.state.customers = (this.state.customers || []).filter(c => c.id !== id);
+    if (this.state.customers.length === before) return false;
+    this.scheduleSave();
+    return true;
+  }
+
+  /** Savdodan keyin: ismi va telefoni bor mijoz avtomatik reestrga qo'shiladi va oxirgi tashrifi yangilanadi. */
+  public rememberSaleCustomer(name?: string, phone?: string, address?: string): void {
+    const cleanName = String(name || '').trim();
+    if (DataStore.isGenericCustomer(cleanName) || cleanName.length < 2) return;
+    if (String(phone || '').replace(/\D/g, '').length < 9) return;
+    try { this.upsertCustomer({ name: cleanName, phone, address, visited: true }); } catch { /* reestr xatosi savdoga halal bermasin */ }
   }
 
   // --- Kassadan olingan pul (audit tarixi o'chirilmaydi) ---

@@ -36,6 +36,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { WorkerManagement } from './components/WorkerManagement';
 import { CashExpensePanel } from './components/CashExpensePanel';
 import { CashShiftPanel } from './components/CashShiftPanel';
+import { CustomersPanel } from './components/CustomersPanel';
 import { ReportsDashboard } from './components/ReportsDashboard';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
@@ -105,7 +106,8 @@ export default function App() {
   // If unlocked, default to 'report'; if locked for employee/cashier, default to 'chiqim'
   const [activeTabState, setActiveTabState] = useState<AccountingTab>('chiqim');
   // Ishchi faqat Kassa (sotuv) va Nasiya bo'limlarini ko'ra oladi. Boshqa bo'limga o'tishga urinish kassaga qaytaradi.
-  const WORKER_TABS: AccountingTab[] = ['chiqim', 'debts'];
+  const WORKER_TABS: AccountingTab[] = ['chiqim', 'debts', 'customers'];
+  const [presetCustomer, setPresetCustomer] = useState<{ name: string; phone: string; address: string; nonce: number } | null>(null);
   const isWorkerUser = authUser?.role === 'worker';
   const activeTab: AccountingTab = isWorkerUser && !WORKER_TABS.includes(activeTabState) ? 'chiqim' : activeTabState;
   const setActiveTab = (tab: AccountingTab) =>
@@ -1561,6 +1563,7 @@ export default function App() {
         {activeTab === 'chiqim' && (
           <>
             <ChiqimFormView
+              presetCustomer={presetCustomer}
               topSlot={
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
             <CashExpensePanel
@@ -1580,6 +1583,17 @@ export default function App() {
             />
 
           </>
+        )}
+
+        {activeTab === 'customers' && (
+          <CustomersPanel
+            isOwner={authUser?.role === 'owner'}
+            localCustomers={authUser?.role === 'owner' ? customers : []}
+            onPick={(customer) => {
+              setPresetCustomer({ name: customer.name, phone: customer.phone, address: customer.address, nonce: Date.now() });
+              setActiveTab('chiqim');
+            }}
+          />
         )}
 
         {activeTab === 'journal' && (
@@ -1839,6 +1853,7 @@ export default function App() {
           <div className="flex items-center justify-around">
             {([
               { label: 'Kassa', active: activeTab === 'chiqim', onClick: () => setActiveTab('chiqim') },
+              { label: 'Mijozlar', active: activeTab === 'customers', onClick: () => setActiveTab('customers') },
               { label: 'Nasiya', active: activeTab === 'debts', onClick: () => setActiveTab('debts') },
               { label: 'Qaytarish', active: false, onClick: () => handleOpenVazvratModal() },
               { label: 'Chiqish', active: false, onClick: () => handleAdminLock() }
