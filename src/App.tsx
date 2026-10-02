@@ -89,6 +89,18 @@ export default function App() {
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingTab, setPendingTab] = useState<AccountingTab | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Notebook ekranida chap menyuni yig'ish (tanlov shu qurilmada eslab qolinadi; standart: kichik ekranda yig'ilgan)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('mp_sidebar_collapsed');
+      if (saved !== null) return saved === '1';
+    } catch { /* localStorage mavjud emas */ }
+    return typeof window !== 'undefined' && window.innerWidth < 1500;
+  });
+  const setSidebarCollapsedPersist = (value: boolean) => {
+    setSidebarCollapsed(value);
+    try { localStorage.setItem('mp_sidebar_collapsed', value ? '1' : '0'); } catch { /* ignore */ }
+  };
 
   // If unlocked, default to 'report'; if locked for employee/cashier, default to 'chiqim'
   const [activeTabState, setActiveTabState] = useState<AccountingTab>('chiqim');
@@ -1465,10 +1477,22 @@ export default function App() {
         onOpenApiModal={() => setIsApiModalOpen(true)}
         isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
+        collapsed={sidebarCollapsed}
+        onCollapse={() => setSidebarCollapsedPersist(true)}
       />
+      {sidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsedPersist(false)}
+          title="Menyuni ochish"
+          className="no-print hidden lg:flex fixed top-3 left-3 z-50 w-10 h-10 items-center justify-center rounded-xl bg-stone-950 text-white shadow-lg hover:bg-stone-800"
+        >
+          <span className="text-xl leading-none">☰</span>
+        </button>
+      )}
 
       {/* Right Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
+      <div className={`flex-1 flex flex-col min-w-0 ${sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-64'}`}>
         {/* Sleek Top Bar */}
         <TopNavbar
           activeTab={activeTab}

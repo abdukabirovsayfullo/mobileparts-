@@ -641,7 +641,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         )}
 
         {/* Right Side: Sales Cart & Checkout (5 cols) */}
-        <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:block lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
+        <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-7rem)] lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
           {/* Mobile Back to Catalog Button */}
           <div className="lg:hidden flex items-center justify-between pb-2 border-b border-stone-100">
             <button
@@ -799,7 +799,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Checkout Form */}
-          <form onSubmit={handleFinalizeSale} className="border-t border-stone-100 pt-3 space-y-3 text-xs">
+          <form onSubmit={handleFinalizeSale} className="border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0">
+            <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             {/* Payment Method Selector */}
             <div>
               <label className="block font-semibold text-stone-700 mb-1">
@@ -1308,8 +1309,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </label>
             </div>}
 
-            {/* Sticky sale action panel */}
-            <div className="sticky bottom-16 lg:bottom-4 z-20 p-3 bg-stone-950/95 backdrop-blur rounded-2xl border border-stone-700 shadow-2xl space-y-2">
+            </div>
+            {/* Sale action panel: notebookda savat pastida qotib turadi, tarkibni yopmaydi */}
+            <div className="sticky bottom-16 lg:static lg:shrink-0 z-20 p-3 bg-stone-950/95 backdrop-blur rounded-2xl border border-stone-700 shadow-2xl space-y-2">
               <div className="flex items-center justify-between gap-3 text-white">
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-stone-400 font-bold">
