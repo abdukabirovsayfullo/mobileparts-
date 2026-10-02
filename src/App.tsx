@@ -1561,6 +1561,15 @@ export default function App() {
         {activeTab === 'chiqim' && (
           <>
             <ChiqimFormView
+              topSlot={
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+            <CashExpensePanel
+              user={authUser}
+              cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
+            />
+            <CashShiftPanel user={authUser} />
+            </div>
+              }
               products={products}
               recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}
               customers={customers}
@@ -1569,13 +1578,6 @@ export default function App() {
               onPrintReceipt={handlePrintMovementReceipt}
               onQuickPayPastDebt={handleAddDebtPayment}
             />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start mt-3">
-            <CashExpensePanel
-              user={authUser}
-              cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
-            />
-            <CashShiftPanel user={authUser} />
-            </div>
 
           </>
         )}

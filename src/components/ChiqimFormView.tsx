@@ -40,6 +40,7 @@ import {
 interface ChiqimFormViewProps {
   products: Product[];
   recentChiqimMovements: StockMovement[];
+  topSlot?: React.ReactNode;
   customers?: CustomerProfile[];
   debts?: DebtRecord[];
   onConfirmChiqim: (
@@ -74,6 +75,7 @@ interface ChiqimCartItem {
 export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   products,
   recentChiqimMovements,
+  topSlot,
   customers = [],
   debts = [],
   onConfirmChiqim,
@@ -462,6 +464,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
         {/* Left Side: Product Picker */}
         <div className={`${mobileTab === 'catalog' ? 'block' : 'hidden'} lg:block lg:col-span-7 xl:col-span-8 space-y-3`}>
+          {topSlot}
           {/* Price Mode Selector: Chakana vs Optom */}
           <div className="bg-stone-900 text-white rounded-2xl px-3 py-2 shadow-xs flex flex-wrap items-center justify-between gap-2.5 border border-stone-800">
             <div className="flex items-center gap-1.5">
@@ -694,7 +697,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Cart Items List with INLINE PRICE EDITING & QUICK OPTOM/CHAKANA BUTTONS */}
-          <div className="flex-1 min-h-[160px] max-h-[300px] lg:max-h-[38vh] overflow-y-auto divide-y divide-stone-100">
+          <div className="flex-1 lg:flex-none min-h-[120px] max-h-[300px] lg:max-h-[26vh] overflow-y-auto divide-y divide-stone-100">
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center p-6 text-center text-stone-400 space-y-1">
                 <ShoppingCart className="w-8 h-8 text-stone-300" />
@@ -818,8 +821,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     type="button"
                     onClick={() => {
                       setPaymentMethod(m.id as PaymentMethod);
-                      if (m.id === 'nasiya') setShowAdditional(true);
-                    }}
+                                          }}
                     className={`py-2.5 text-sm rounded-xl font-black text-center cursor-pointer transition-colors ${
                       paymentMethod === m.id
                         ? m.id === 'nasiya'
@@ -833,76 +835,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 ))}
               </div>
             </div>
-
-            {/* Optional checkout details */}
-            <button
-              type="button"
-              onClick={() => setShowAdditional((current) => !current)}
-              aria-expanded={showAdditional}
-              className="w-full flex items-center justify-between gap-3 p-3 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-left transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-stone-900 text-amber-400 flex items-center justify-center">
-                  <SlidersHorizontal className="w-4 h-4" />
-                </span>
-                <span>
-                  <span className="block text-xs font-black text-stone-900">Qo'shimcha</span>
-                  <span className="block text-[10px] text-stone-500">Chegirma, mijoz, izoh va chek sozlamalari</span>
-                </span>
-              </span>
-              <ChevronDown className={`w-4 h-4 text-stone-500 transition-transform ${showAdditional ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* Skitka (Chegirma qilish) - 5-talab */}
-            {showAdditional && <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-stone-800 flex items-center gap-1.5">
-                  <Percent className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Skitka (Chegirma berish):</span>
-                </span>
-                <div className="flex items-center bg-stone-200/80 p-0.5 rounded-lg text-[10px] font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setDiscountType('som')}
-                    className={`px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
-                      discountType === 'som' ? 'bg-white text-stone-950 shadow-xs' : 'text-stone-600'
-                    }`}
-                  >
-                    So'mda
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDiscountType('foiz')}
-                    className={`px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
-                      discountType === 'foiz' ? 'bg-white text-stone-950 shadow-xs' : 'text-stone-600'
-                    }`}
-                  >
-                    % Foizda
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder={discountType === 'som' ? "Chegirma so'mda (masalan: 15 000)" : "Chegirma foizda (masalan: 5)"}
-                    value={discountValue || ''}
-                    onChange={(e) => setDiscountValue(Math.max(0, Number(e.target.value)))}
-                    className="w-full px-2.5 py-1.5 bg-white border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  />
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-stone-400">
-                    {discountType === 'som' ? "so'm" : "%"}
-                  </span>
-                </div>
-                {discountAmount > 0 && (
-                  <div className="px-2 py-1 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded-lg font-black text-xs shrink-0">
-                    -{formatMoney(discountAmount)} so'm
-                  </div>
-                )}
-              </div>
-            </div>}
 
             {/* If Cash or partial payment: Amount Received & Auto-Debt Logic (1-talab) */}
             <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
@@ -920,7 +852,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     onChange={(e) => {
                       const nextAmount = Math.max(0, Number(e.target.value));
                       setCashReceived(nextAmount);
-                      if (nextAmount > 0 && nextAmount < grandTotalRevenue) setShowAdditional(true);
                     }}
                     className="w-32 px-2 py-1 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
@@ -930,14 +861,14 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
               {/* Exact Change Calculation */}
               <div className="space-y-1 text-xs font-bold border-t border-stone-200 pt-2">
-                <div className="flex justify-between"><span>Avvalgi qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt)} so'm</span></div>
-                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining)} so'm</span></div>
-                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(customerDebtInfo.totalDebt + unpaidRemaining)} so'm</span></div>
+                <div className="flex justify-between"><span>Avvalgi qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt)}</span></div>
+                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining)}</span></div>
+                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(customerDebtInfo.totalDebt + unpaidRemaining)}</span></div>
               </div>
               {changeAmount > 0 && (
                 <div className="flex justify-between font-black text-amber-700 pt-1.5 border-t border-stone-200">
                   <span>Qaytim (sdacha):</span>
-                  <span className="text-sm">{formatMoney(changeAmount)} so'm</span>
+                  <span className="text-sm">{formatMoney(changeAmount)}</span>
                 </div>
               )}
 
@@ -949,9 +880,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <span>BERILGAN PUL KAM: QOLGAN SUMMA QARZGA O'TADI!</span>
                   </div>
                   <div className="text-[11px] text-stone-700">
-                    Mijoz to'lagan: <strong className="text-emerald-700">{formatMoney(cashReceived)} so'm</strong>.
+                    Mijoz to'lagan: <strong className="text-emerald-700">{formatMoney(cashReceived)}</strong>.
                     <br />
-                    Qolgan qarz: <strong className="text-red-700 text-xs font-black">{formatMoney(unpaidRemaining)} so'm</strong> avtomatik ravishda Nasiya (Qarz) ro'yxatiga yoziladi.
+                    Qolgan qarz: <strong className="text-red-700 text-xs font-black">{formatMoney(unpaidRemaining)}</strong> avtomatik ravishda Nasiya (Qarz) ro'yxatiga yoziladi.
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-red-800 block mb-1">
@@ -983,7 +914,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
             </div>
 
             {/* Customer & Delivery / Destination Information (Kimga & Qayerga) with CRM Memory & Debt Auto-Detection */}
-            {showAdditional && <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200 space-y-3">
+            <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs text-amber-950 flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-amber-700" />
@@ -1173,7 +1104,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       <span>OGOHLANTIRISH: Ushbu mijozda avvaldan to'lanmagan qarz bor!</span>
                     </div>
                     <span className="px-2.5 py-0.5 bg-red-600 text-white rounded-full font-black text-xs whitespace-nowrap shadow-xs">
-                      {formatMoney(customerDebtInfo.totalDebt)} so'm
+                      {formatMoney(customerDebtInfo.totalDebt)}
                     </span>
                   </div>
 
@@ -1188,7 +1119,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           </span>
                         </div>
                         <span className="font-black text-red-600">
-                          {formatMoney(d.remainingAmount)} so'm
+                          {formatMoney(d.remainingAmount)}
                         </span>
                       </div>
                     ))}
@@ -1225,6 +1156,76 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               ) : null}
 
+            </div>
+
+            {/* Optional checkout details */}
+            <button
+              type="button"
+              onClick={() => setShowAdditional((current) => !current)}
+              aria-expanded={showAdditional}
+              className="w-full flex items-center justify-between gap-3 p-3 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-left transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-stone-900 text-amber-400 flex items-center justify-center">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </span>
+                <span>
+                  <span className="block text-xs font-black text-stone-900">Qo'shimcha</span>
+                  <span className="block text-[10px] text-stone-500">Chegirma, izoh va chek sozlamalari</span>
+                </span>
+              </span>
+              <ChevronDown className={`w-4 h-4 text-stone-500 transition-transform ${showAdditional ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Skitka (Chegirma qilish) - 5-talab */}
+            {showAdditional && <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-stone-800 flex items-center gap-1.5">
+                  <Percent className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Skitka (Chegirma berish):</span>
+                </span>
+                <div className="flex items-center bg-stone-200/80 p-0.5 rounded-lg text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('som')}
+                    className={`px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
+                      discountType === 'som' ? 'bg-white text-stone-950 shadow-xs' : 'text-stone-600'
+                    }`}
+                  >
+                    So'mda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('foiz')}
+                    className={`px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
+                      discountType === 'foiz' ? 'bg-white text-stone-950 shadow-xs' : 'text-stone-600'
+                    }`}
+                  >
+                    % Foizda
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder={discountType === 'som' ? "Chegirma so'mda (masalan: 15 000)" : "Chegirma foizda (masalan: 5)"}
+                    value={discountValue || ''}
+                    onChange={(e) => setDiscountValue(Math.max(0, Number(e.target.value)))}
+                    className="w-full px-2.5 py-1.5 bg-white border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-stone-400">
+                    {discountType === 'som' ? "so'm" : "%"}
+                  </span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="px-2 py-1 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded-lg font-black text-xs shrink-0">
+                    -{formatMoney(discountAmount)}
+                  </div>
+                )}
+              </div>
             </div>}
 
             {showAdditional && (
@@ -1311,8 +1312,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
             </div>
             {/* Sale action panel: notebookda savat pastida qotib turadi, tarkibni yopmaydi */}
-            <div className="sticky bottom-16 lg:static lg:shrink-0 z-20 p-3 bg-stone-950/95 backdrop-blur rounded-2xl border border-stone-700 shadow-2xl space-y-2">
-              <div className="flex items-center justify-between gap-3 text-white">
+            <div className="sticky bottom-16 lg:static lg:shrink-0 z-20 p-3 bg-stone-950/95 backdrop-blur rounded-2xl border border-stone-700 shadow-2xl space-y-2 lg:space-y-0 lg:flex lg:items-center lg:gap-3">
+              <div className="flex items-center justify-between gap-3 text-white lg:flex-col lg:items-start lg:justify-center lg:gap-0 lg:min-w-[40%]">
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-stone-400 font-bold">
                     {cart.length} xil / {cart.reduce((s, i) => s + i.quantity, 0)} dona
@@ -1321,14 +1322,14 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
                 {unpaidRemaining > 0 && (
                   <div className="text-right text-[10px] text-red-300 font-bold">
-                    Qarzga: {formatMoney(unpaidRemaining)} so'm
+                    Qarzga: {formatMoney(unpaidRemaining)}
                   </div>
                 )}
               </div>
               <button
                 type="submit"
                 disabled={cart.length === 0}
-                className={`w-full py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                className={`w-full lg:flex-1 py-3.5 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
                   cart.length > 0
                     ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md active:scale-[0.99]'
                     : 'bg-stone-700 text-stone-400 cursor-not-allowed'
@@ -1490,7 +1491,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
               <div className="flex justify-between text-stone-600">
                 <span>Qolgan jami qarz:</span>
-                <span className="font-black text-red-600 text-sm">{formatMoney(selectedDebtToPay.remainingAmount)} so'm</span>
+                <span className="font-black text-red-600 text-sm">{formatMoney(selectedDebtToPay.remainingAmount)}</span>
               </div>
             </div>
 
