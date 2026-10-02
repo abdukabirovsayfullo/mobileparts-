@@ -10,8 +10,8 @@ import {
   STORE_INFO 
 } from './data/initialData';
 import { Header, AccountingTab } from './components/Header';
-import { Sidebar } from './components/Sidebar';
-import { TopNavbar } from './components/TopNavbar';
+import { CompactSidebar as Sidebar } from './components/CompactSidebar';
+import { CompactTopNavbar as TopNavbar } from './components/CompactTopNavbar';
 import { DailyReportView } from './components/DailyReportView';
 import { KirimFormView } from './components/KirimFormView';
 import { ChiqimFormView } from './components/ChiqimFormView';
@@ -1437,7 +1437,7 @@ export default function App() {
       />
 
       {/* Right Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-72">
+      <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
         {/* Sleek Top Bar */}
         <TopNavbar
           activeTab={activeTab}
