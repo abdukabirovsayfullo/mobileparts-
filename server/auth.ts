@@ -111,6 +111,26 @@ function clearSessionCookie(res: Response): void {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
 
+/** Ishchi uchun Rahbar tasdig'i (masalan 7 kundan eski qaytarish). Muvaffaqiyatda Rahbar ismini qaytaradi. */
+export function verifyOwnerApproval(req: Request, pin: unknown): { ok: true; ownerName: string } | { ok: false; status: number; error: string } {
+  const attemptKey = `${clientIp(req)}:owner-approval`;
+  const attempt = failedLogins.get(attemptKey) || { count: 0, lockedUntil: 0 };
+  if (attempt.lockedUntil > Date.now()) {
+    return { ok: false, status: 429, error: `${Math.ceil((attempt.lockedUntil - Date.now()) / 1000)} soniyadan keyin qayta urinib ko'ring.` };
+  }
+  const value = String(pin || '').trim();
+  const owner = /^\d{4,8}$/.test(value)
+    ? authDatabase.users.find(user => user.role === 'owner' && user.active && verifyPin(value, user.pinHash))
+    : undefined;
+  if (!owner) {
+    const count = attempt.count + 1;
+    failedLogins.set(attemptKey, { count: count >= 5 ? 0 : count, lockedUntil: count >= 5 ? Date.now() + 60_000 : 0 });
+    return { ok: false, status: count >= 5 ? 429 : 403, error: count >= 5 ? "5 marta xato Rahbar PIN'i. 60 soniya kuting." : "Rahbar PIN'i noto'g'ri." };
+  }
+  failedLogins.delete(attemptKey);
+  return { ok: true, ownerName: owner.name };
+}
+
 export function getRequestUser(req: Request): AuthUser | undefined {
   return (req as Request & { authUser?: AuthUser }).authUser;
 }

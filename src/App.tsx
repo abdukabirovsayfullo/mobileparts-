@@ -23,6 +23,8 @@ import { HisobchiPanelView } from './components/HisobchiPanelView';
 import { PrintReceiptModal } from './components/PrintReceiptModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { VazvratModal } from './components/VazvratModal';
+import { WorkerReturnModal } from './components/WorkerReturnModal';
+import { WorkerDebtPanel } from './components/WorkerDebtPanel';
 import { ExcelImportModal } from './components/ExcelImportModal';
 import { PdfReportModal, PdfReportType } from './components/PdfReportModal';
 import { PhotoKirimModal } from './components/PhotoKirimModal';
@@ -95,6 +97,7 @@ export default function App() {
 
   // Vazvrat modal state
   const [isVazvratModalOpen, setIsVazvratModalOpen] = useState(false);
+  const [isWorkerReturnOpen, setIsWorkerReturnOpen] = useState(false);
   const [vazvratInitialMovement, setVazvratInitialMovement] = useState<StockMovement | undefined>(undefined);
 
   // Excel / CSV bulk import modal state
@@ -888,6 +891,10 @@ export default function App() {
 
   // Open Vazvrat Modal (Optionally pre-filled with an existing movement / sale)
   const handleOpenVazvratModal = (movement?: StockMovement) => {
+    if (authUser?.role === 'worker') {
+      setIsWorkerReturnOpen(true);
+      return;
+    }
     setVazvratInitialMovement(movement);
     setIsVazvratModalOpen(true);
   };
@@ -1552,7 +1559,11 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'debts' && (
+        {activeTab === 'debts' && !isAdminUnlocked && (
+          <WorkerDebtPanel onChanged={fetchLatestStateFromServer} />
+        )}
+
+        {activeTab === 'debts' && isAdminUnlocked && (
           <DebtsView
             debts={debts}
             onAddDebtPayment={handleAddDebtPayment}
@@ -1702,6 +1713,17 @@ export default function App() {
       <PWAInstallModal
         isOpen={isInstallModalOpen}
         onClose={() => setIsInstallModalOpen(false)}
+      />
+
+      {/* Ishchi uchun serverga yoziladigan tovar qaytarish */}
+      <WorkerReturnModal
+        isOpen={isWorkerReturnOpen && authUser?.role === 'worker'}
+        onClose={() => setIsWorkerReturnOpen(false)}
+        cashierName={authUser?.name || 'Kassir'}
+        onDone={(receipt) => {
+          fetchLatestStateFromServer();
+          if (receipt) setActiveReceiptToPrint(receipt);
+        }}
       />
 
       {/* Vazvrat Modal (Mijozdan tovar qaytarish) */}

@@ -40,6 +40,8 @@ export interface CashShift {
   uzumRevenue: number;
   debtRevenue: number;
   expenseTotal: number;
+  refundTotal?: number;      // Smenada naqd qaytarilgan summa (kutilgan naqddan ayriladi)
+  debtCashReceived?: number; // Smenada naqd qabul qilingan nasiya to'lovlari
   expectedCash: number;
   countedCash: number;
   difference: number;
@@ -98,6 +100,7 @@ export interface StockMovement {
   notes?: string;
   employeeId?: string;   // Savdoni amalga oshirgan xodim
   employeeName?: string;
+  approvedByName?: string; // 7 kundan eski qaytarishni tasdiqlagan Rahbar
 }
 
 export interface StoreSettings {
@@ -158,7 +161,9 @@ export interface DebtRecord {
   paymentHistory?: {
     date: string;
     amount: number;
-    method: 'naqd' | 'click_payme';
+    method: 'naqd' | 'click_payme' | 'vazvrat';
+    employeeId?: string;
+    employeeName?: string;
   }[];
 }
 

@@ -1,10 +1,11 @@
 import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
-import { dataStore } from './dataStore';
-import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession } from './auth';
+import { dataStore, OwnerApprovalRequiredError } from './dataStore';
+import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession, verifyOwnerApproval } from './auth';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 import { calculateShiftTotals } from './shiftLogic';
 import { buildReport, previousRange } from './reportLogic';
+import { summarizeReturns, RETURN_FLAG_DAILY_AMOUNT, RETURN_FLAG_DAILY_COUNT, WORKER_RETURN_WINDOW_DAYS } from './returnLogic';
 import { searchProducts } from '../src/utils/productSearch';
 import { 
   sendTelegramRawMessage, 
@@ -289,7 +290,10 @@ apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
   const canCreateSale = req.method === 'POST' && req.path === '/sales';
   const canUseExpenses = req.path === '/expenses' && (req.method === 'GET' || req.method === 'POST');
   const canUseCashShift = (req.path === '/cash-shifts/current' && req.method === 'GET') || (req.path === '/cash-shifts/close' && req.method === 'POST');
-  if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift) return next();
+  // Ishchi: tovar qaytarish va nasiya (faqat qidirish + to'lov qabul qilish; ro'yxat/jami/o'chirish yo'q)
+  const canReturn = (req.path === '/returns/search' && req.method === 'GET') || (req.path === '/returns' && req.method === 'POST');
+  const canUseDebts = (req.path === '/debts/lookup' && req.method === 'GET') || (/^\/debts\/[^/]+\/pay$/.test(req.path) && req.method === 'POST');
+  if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift || canReturn || canUseDebts) return next();
   return res.status(403).json({ success: false, error: 'Kassir uchun bu bo\'lim yopiq.' });
 });
 
@@ -334,7 +338,7 @@ apiV1Router.get('/cash-shifts/current', (req: Request, res: Response) => {
   const date = tashkentDate();
   const previous = dataStore.getCashShifts().find(item => item.employeeId === user.id && item.businessDate < date && !item.reopenedAt);
   const openingCash = Math.max(0, Math.round(Number(req.query.openingCash ?? previous?.leftForNextDay ?? 0)));
-  res.json({ success: true, businessDate: date, closedShift: dataStore.getClosedShift(user.id, date) || null, suggestedOpeningCash: previous?.leftForNextDay || 0, totals: calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, date, openingCash) });
+  res.json({ success: true, businessDate: date, closedShift: dataStore.getClosedShift(user.id, date) || null, suggestedOpeningCash: previous?.leftForNextDay || 0, totals: calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, date, openingCash, dataStore.getState().debts) });
 });
 
 apiV1Router.post('/cash-shifts/close', (req: Request, res: Response) => {
@@ -346,7 +350,7 @@ apiV1Router.post('/cash-shifts/close', (req: Request, res: Response) => {
     const countedCash = Math.max(0, Math.round(Number(req.body?.countedCash) || 0));
     const leftForNextDay = Math.max(0, Math.round(Number(req.body?.leftForNextDay) || 0));
     const note = String(req.body?.note || '').trim();
-    const totals = calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, businessDate, openingCash);
+    const totals = calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, businessDate, openingCash, dataStore.getState().debts);
     const difference = countedCash - totals.expectedCash;
     if (difference !== 0 && note.length < 3) return res.status(400).json({ success: false, error: "Kamomat yoki ortiqcha bo'lsa izoh yozish majburiy." });
     const shift = dataStore.closeCashShift({ id: `shift-${crypto.randomUUID()}`, businessDate, employeeId: user.id, employeeName: user.name, openingCash, ...totals, countedCash, difference, leftForNextDay, note: note || undefined, closedAt: new Date().toISOString() });
@@ -636,10 +640,19 @@ apiV1Router.get('/debts', (req: Request, res: Response) => {
   });
 });
 
+// Ishchi (va Rahbar) uchun: mijoz nasiyasini ism/telefon bo'yicha qidirish. Minimal maydonlar, umumiy ro'yxat yo'q.
+apiV1Router.get('/debts/lookup', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  const query = typeof req.query.q === 'string' ? req.query.q : '';
+  res.json({ success: true, data: dataStore.lookupDebts(query) });
+});
+
 apiV1Router.post('/debts/:id/pay', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { amount, method } = req.body;
+    const user = getRequestUser(req);
 
     if (!amount || Number(amount) <= 0) {
       return res.status(400).json({
@@ -647,13 +660,22 @@ apiV1Router.post('/debts/:id/pay', (req: Request, res: Response) => {
         error: "To'lov summasi ('amount') musbat son bo'lishi kerak"
       });
     }
+    if (user?.role === 'worker' && dataStore.getClosedShift(user.id, tashkentDate())) {
+      return res.status(409).json({ success: false, error: 'Smena yopilgan. Davom etish uchun Rahbar qayta ochishi kerak.' });
+    }
 
-    const updatedDebt = dataStore.recordDebtPayment(id, Number(amount), method);
+    if (method !== undefined && method !== 'naqd' && method !== 'click_payme') {
+      return res.status(400).json({ success: false, error: "To'lov usuli faqat 'naqd' yoki 'click_payme' bo'lishi mumkin." });
+    }
+    const updatedDebt = dataStore.recordDebtPayment(id, Number(amount), method === 'click_payme' ? 'click_payme' : 'naqd', user ? { id: user.id, name: user.name } : undefined);
+    const data = user?.role === 'worker'
+      ? { id: updatedDebt.id, customerName: updatedDebt.customerName, remainingAmount: updatedDebt.remainingAmount, status: updatedDebt.status }
+      : updatedDebt;
 
     res.json({
       success: true,
       message: "Qarz to'lovi qabul qilindi",
-      data: updatedDebt
+      data
     });
   } catch (err: any) {
     res.status(400).json({
@@ -661,6 +683,58 @@ apiV1Router.post('/debts/:id/pay', (req: Request, res: Response) => {
       error: err?.message || "Qarz to'lovini qabul qilishda xatolik"
     });
   }
+});
+
+// --- Tovar qaytarish (vazvrat) ---
+apiV1Router.get('/returns/search', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  const query = typeof req.query.q === 'string' ? req.query.q : '';
+  res.json({ success: true, windowDays: WORKER_RETURN_WINDOW_DAYS, data: dataStore.searchReturnableSales(query, user) });
+});
+
+apiV1Router.post('/returns', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (user.role === 'worker' && dataStore.getClosedShift(user.id, tashkentDate())) {
+    return res.status(409).json({ success: false, error: 'Smena yopilgan. Davom etish uchun Rahbar qayta ochishi kerak.' });
+  }
+  try {
+    let ownerApprovedBy: string | undefined;
+    if (user.role === 'worker' && req.body?.ownerPin) {
+      const approval = verifyOwnerApproval(req, req.body.ownerPin);
+      if ('error' in approval) return res.status(approval.status).json({ success: false, error: approval.error });
+      ownerApprovedBy = (approval as { ownerName: string }).ownerName;
+    }
+    const result = dataStore.recordReturn({
+      lines: Array.isArray(req.body?.lines) ? req.body.lines : [],
+      reason: String(req.body?.reason || ''),
+      refundMethod: req.body?.refundMethod,
+      restoreStock: req.body?.restoreStock !== false,
+      notes: typeof req.body?.notes === 'string' ? req.body.notes : undefined,
+      user,
+      ownerApprovedBy
+    });
+    res.status(201).json({ success: true, message: 'Qaytarish qayd etildi', data: result });
+  } catch (error: any) {
+    if (error instanceof OwnerApprovalRequiredError) {
+      return res.status(403).json({ success: false, code: 'OWNER_APPROVAL_REQUIRED', error: error.message });
+    }
+    res.status(400).json({ success: false, error: error?.message || 'Qaytarish saqlanmadi.' });
+  }
+});
+
+// Rahbar nazorati: kim qancha qaytargan, ko'p/katta qaytarishlar belgilanadi (bloklanmaydi).
+apiV1Router.get('/returns', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (user.role !== 'owner') return res.status(403).json({ success: false, error: 'Faqat Rahbar uchun.' });
+  const movements = dataStore.getState().movements;
+  const recent = movements.filter(m => m.type === 'vazvrat').slice(0, 60).map(m => ({
+    id: m.id, timestamp: m.timestamp, receiptNumber: m.receiptNumber, productName: m.productName, quantity: m.quantity, amount: m.totalRevenue,
+    method: m.paymentMethod, reason: m.returnReason, customerName: m.counterparty, employeeName: m.employeeName || '', approvedByName: m.approvedByName || '', originalMovementId: m.originalMovementId
+  }));
+  res.json({ success: true, limits: { dailyCount: RETURN_FLAG_DAILY_COUNT, dailyAmount: RETURN_FLAG_DAILY_AMOUNT }, employees: summarizeReturns(movements), recent });
 });
 
 // --- Summary & Analytics ---

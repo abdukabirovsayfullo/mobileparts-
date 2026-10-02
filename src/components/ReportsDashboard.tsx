@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Download, RefreshCw } from 'lucide-react';
 import { downloadCSV, formatMoney } from '../utils/formatters';
+import { ReturnsAuditPanel } from './ReturnsAuditPanel';
 
 type Report = any;
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
@@ -31,5 +32,6 @@ export const ReportsDashboard: React.FC<{ onOpenPdfReports?: (type?: 'daily_sale
       <section className="rounded-2xl bg-white border p-4"><h3 className="font-black text-sm">Xodimlar savdosi</h3>{report.employees.map((r:any)=><div key={r.name} className="py-1.5 border-b text-xs"><div className="flex justify-between"><strong>{r.name}</strong><span>{formatMoney(r.revenue)}</span></div><div className="text-stone-400">{r.sales} ta savdo</div></div>)}{!report.employees.length&&<p className="text-xs text-stone-400 mt-3">Ma’lumot yo‘q</p>}</section>
       <section className="rounded-2xl bg-white border p-4"><h3 className="font-black text-sm">Nazorat</h3><div className="mt-3 space-y-2 text-xs">{[['Kirim qiymati',formatMoney(report.inventory.kirimCost)],['Sotilmagan tovar',`${report.inventory.unsoldCount} ta`],['Nasiya berilgan',formatMoney(report.debts.issued)],['Nasiya qaytarilgan',formatMoney(report.debts.paid)],['Jami qolgan qarz',formatMoney(report.debts.remaining)],['Smena kamomati',formatMoney(report.shifts.shortage)],['Smena ortiqchasi',formatMoney(report.shifts.surplus)]].map(([l,v]:any)=><div key={l} className="flex justify-between border-b pb-1"><span>{l}</span><strong>{v}</strong></div>)}</div></section></div>
     </>}
+    <ReturnsAuditPanel />
   </div>;
 };

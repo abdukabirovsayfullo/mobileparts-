@@ -14,6 +14,19 @@ import {
   SaleReceiptData
 } from '../src/types';
 import type { AuthUser, CashExpense, CashExpenseCategory, CashShift } from '../src/types';
+import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity } from './returnLogic';
+import { tashkentDate } from './expenseLogic';
+
+export class OwnerApprovalRequiredError extends Error {
+  constructor(message = "7 kundan eski sotuvni qaytarish uchun Rahbar PIN'i kerak.") { super(message); this.name = 'OwnerApprovalRequiredError'; }
+}
+
+export interface ReturnableLine {
+  movementId: string; productId: string; productName: string; soldQuantity: number; returnedQuantity: number; returnableQuantity: number; unitRefund: number; lineTotal: number;
+}
+export interface ReturnableSale {
+  key: string; receiptNumber: string; timestamp: string; customerName: string; employeeName: string; paymentMethod?: string; withinWorkerWindow: boolean; lines: ReturnableLine[];
+}
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_MOVEMENTS,
@@ -647,6 +660,120 @@ class DataStore {
     return list.slice(0, Math.min(200, limit));
   }
 
+
+  /** Qaytarish uchun sotuvlarni qidiradi (tannarx/foyda maydonlarisiz). Ishchi faqat 7 kunlik oynani ko'radi. */
+  public searchReturnableSales(query: string, user: AuthUser): ReturnableSale[] {
+    const today = tashkentDate();
+    const tokens = normalizeName(query).split(' ').filter(Boolean);
+    const groups = new Map<string, ReturnableSale>();
+    for (const m of this.state.movements) {
+      if (m.type !== 'chiqim' || m.isReturn) continue;
+      const within = isWithinWorkerWindow(m.timestamp, today);
+      if (user.role === 'worker' && !within) continue;
+      const key = m.receiptNumber || m.batchSaleId || m.id;
+      const haystack = normalizeName(`${m.receiptNumber || ''} ${m.counterparty} ${m.productName}`);
+      if (tokens.length && !tokens.every(token => haystack.includes(token))) continue;
+      const returned = returnedQuantity(this.state.movements, m.id);
+      const group = groups.get(key) || { key, receiptNumber: m.receiptNumber || '', timestamp: m.timestamp, customerName: m.counterparty, employeeName: m.employeeName || '', paymentMethod: m.paymentMethod, withinWorkerWindow: within, lines: [] };
+      group.lines.push({
+        movementId: m.id, productId: m.productId, productName: m.productName, soldQuantity: m.quantity, returnedQuantity: returned,
+        returnableQuantity: Math.max(0, m.quantity - returned), unitRefund: refundAmount(m, 1), lineTotal: m.totalRevenue
+      });
+      groups.set(key, group);
+    }
+    return [...groups.values()].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 15);
+  }
+
+  /** Tovar qaytarish (vazvrat). Hammasi tekshiriladi, keyin bitta yozuv. */
+  public recordReturn(input: {
+    lines: Array<{ movementId: string; quantity: number }>;
+    reason: string;
+    refundMethod: 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
+    restoreStock?: boolean;
+    notes?: string;
+    user: AuthUser;
+    ownerApprovedBy?: string;
+  }): { receiptNumber: string; totalRefund: number; movements: StockMovement[]; debtReduced: number; customerName: string } {
+    const reason = String(input.reason || '').trim();
+    if (reason.length < 3) throw new Error("Qaytarish sababi kamida 3 ta belgidan iborat bo'lishi kerak.");
+    if (!['naqd', 'click_payme', 'uzum', 'nasiya'].includes(input.refundMethod)) throw new Error("Qaytarish usuli noto'g'ri.");
+    const merged = new Map<string, number>();
+    for (const line of Array.isArray(input.lines) ? input.lines : []) {
+      const qty = Math.floor(Number(line?.quantity));
+      if (!line?.movementId || !Number.isFinite(qty) || qty < 1) throw new Error("Qaytariladigan miqdor kamida 1 bo'lishi kerak.");
+      merged.set(line.movementId, (merged.get(line.movementId) || 0) + qty);
+    }
+    if (merged.size === 0) throw new Error("Qaytarish uchun kamida bitta tovar tanlang.");
+    if (merged.size > 30) throw new Error("Bir martada 30 tadan ortiq qator qaytarib bo'lmaydi.");
+
+    const today = tashkentDate();
+    const prepared: Array<{ original: StockMovement; quantity: number; refund: number }> = [];
+    for (const [movementId, quantity] of merged) {
+      const original = this.state.movements.find(m => m.id === movementId && m.type === 'chiqim' && !m.isReturn);
+      if (!original) throw new Error("Asl sotuv topilmadi. Qaytarish faqat sotilgan tovarga mumkin.");
+      const available = returnableQuantity(original, this.state.movements);
+      if (quantity > available) throw new Error(`${original.productName}: qaytarish mumkin bo'lgan miqdor ${available} dona (so'ralgan ${quantity}).`);
+      if (input.user.role === 'worker' && !input.ownerApprovedBy && !isWithinWorkerWindow(original.timestamp, today)) throw new OwnerApprovalRequiredError();
+      prepared.push({ original, quantity, refund: refundAmount(original, quantity) });
+    }
+
+    const customerName = prepared[0].original.counterparty;
+    const totalRefund = prepared.reduce((sum, item) => sum + item.refund, 0);
+    const nowIso = new Date().toISOString();
+    const receiptNumber = `VZV-${nowIso.slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    let debtReduced = 0;
+    let nextDebts: DebtRecord[] | undefined;
+    if (input.refundMethod === 'nasiya') {
+      if (prepared.some(item => normalizeName(item.original.counterparty) !== normalizeName(customerName))) throw new Error("Nasiyaga qaytarish faqat bitta mijozning sotuvlari uchun mumkin.");
+      const result = applyRefundToDebts(this.state.debts, customerName, totalRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name });
+      if (result.applied < totalRefund) throw new Error(`${customerName} mijozning faol nasiyasi ${result.applied} so'm; qaytarish ${totalRefund} so'm. Naqd yoki boshqa usulni tanlang.`);
+      nextDebts = result.debts;
+      debtReduced = result.applied;
+    }
+
+    const restoreStock = input.restoreStock !== false;
+    const batchSaleId = `vazvrat-batch-${Date.now()}`;
+    const created: StockMovement[] = [];
+    prepared.forEach(({ original, quantity, refund }, index) => {
+      const totalCost = original.unitCost * quantity;
+      const movement: StockMovement = {
+        id: `vazvrat-${Date.now()}-${index}-${crypto.randomBytes(3).toString('hex')}`,
+        type: 'vazvrat', productId: original.productId, productName: original.productName, category: original.category,
+        quantity, unitCost: original.unitCost, unitPrice: Math.round(refund / quantity), totalCost, totalRevenue: refund, profit: refund - totalCost,
+        timestamp: nowIso, paymentMethod: input.refundMethod, counterparty: original.counterparty, customerPhone: original.customerPhone,
+        receiptNumber, batchSaleId, isReturn: true, returnReason: reason, originalMovementId: original.id,
+        notes: [input.notes?.trim(), restoreStock ? '' : 'Yaroqsiz: omborga qaytarilmadi', `Asl chek: ${original.receiptNumber || original.id}`].filter(Boolean).join(' | '),
+        employeeId: input.user.id, employeeName: input.user.name,
+        approvedByName: input.ownerApprovedBy
+      };
+      const product = this.getProductById(original.productId);
+      if (restoreStock && product) product.stock += quantity;
+      created.push(movement);
+    });
+    this.state.movements.unshift(...created.slice().reverse());
+    if (nextDebts) this.state.debts = nextDebts;
+    this.state.lastUpdated = nowIso;
+    this.scheduleSave();
+    return { receiptNumber, totalRefund, movements: created, debtReduced, customerName };
+  }
+
+  /** Ishchi uchun nasiya qidiruvi: faqat so'ralgan mijozlar, minimal maydonlar. */
+  public lookupDebts(query: string): Array<{ id: string; customerName: string; phoneTail: string; remainingAmount: number; totalDebt: number; dueDate: string; status: DebtRecord['status']; recentPayments: Array<{ date: string; amount: number; method: string }> }> {
+    const normalized = normalizeName(query);
+    const tokens = normalized.split(' ').filter(Boolean);
+    if (tokens.length === 0 || normalized.length < 2) return [];
+    return this.state.debts
+      .filter(debt => debt.status !== 'yopildi' && debt.remainingAmount > 0)
+      .filter(debt => { const text = normalizeName(`${debt.customerName} ${debt.customerPhone}`); return tokens.every(token => text.includes(token)); })
+      .slice(0, 10)
+      .map(debt => ({
+        id: debt.id, customerName: debt.customerName, phoneTail: (debt.customerPhone || '').replace(/\D/g, '').slice(-4),
+        remainingAmount: debt.remainingAmount, totalDebt: debt.totalDebt, dueDate: debt.dueDate, status: debt.status,
+        recentPayments: (debt.paymentHistory || []).slice(-3).reverse().map(payment => ({ date: payment.date, amount: payment.amount, method: payment.method }))
+      }));
+  }
+
   public getDebts(status?: string): DebtRecord[] {
     if (status) {
       return this.state.debts.filter(d => d.status === status);
@@ -654,13 +781,17 @@ class DataStore {
     return this.state.debts;
   }
 
-  public recordDebtPayment(debtId: string, amount: number, method: 'naqd' | 'click_payme' = 'naqd'): DebtRecord {
+  public recordDebtPayment(debtId: string, amount: number, method: 'naqd' | 'click_payme' = 'naqd', actor?: { id?: string; name?: string }): DebtRecord {
     const debt = this.state.debts.find(d => d.id === debtId);
     if (!debt) {
       throw new Error(`Nasiya yozuvi topilmadi (ID: ${debtId})`);
     }
+    if (method !== 'naqd' && method !== 'click_payme') throw new Error("To'lov usuli faqat 'naqd' yoki 'click_payme' bo'lishi mumkin.");
+    if (debt.status === 'yopildi' || debt.remainingAmount <= 0) throw new Error('Bu nasiya allaqachon yopilgan.');
 
-    const payAmount = Math.max(1, Number(amount));
+    const payAmount = Math.round(Number(amount));
+    if (!Number.isFinite(payAmount) || payAmount < 1) throw new Error("To'lov summasi musbat son bo'lishi kerak.");
+    if (payAmount > debt.remainingAmount) throw new Error(`To'lov qarz qoldig'idan ko'p: qoldiq ${debt.remainingAmount} so'm.`);
     debt.paidAmount += payAmount;
     debt.remainingAmount = Math.max(0, debt.totalDebt - debt.paidAmount);
     debt.status = debt.remainingAmount <= 0 ? 'yopildi' : 'qisman_tolandi';
@@ -669,7 +800,9 @@ class DataStore {
     debt.paymentHistory.push({
       date: new Date().toISOString(),
       amount: payAmount,
-      method
+      method,
+      employeeId: actor?.id,
+      employeeName: actor?.name
     });
 
     this.state.lastUpdated = new Date().toISOString();

@@ -30,13 +30,14 @@ export const buildReport = (state: ReportInput, from: string, to: string) => {
   const timelineMap = new Map<string, { label: string; revenue: number; profit: number }>();
   sales.forEach(m => { const day = tashkentDate(m.timestamp); const label = monthly ? day.slice(0, 7) : day; const row = timelineMap.get(label) || { label, revenue: 0, profit: 0 }; row.revenue += m.totalRevenue; row.profit += m.profit; timelineMap.set(label, row); });
   const debtsCreated = state.debts.filter(d => inRange(d.createdAt, from, to));
-  const debtPaid = state.debts.flatMap(d => d.paymentHistory || []).filter(p => inRange(p.date, from, to)).reduce((sum, p) => sum + p.amount, 0);
+  const debtPaid = state.debts.flatMap(d => d.paymentHistory || []).filter(p => p.method !== 'vazvrat' && inRange(p.date, from, to)).reduce((sum, p) => sum + p.amount, 0);
   return {
     range: { from, to, days: span, grouping: monthly ? 'month' : 'day' },
     sales: { revenue, cost, grossProfit, expenses: expensesTotal, netProfit: grossProfit - expensesTotal, count: saleIds.size, items: sales.reduce((sum, m) => sum + m.quantity, 0), averageCheck: saleIds.size ? Math.round(revenue / saleIds.size) : 0, payments: { cash: payment('naqd'), click: payment('click_payme'), uzum: payment('uzum'), debt: payment('nasiya') } },
     inventory: { kirimQuantity: kirim.reduce((s, m) => s + m.quantity, 0), kirimCost: kirim.reduce((s, m) => s + m.totalCost, 0), currentCostValue: state.products.reduce((s, p) => s + p.stock * (p.purchasePrice || 0), 0), currentRetailValue: state.products.reduce((s, p) => s + p.stock * p.sellingPrice, 0), top: products.slice(0, 10), low: products.slice().sort((a, b) => a.quantity - b.quantity).slice(0, 10), unsoldCount: state.products.filter(p => !productMap.has(p.id)).length },
     debts: { issued: debtsCreated.reduce((s, d) => s + d.totalDebt, 0), paid: debtPaid, remaining: state.debts.reduce((s, d) => s + d.remainingAmount, 0) },
     expenses: { total: expensesTotal, count: expenses.length, byCategory: [...categoryMap].map(([category, total]) => ({ category, total })) },
+    returns: { count: new Set(returns.map(m => m.batchSaleId || m.id)).size, amount: refundRevenue },
     shifts: { count: shifts.length, shortage: shifts.filter(s => s.difference < 0).reduce((sum, s) => sum + Math.abs(s.difference), 0), surplus: shifts.filter(s => s.difference > 0).reduce((sum, s) => sum + s.difference, 0) },
     employees: [...employeeMap.values()].map(row => ({ name: row.name, revenue: row.revenue, sales: row.sales.size })).sort((a, b) => b.revenue - a.revenue),
     timeline: [...timelineMap.values()].sort((a, b) => a.label.localeCompare(b.label))
