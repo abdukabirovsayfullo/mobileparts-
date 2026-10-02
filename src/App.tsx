@@ -1491,7 +1491,7 @@ export default function App() {
         />
 
         {/* Main Container */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-2.5 sm:px-6 pt-3 sm:pt-6 pb-28 lg:pb-12">
+        <main className={`flex-1 w-full mx-auto px-2.5 sm:px-6 pt-3 sm:pt-6 pb-28 lg:pb-12 ${activeTab === 'chiqim' ? 'max-w-[1700px]' : 'max-w-7xl'}`}>
         {activeTab === 'report' && (
           !isAdminUnlocked ? (
             <div className="py-16 px-4 text-center max-w-md mx-auto space-y-4">
@@ -1536,11 +1536,6 @@ export default function App() {
 
         {activeTab === 'chiqim' && (
           <>
-            <CashExpensePanel
-              user={authUser}
-              cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
-            />
-            <CashShiftPanel user={authUser} />
             <ChiqimFormView
               products={products}
               recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}
@@ -1550,6 +1545,14 @@ export default function App() {
               onPrintReceipt={handlePrintMovementReceipt}
               onQuickPayPastDebt={handleAddDebtPayment}
             />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start mt-3">
+            <CashExpensePanel
+              user={authUser}
+              cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
+            />
+            <CashShiftPanel user={authUser} />
+            </div>
+
           </>
         )}
 

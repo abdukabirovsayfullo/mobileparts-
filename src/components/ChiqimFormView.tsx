@@ -410,37 +410,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-20">
-      {/* Desktop Header Banner */}
-      <div className="hidden lg:flex bg-amber-400 text-stone-950 rounded-3xl p-6 sm:p-8 shadow-md flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-950 text-white text-xs font-bold uppercase tracking-wider">
-            <ArrowUpRight className="w-3.5 h-3.5 text-amber-400" />
-            <span>Tovar Chiqimi &amp; Sotuv (Kassa)</span>
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-stone-950">
-            Sotuv va Kassa (Chiqim)
-          </h2>
-          <p className="text-xs sm:text-sm text-stone-800 max-w-xl font-medium">
-            Sotilgan tovarlarni tanlang, xaridorni kiriting va to'lov turini belgilang. Tovar avtomatik ombordan yechiladi.
-          </p>
-        </div>
-
-        {/* Live Sale Total Box (Confidential - No Profit Shown) */}
-        <div className="bg-stone-950 text-white p-4 rounded-2xl border border-stone-800 min-w-[220px]">
-          <div className="text-[11px] text-amber-400 font-bold uppercase tracking-wider">
-            Jami Savdo (Tushum):
-          </div>
-          <div className="text-2xl font-black text-white mt-1">
-            {formatMoney(grandTotalRevenue)}
-          </div>
-          <div className="text-[11px] text-stone-400 mt-0.5 flex justify-between">
-            <span>Tanlangan tovarlar:</span>
-            <span className="font-bold text-amber-400">{cart.reduce((s, i) => s + i.quantity, 0)} dona</span>
-          </div>
-        </div>
-      </div>
-
+    <div className="space-y-3 sm:space-y-4 pb-20">
       {/* Mobile Compact Kassa Strip */}
       <div className="lg:hidden bg-amber-400 text-stone-950 rounded-2xl p-3 shadow-xs flex items-center justify-between">
         <div>
@@ -491,9 +461,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       {/* Main Grid: Catalog to select (7 cols) + Sales Cart & Checkout (5 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
         {/* Left Side: Product Picker */}
-        <div className={`${mobileTab === 'catalog' ? 'block' : 'hidden'} lg:block lg:col-span-7 space-y-4`}>
+        <div className={`${mobileTab === 'catalog' ? 'block' : 'hidden'} lg:block lg:col-span-7 xl:col-span-8 space-y-3`}>
           {/* Price Mode Selector: Chakana vs Optom */}
-          <div className="bg-stone-900 text-white rounded-2xl p-3 shadow-xs flex flex-wrap items-center justify-between gap-2.5 border border-stone-800">
+          <div className="bg-stone-900 text-white rounded-2xl px-3 py-2 shadow-xs flex flex-wrap items-center justify-between gap-2.5 border border-stone-800">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-bold text-stone-300">Sotish rejimi:</span>
               <div className="inline-flex rounded-xl p-0.5 bg-stone-800 border border-stone-700">
@@ -546,12 +516,13 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Search & Category Filter */}
-          <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-xs space-y-3">
+          <div className="bg-white rounded-2xl border border-stone-200 p-3 shadow-xs space-y-2.5">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
               <input
                 type="text"
-                placeholder="Aksessuar nomi, brendi yoki shtrix-kodi..."
+                autoFocus
+                placeholder="Tovar nomi, brendi yoki shtrix-kodini yozing..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -559,16 +530,16 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   const exact = exactProductCodeMatch(products, searchQuery);
                   if (exact) { e.preventDefault(); handleAddToCart(exact); setSearchQuery(''); }
                 }}
-                className="w-full pl-9 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-400"
+                className="w-full pl-12 pr-4 py-3.5 bg-stone-50 border-2 border-stone-200 rounded-xl text-base font-semibold focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
               />
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs">
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none text-sm pb-0.5">
               {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-xl whitespace-nowrap font-bold transition-colors cursor-pointer ${
+                  className={`px-4 py-2 rounded-xl whitespace-nowrap font-bold transition-colors cursor-pointer ${
                     selectedCategory === cat
                       ? 'bg-amber-400 text-stone-950 shadow-xs'
                       : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
@@ -581,32 +552,51 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Product Items Cards with both Retail & Wholesale prices */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5 max-h-[70vh] lg:max-h-[calc(100vh-17rem)] overflow-y-auto pr-1 content-start">
             {filteredProducts.length === 0 && <div className="sm:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">Hech narsa topilmadi. Tovar nomi yoki kodini tekshiring.</div>}
             {filteredProducts.map((p) => {
               const isLowStock = p.stock <= p.minStockAlert;
               const isOutOfStock = p.stock <= 0;
               const wholesalePrice = p.wholesalePrice || Math.round(p.sellingPrice * 0.8);
 
+              const inCart = cart.find((i) => i.product.id === p.id)?.quantity || 0;
+              const mainPrice = priceMode === 'optom' ? wholesalePrice : p.sellingPrice;
+              const otherPrice = priceMode === 'optom' ? p.sellingPrice : wholesalePrice;
+
               return (
                 <div
                   key={p.id}
                   onClick={() => !isOutOfStock && handleAddToCart(p)}
-                  className={`bg-white rounded-2xl border p-4 shadow-xs transition-all flex flex-col justify-between cursor-pointer ${
+                  className={`relative bg-white rounded-xl border-2 p-3 shadow-xs transition-all flex flex-col justify-between gap-2 cursor-pointer select-none active:scale-[0.99] ${
                     isOutOfStock
                       ? 'opacity-50 border-stone-200 cursor-not-allowed'
+                      : inCart > 0
+                      ? 'border-emerald-500 bg-emerald-50/40'
                       : priceMode === 'optom'
-                      ? 'border-blue-200 hover:border-blue-500 hover:shadow-sm'
+                      ? 'border-blue-100 hover:border-blue-500 hover:shadow-sm'
                       : 'border-stone-200 hover:border-amber-400 hover:shadow-sm'
                   }`}
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
-                        {p.category}
-                      </span>
+                  {inCart > 0 && (
+                    <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-emerald-500 text-white text-xs font-black flex items-center justify-center shadow">
+                      {inCart}
+                    </span>
+                  )}
+                  <h4 className="font-black text-[15px] leading-snug text-stone-900 line-clamp-2">
+                    {p.name}
+                  </h4>
+                  <div className="flex items-end justify-between gap-2">
+                    <div>
+                      <div className={`font-black text-xl leading-none ${priceMode === 'optom' ? 'text-blue-600' : 'text-amber-600'}`}>
+                        {formatMoney(mainPrice)}
+                      </div>
+                      <div className="text-xs text-stone-500 font-semibold mt-1">
+                        {priceMode === 'optom' ? 'Chakana' : 'Optom'}: {formatMoney(otherPrice)}
+                      </div>
+                    </div>
+                    <div className="text-right">
                       <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        className={`text-sm font-black px-2 py-0.5 rounded-lg ${
                           isOutOfStock
                             ? 'bg-red-100 text-red-700'
                             : isLowStock
@@ -614,37 +604,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                             : 'bg-stone-100 text-stone-700'
                         }`}
                       >
-                        Qoldiq: {p.stock} ta
+                        {isOutOfStock ? 'Tugagan' : `${p.stock} ta`}
                       </span>
-                    </div>
-
-                    <h4 className="font-bold text-xs text-stone-900 line-clamp-2 mt-1">
-                      {p.name}
-                    </h4>
-                  </div>
-
-                  <div className="pt-3 border-t border-stone-100 mt-3 space-y-1.5">
-                    {/* Chakana & Optom Prices */}
-                    <div className="grid grid-cols-2 gap-1.5 bg-stone-50 p-2 rounded-xl border border-stone-200/80">
-                      <div>
-                        <div className="text-[10px] text-stone-500 font-semibold">Chakana narx:</div>
-                        <div className={`font-black text-xs ${priceMode === 'chakana' ? 'text-amber-600 text-sm' : 'text-stone-800'}`}>
-                          {formatMoney(p.sellingPrice)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-blue-600 font-semibold">Optom narx:</div>
-                        <div className={`font-black text-xs ${priceMode === 'optom' ? 'text-blue-600 text-sm' : 'text-stone-700'}`}>
-                          {formatMoney(wholesalePrice)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-stone-500 pt-0.5">
-                      <span>Kod: {p.barcode ? p.barcode.slice(-6) : 'Mavjud'}</span>
-                      <span className="font-semibold text-stone-600">
-                        Omborda: {p.stock} ta
-                      </span>
+                      <div className="text-[11px] text-stone-400 mt-1 truncate max-w-[110px]">{p.category}{p.barcode ? ` · ${p.barcode.slice(-6)}` : ''}</div>
                     </div>
                   </div>
                 </div>
@@ -679,7 +641,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         )}
 
         {/* Right Side: Sales Cart & Checkout (5 cols) */}
-        <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:block lg:col-span-5 bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
+        <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:block lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
           {/* Mobile Back to Catalog Button */}
           <div className="lg:hidden flex items-center justify-between pb-2 border-b border-stone-100">
             <button
@@ -732,7 +694,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Cart Items List with INLINE PRICE EDITING & QUICK OPTOM/CHAKANA BUTTONS */}
-          <div className="flex-1 min-h-[160px] max-h-[300px] overflow-y-auto divide-y divide-stone-100">
+          <div className="flex-1 min-h-[160px] max-h-[300px] lg:max-h-[38vh] overflow-y-auto divide-y divide-stone-100">
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center p-6 text-center text-stone-400 space-y-1">
                 <ShoppingCart className="w-8 h-8 text-stone-300" />
@@ -747,9 +709,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 const chakanaPrice = item.product.sellingPrice;
 
                 return (
-                  <div key={item.product.id} className="py-3 text-xs space-y-2">
+                  <div key={item.product.id} className="py-3 text-sm space-y-2">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-bold text-stone-900 truncate">
+                      <span className="font-black text-stone-900 line-clamp-2">
                         {item.product.name}
                       </span>
                       <button
@@ -760,23 +722,23 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       {/* Quantity buttons */}
                       <div className="flex items-center border border-stone-200 rounded-lg bg-stone-50 shrink-0">
                         <button
                           type="button"
                           onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                          className="px-2 py-1 text-stone-600 font-bold hover:bg-stone-200 rounded-l-lg cursor-pointer"
+                          className="px-3.5 py-2 text-base text-stone-600 font-black hover:bg-stone-200 rounded-l-lg cursor-pointer"
                         >
                           -
                         </button>
-                        <span className="px-2 font-black text-stone-900">
+                        <span className="px-2 text-base font-black text-stone-900">
                           {item.quantity}
                         </span>
                         <button
                           type="button"
                           onClick={() => handleUpdateQuantity(item.product.id, 1)}
-                          className="px-2 py-1 text-stone-600 font-bold hover:bg-stone-200 rounded-r-lg cursor-pointer"
+                          className="px-3.5 py-2 text-base text-stone-600 font-black hover:bg-stone-200 rounded-r-lg cursor-pointer"
                         >
                           +
                         </button>
@@ -790,7 +752,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           step="500"
                           value={item.unitPrice}
                           onChange={(e) => handleUpdatePrice(item.product.id, Number(e.target.value))}
-                          className="w-24 px-1.5 py-1 bg-white border border-stone-300 rounded-md text-right font-black text-xs text-stone-950 focus:ring-1 focus:ring-amber-400"
+                          className="w-24 px-1.5 py-1.5 bg-white border border-stone-300 rounded-md text-right font-black text-sm text-stone-950 focus:ring-1 focus:ring-amber-400"
                           title="Narxni o'sha joyning o'zida tahrirlash"
                         />
                         <span className="text-[10px] text-stone-500 font-bold">so'm</span>
@@ -857,7 +819,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       setPaymentMethod(m.id as PaymentMethod);
                       if (m.id === 'nasiya') setShowAdditional(true);
                     }}
-                    className={`py-1.5 rounded-xl font-bold text-center cursor-pointer transition-colors ${
+                    className={`py-2.5 text-sm rounded-xl font-black text-center cursor-pointer transition-colors ${
                       paymentMethod === m.id
                         ? m.id === 'nasiya'
                           ? 'bg-red-500 text-white'
@@ -1353,7 +1315,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <div className="text-[10px] uppercase tracking-wider text-stone-400 font-bold">
                     {cart.length} xil / {cart.reduce((s, i) => s + i.quantity, 0)} dona
                   </div>
-                  <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue)} so'm</div>
+                  <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue)}</div>
                 </div>
                 {unpaidRemaining > 0 && (
                   <div className="text-right text-[10px] text-red-300 font-bold">
@@ -1364,7 +1326,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               <button
                 type="submit"
                 disabled={cart.length === 0}
-                className={`w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                className={`w-full py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
                   cart.length > 0
                     ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md active:scale-[0.99]'
                     : 'bg-stone-700 text-stone-400 cursor-not-allowed'
