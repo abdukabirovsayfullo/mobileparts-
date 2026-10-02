@@ -4,6 +4,7 @@ import { dataStore } from './dataStore';
 import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession } from './auth';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 import { calculateShiftTotals } from './shiftLogic';
+import { buildReport, previousRange } from './reportLogic';
 import { 
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
@@ -367,6 +368,18 @@ apiV1Router.post('/cash-shifts/:id/reopen', (req: Request, res: Response) => {
   if (user.role !== 'owner') return res.status(403).json({ success: false, error: 'Smenani faqat Rahbar qayta ochadi.' });
   try { res.json({ success: true, data: dataStore.reopenCashShift(req.params.id, String(req.body?.reason || ''), user) }); }
   catch (error: any) { res.status(400).json({ success: false, error: error?.message || 'Smena ochilmadi.' }); }
+});
+
+apiV1Router.get('/reports/summary', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (user.role !== 'owner') return res.status(403).json({ success: false, error: 'Hisobot faqat Rahbar uchun.' });
+  const from = String(req.query.from || ''); const to = String(req.query.to || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.status(400).json({ success: false, error: "To'g'ri sana oralig'ini tanlang." });
+  const state = dataStore.getState();
+  const input = { products: state.products, movements: state.movements, debts: state.debts, expenses: state.expenses || [], cashShifts: state.cashShifts || [] };
+  const previous = previousRange(from, to);
+  res.json({ success: true, data: buildReport(input, from, to), previous: buildReport(input, previous.from, previous.to) });
 });
 
 apiV1Router.post('/expenses/:id/cancel', (req: Request, res: Response) => {

@@ -1,0 +1,6 @@
+import assert from 'node:assert/strict'; import test from 'node:test';
+import { buildReport, previousRange } from './reportLogic';
+import type { StockMovement } from '../src/types';
+const sale = (day: string, revenue: number, cost: number): StockMovement => ({ id: day, type:'chiqim', productId:'p', productName:'Tovar', category:'Test', quantity:1, unitCost:cost, unitPrice:revenue, totalCost:cost, totalRevenue:revenue, profit:revenue-cost, timestamp:`${day}T10:00:00Z`, paymentMethod:'naqd', counterparty:'Mijoz', employeeId:'w', employeeName:'Ishchi' });
+test('oraliq chegaralari kiradi va sof foyda chiqimdan keyin hisoblanadi', () => { const report=buildReport({products:[],movements:[sale('2026-09-10',100,60),sale('2026-09-11',200,100)],debts:[],cashShifts:[],expenses:[{id:'e',occurredAt:'2026-09-10T12:00:00Z',recipient:'Usta',amount:10,reason:'Yo‘l',category:'transport',createdById:'w',createdByName:'Ishchi'}]},'2026-09-10','2026-09-10'); assert.equal(report.sales.revenue,100); assert.equal(report.sales.netProfit,30); });
+test('oldingi teng davr to‘g‘ri topiladi',()=>assert.deepEqual(previousRange('2026-09-10','2026-09-12'),{from:'2026-09-07',to:'2026-09-09'}));

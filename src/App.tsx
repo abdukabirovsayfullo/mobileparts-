@@ -34,6 +34,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { WorkerManagement } from './components/WorkerManagement';
 import { CashExpensePanel } from './components/CashExpensePanel';
 import { CashShiftPanel } from './components/CashShiftPanel';
+import { ReportsDashboard } from './components/ReportsDashboard';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
 import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
@@ -1482,14 +1483,7 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <DailyReportView
-              movements={movements}
-              products={products}
-              onNavigateToKirim={() => setActiveTab('kirim')}
-              onNavigateToChiqim={() => setActiveTab('chiqim')}
-              onPrintReceipt={handlePrintMovementReceipt}
-              onOpenPdfReports={handleOpenPdfReports}
-            />
+            <ReportsDashboard onOpenPdfReports={handleOpenPdfReports} />
           )
         )}
 
