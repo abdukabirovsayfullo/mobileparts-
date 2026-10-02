@@ -32,6 +32,7 @@ import { TelegramMiniAppView } from './components/TelegramMiniAppView';
 import { TelegramOrdersManagementView } from './components/TelegramOrdersManagementView';
 import { LoginScreen } from './components/LoginScreen';
 import { WorkerManagement } from './components/WorkerManagement';
+import { CashExpensePanel } from './components/CashExpensePanel';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
 import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
@@ -1508,15 +1509,21 @@ export default function App() {
         )}
 
         {activeTab === 'chiqim' && (
-          <ChiqimFormView
-            products={products}
-            recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}
-            customers={customers}
-            debts={debts}
-            onConfirmChiqim={handleConfirmChiqim}
-            onPrintReceipt={handlePrintMovementReceipt}
-            onQuickPayPastDebt={handleAddDebtPayment}
-          />
+          <>
+            <CashExpensePanel
+              user={authUser}
+              cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
+            />
+            <ChiqimFormView
+              products={products}
+              recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}
+              customers={customers}
+              debts={debts}
+              onConfirmChiqim={handleConfirmChiqim}
+              onPrintReceipt={handlePrintMovementReceipt}
+              onQuickPayPastDebt={handleAddDebtPayment}
+            />
+          </>
         )}
 
         {activeTab === 'journal' && (

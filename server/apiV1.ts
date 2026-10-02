@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { dataStore } from './dataStore';
 import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession } from './auth';
+import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 import { 
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
@@ -195,6 +196,7 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
 apiV1Router.get('/sync', requireSession, (req: Request, res: Response) => {
   const state = dataStore.getState();
   const user = getRequestUser(req)!;
+  const today = tashkentDate();
   const products = user.role === 'worker'
     ? state.products.map(({ purchasePrice: _purchasePrice, costPrice: _costPrice, wholesalePrice: _wholesalePrice, ...product }) => ({
         ...product,
@@ -208,9 +210,14 @@ apiV1Router.get('/sync', requireSession, (req: Request, res: Response) => {
     apiKey: user.role === 'owner' ? dataStore.getApiKey() : undefined,
     state: {
       products,
-      movements: user.role === 'owner' ? state.movements : [],
+      movements: user.role === 'owner'
+        ? state.movements
+        : state.movements
+            .filter(movement => movement.employeeId === user.id && tashkentDate(movement.timestamp) === today)
+            .map(movement => ({ ...movement, unitCost: 0, totalCost: 0, profit: 0 })),
       debts: user.role === 'owner' ? state.debts : [],
       supplierDebts: user.role === 'owner' ? state.supplierDebts : [],
+      expenses: user.role === 'owner' ? state.expenses : [],
       categories: state.categories,
       storeInfo: { ...state.storeInfo, adminPin: undefined }
     }
@@ -276,8 +283,54 @@ apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
   if (user?.role !== 'worker') return next();
   const canReadProducts = req.method === 'GET' && (req.path === '/products' || req.path.startsWith('/products/'));
   const canCreateSale = req.method === 'POST' && req.path === '/sales';
-  if (canReadProducts || canCreateSale) return next();
+  const canUseExpenses = req.path === '/expenses' && (req.method === 'GET' || req.method === 'POST');
+  if (canReadProducts || canCreateSale || canUseExpenses) return next();
   return res.status(403).json({ success: false, error: 'Kassir uchun bu bo\'lim yopiq.' });
+});
+
+// --- Kassadan olingan pul ---
+apiV1Router.get('/expenses', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  const today = tashkentDate();
+  let expenses = dataStore.getExpenses();
+  if (user.role === 'worker') {
+    expenses = expenses.filter(item => item.createdById === user.id && tashkentDate(item.occurredAt) === today);
+  } else {
+    const from = typeof req.query.from === 'string' ? req.query.from : '';
+    const to = typeof req.query.to === 'string' ? req.query.to : '';
+    if (from) expenses = expenses.filter(item => tashkentDate(item.occurredAt) >= from);
+    if (to) expenses = expenses.filter(item => tashkentDate(item.occurredAt) <= to);
+  }
+  res.json({ success: true, data: expenses });
+});
+
+apiV1Router.post('/expenses', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  try {
+    const expense = dataStore.addExpense({
+      recipient: String(req.body?.recipient || ''),
+      amount: Number(req.body?.amount),
+      reason: String(req.body?.reason || ''),
+      category: req.body?.category || 'boshqa'
+    }, user);
+    res.status(201).json({ success: true, data: expense });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error?.message || 'Chiqim saqlanmadi.' });
+  }
+});
+
+apiV1Router.post('/expenses/:id/cancel', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (user.role !== 'owner') return res.status(403).json({ success: false, error: 'Chiqimni faqat rahbar bekor qiladi.' });
+  try {
+    const expense = dataStore.cancelExpense(req.params.id, String(req.body?.reason || ''), user);
+    res.json({ success: true, data: expense });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error?.message || 'Chiqim bekor qilinmadi.' });
+  }
 });
 
 // --- Products CRUD ---
@@ -553,10 +606,12 @@ apiV1Router.post('/debts/:id/pay', (req: Request, res: Response) => {
 // --- Summary & Analytics ---
 apiV1Router.get('/summary/daily', (_req: Request, res: Response) => {
   const state = dataStore.getState();
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = tashkentDate();
 
-  const todayChiqim = state.movements.filter(m => m.type === 'chiqim' && m.timestamp.startsWith(todayStr));
-  const todayKirim = state.movements.filter(m => m.type === 'kirim' && m.timestamp.startsWith(todayStr));
+  const todayChiqim = state.movements.filter(m => m.type === 'chiqim' && tashkentDate(m.timestamp) === todayStr);
+  const todayKirim = state.movements.filter(m => m.type === 'kirim' && tashkentDate(m.timestamp) === todayStr);
+  const todayExpenses = activeExpensesForDate(state.expenses || [], todayStr);
+  const todayExpenseTotal = expenseTotal(todayExpenses);
 
   let todayRevenue = 0;
   let todayProfit = 0;
@@ -593,6 +648,11 @@ apiV1Router.get('/summary/daily', (_req: Request, res: Response) => {
     todayKirim: {
       itemsReceived: todayKirim.reduce((acc, m) => acc + m.quantity, 0),
       totalCost: todayKirim.reduce((acc, m) => acc + m.totalCost, 0)
+    },
+    expenses: {
+      total: todayExpenseTotal,
+      count: todayExpenses.length,
+      cashRemaining: cashRevenue - todayExpenseTotal
     },
     warehouse: {
       totalProductsCount: state.products.length,

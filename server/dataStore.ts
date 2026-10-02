@@ -13,6 +13,7 @@ import {
   OnlineOrderStatus,
   SaleReceiptData
 } from '../src/types';
+import type { AuthUser, CashExpense, CashExpenseCategory } from '../src/types';
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_MOVEMENTS,
@@ -40,6 +41,7 @@ export interface PosDatabaseState {
   debts: DebtRecord[];
   supplierDebts: SupplierDebtRecord[];
   onlineOrders: OnlineOrder[];
+  expenses: CashExpense[];
   telegramConfig?: TelegramConfig;
   lastUpdated: string;
 }
@@ -92,6 +94,7 @@ class DataStore {
           debts: Array.isArray(parsed.debts) ? removeDemoDebts(parsed.debts) : [],
           supplierDebts: Array.isArray(parsed.supplierDebts) ? removeDemoSupplierDebts(parsed.supplierDebts) : [],
           onlineOrders: Array.isArray(parsed.onlineOrders) ? parsed.onlineOrders : [],
+          expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
           telegramConfig: parsed.telegramConfig || {
             botToken: process.env.TELEGRAM_BOT_TOKEN || '',
             chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -115,6 +118,7 @@ class DataStore {
       debts: [],
       supplierDebts: [],
       onlineOrders: [],
+      expenses: [],
       telegramConfig: {
         botToken: process.env.TELEGRAM_BOT_TOKEN || '',
         chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -179,6 +183,58 @@ class DataStore {
     this.state.lastUpdated = new Date().toISOString();
     this.scheduleSave();
     return this.state.categories;
+  }
+
+  // --- Kassadan olingan pul (audit tarixi o'chirilmaydi) ---
+  public getExpenses(): CashExpense[] {
+    return this.state.expenses || [];
+  }
+
+  public addExpense(input: {
+    recipient: string;
+    amount: number;
+    reason: string;
+    category: CashExpenseCategory;
+  }, user: AuthUser): CashExpense {
+    const recipient = input.recipient.trim();
+    const reason = input.reason.trim();
+    const amount = Math.round(Number(input.amount));
+    const allowedCategories: CashExpenseCategory[] = ['tushlik', 'taminotchi', 'transport', 'boshqa'];
+    if (!recipient) throw new Error('Pulni kim olgani kiritilishi shart.');
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error("Chiqim summasi 0 dan katta bo'lishi kerak.");
+    if (reason.length < 3) throw new Error("Chiqim sababi kamida 3 ta belgidan iborat bo'lishi kerak.");
+    if (!allowedCategories.includes(input.category)) throw new Error("Chiqim turi noto'g'ri.");
+
+    const expense: CashExpense = {
+      id: `expense-${crypto.randomUUID()}`,
+      occurredAt: new Date().toISOString(),
+      recipient,
+      amount,
+      reason,
+      category: input.category,
+      createdById: user.id,
+      createdByName: user.name
+    };
+    this.state.expenses ||= [];
+    this.state.expenses.unshift(expense);
+    this.state.lastUpdated = expense.occurredAt;
+    this.scheduleSave();
+    return expense;
+  }
+
+  public cancelExpense(id: string, reason: string, user: AuthUser): CashExpense {
+    const expense = this.getExpenses().find(item => item.id === id);
+    if (!expense) throw new Error('Chiqim topilmadi.');
+    if (expense.cancelledAt) throw new Error('Bu chiqim avval bekor qilingan.');
+    const cleanReason = reason.trim();
+    if (cleanReason.length < 3) throw new Error("Bekor qilish sababi kamida 3 ta belgidan iborat bo'lishi kerak.");
+    expense.cancelledAt = new Date().toISOString();
+    expense.cancelledById = user.id;
+    expense.cancelledByName = user.name;
+    expense.cancellationReason = cleanReason;
+    this.state.lastUpdated = expense.cancelledAt;
+    this.scheduleSave();
+    return expense;
   }
 
   // --- Telegram Integration ---

@@ -12,6 +12,23 @@ export interface AuthUser {
   createdAt: string;
 }
 
+export type CashExpenseCategory = 'tushlik' | 'taminotchi' | 'transport' | 'boshqa';
+
+export interface CashExpense {
+  id: string;
+  occurredAt: string;
+  recipient: string;
+  amount: number;
+  reason: string;
+  category: CashExpenseCategory;
+  createdById: string;
+  createdByName: string;
+  cancelledAt?: string;
+  cancelledById?: string;
+  cancelledByName?: string;
+  cancellationReason?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
