@@ -138,6 +138,18 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 
   const tabInfo = getTabDetails();
 
+  if (!isAdminUnlocked) {
+    return (
+      <header className="sticky top-0 z-30 h-14 bg-stone-950 border-b border-stone-800 text-white flex items-center justify-between px-3 sm:px-5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button type="button" onClick={onOpenMobileMenu} className="lg:hidden w-9 h-9 rounded-xl bg-stone-800 flex items-center justify-center"><Menu className="w-4 h-4" /></button>
+          <div className="min-w-0"><h1 className="text-sm font-black truncate">Sotuv kassasi</h1><p className="text-[10px] text-stone-500">Qidiruv • Savat • Chek</p></div>
+        </div>
+        <div className="rounded-xl bg-stone-900 border border-stone-800 px-3 py-1.5 text-right"><div className="text-[9px] text-stone-500">Bugungi tushum</div><div className="text-xs font-mono font-black text-amber-300">{formatMoney(todayRevenue)}</div></div>
+      </header>
+    );
+  }
+
   return (
     <header className="sticky top-0 z-30 bg-stone-900/95 backdrop-blur-md border-b border-stone-800 text-stone-100 shadow-sm">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-3">

@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { dataStore } from './dataStore';
+import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession } from './auth';
 import { 
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
@@ -20,6 +21,8 @@ function requireApiKey(req: Request, res: Response, next: NextFunction) {
   if (req.path.startsWith('/telegram/miniapp') || req.path.startsWith('/miniapp')) {
     return next();
   }
+
+  if (attachSessionUser(req)) return next();
 
   const configuredKey = dataStore.getApiKey();
   
@@ -75,6 +78,8 @@ apiV1Router.get('/health', (_req: Request, res: Response) => {
   });
 });
 
+apiV1Router.use('/auth', authRouter);
+
 // 2. Interactive Documentation (JSON OpenAPI Specification)
 apiV1Router.get('/docs', (req: Request, res: Response) => {
   const host = req.get('host') || 'localhost:3000';
@@ -104,13 +109,13 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
           low_stock: 'Kam qolgan tovarlar (stock <= minStockAlert) (masalan: ?low_stock=true)',
           barcode: 'Aniq shtrix-kod bo\'yicha (masalan: ?barcode=478001)'
         },
-        exampleCurl: `curl -H "X-API-Key: ${dataStore.getApiKey()}" "${baseUrl}/products?search=remax"`
+        exampleCurl: `curl -H "X-API-Key: <SIZNING_API_KALITINGIZ>" "${baseUrl}/products?search=remax"`
       },
       {
         path: '/api/v1/products/:id',
         method: 'GET',
         description: 'Bitta tovar haqida to\'liq ma\'lumot (ID yoki shtrix-kod orqali)',
-        exampleCurl: `curl -H "X-API-Key: ${dataStore.getApiKey()}" "${baseUrl}/products/478001"`
+        exampleCurl: `curl -H "X-API-Key: <SIZNING_API_KALITINGIZ>" "${baseUrl}/products/478001"`
       },
       {
         path: '/api/v1/products',
@@ -127,7 +132,7 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
           stock: 'Number (Ombordagi dona soni)',
           minStockAlert: 'Number (Kam qolish chegarasi)'
         },
-        exampleCurl: `curl -X POST -H "Content-Type: application/json" -H "X-API-Key: ${dataStore.getApiKey()}" -d '{"name":"Hoco X21 Type-C 1m","category":"Kabellar","purchasePrice":15000,"sellingPrice":30000,"stock":20}' "${baseUrl}/products"`
+        exampleCurl: `curl -X POST -H "Content-Type: application/json" -H "X-API-Key: <SIZNING_API_KALITINGIZ>" -d '{"name":"Hoco X21 Type-C 1m","category":"Kabellar","purchasePrice":15000,"sellingPrice":30000,"stock":20}' "${baseUrl}/products"`
       },
       {
         path: '/api/v1/sales',
@@ -143,7 +148,7 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
             { barcode: '478002', quantity: 1 }
           ]
         },
-        exampleCurl: `curl -X POST -H "Content-Type: application/json" -H "X-API-Key: ${dataStore.getApiKey()}" -d '{"customerName":"Alisher","paymentMethod":"naqd","items":[{"productId":"prod-1","quantity":1}]}' "${baseUrl}/sales"`
+        exampleCurl: `curl -X POST -H "Content-Type: application/json" -H "X-API-Key: <SIZNING_API_KALITINGIZ>" -d '{"customerName":"Alisher","paymentMethod":"naqd","items":[{"productId":"prod-1","quantity":1}]}' "${baseUrl}/sales"`
       },
       {
         path: '/api/v1/kirim',
@@ -187,23 +192,41 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
 // -----------------------------------------------------------------------------
 // Two-Way Sync Endpoint (Frontend <-> Server)
 // -----------------------------------------------------------------------------
-apiV1Router.get('/sync', (_req: Request, res: Response) => {
+apiV1Router.get('/sync', requireSession, (req: Request, res: Response) => {
   const state = dataStore.getState();
+  const user = getRequestUser(req)!;
+  const products = user.role === 'worker'
+    ? state.products.map(({ purchasePrice: _purchasePrice, costPrice: _costPrice, wholesalePrice: _wholesalePrice, ...product }) => ({
+        ...product,
+        purchasePrice: 0,
+        costPrice: 0
+      }))
+    : state.products;
   res.json({
     success: true,
     serverTimestamp: state.lastUpdated,
+    apiKey: user.role === 'owner' ? dataStore.getApiKey() : undefined,
     state: {
-      products: state.products,
-      movements: state.movements,
-      debts: state.debts,
-      supplierDebts: state.supplierDebts,
+      products,
+      movements: user.role === 'owner' ? state.movements : [],
+      debts: user.role === 'owner' ? state.debts : [],
+      supplierDebts: user.role === 'owner' ? state.supplierDebts : [],
       categories: state.categories,
-      storeInfo: state.storeInfo
+      storeInfo: { ...state.storeInfo, adminPin: undefined }
     }
   });
 });
 
-apiV1Router.post('/sync', (req: Request, res: Response) => {
+apiV1Router.post('/sync/import-legacy', requireOwner, (req: Request, res: Response) => {
+  const result = dataStore.importLegacyHistory({
+    movements: req.body?.movements,
+    debts: req.body?.debts,
+    supplierDebts: req.body?.supplierDebts
+  });
+  res.json({ success: true, ...result, serverTimestamp: dataStore.getState().lastUpdated });
+});
+
+apiV1Router.post('/sync', requireOwner, (req: Request, res: Response) => {
   try {
     const { products, movements, debts, supplierDebts, categories, storeInfo, baseRevision, clientTimestamp } = req.body;
     const currentRevision = dataStore.getState().lastUpdated;
@@ -246,6 +269,17 @@ apiV1Router.post('/sync', (req: Request, res: Response) => {
 // -----------------------------------------------------------------------------
 apiV1Router.use(requireApiKey);
 
+// Kassir faqat katalogni ko'rishi va savdo yozishi mumkin. Qolgan barcha
+// boshqaruv amallari serverning o'zida to'xtatiladi.
+apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
+  const user = getRequestUser(req);
+  if (user?.role !== 'worker') return next();
+  const canReadProducts = req.method === 'GET' && (req.path === '/products' || req.path.startsWith('/products/'));
+  const canCreateSale = req.method === 'POST' && req.path === '/sales';
+  if (canReadProducts || canCreateSale) return next();
+  return res.status(403).json({ success: false, error: 'Kassir uchun bu bo\'lim yopiq.' });
+});
+
 // --- Products CRUD ---
 apiV1Router.get('/products', (req: Request, res: Response) => {
   let products = dataStore.getProducts();
@@ -280,6 +314,9 @@ apiV1Router.get('/products', (req: Request, res: Response) => {
   const offset = Math.max(0, Number(req.query.offset) || 0);
 
   const paginated = products.slice(offset, offset + limit);
+  const data = getRequestUser(req)?.role === 'worker'
+    ? paginated.map(({ purchasePrice: _purchasePrice, costPrice: _costPrice, wholesalePrice: _wholesalePrice, ...product }) => ({ ...product, purchasePrice: 0, costPrice: 0 }))
+    : paginated;
 
   res.json({
     success: true,
@@ -287,7 +324,7 @@ apiV1Router.get('/products', (req: Request, res: Response) => {
     returnedCount: paginated.length,
     offset,
     limit,
-    data: paginated
+    data
   });
 });
 
@@ -304,7 +341,9 @@ apiV1Router.get('/products/:idOrBarcode', (req: Request, res: Response) => {
 
   res.json({
     success: true,
-    data: product
+    data: getRequestUser(req)?.role === 'worker'
+      ? (({ purchasePrice: _purchasePrice, costPrice: _costPrice, wholesalePrice: _wholesalePrice, ...safeProduct }) => ({ ...safeProduct, purchasePrice: 0, costPrice: 0 }))(product)
+      : product
   });
 });
 
@@ -398,6 +437,7 @@ apiV1Router.post('/sales', (req: Request, res: Response) => {
       });
     }
 
+    const employee = getRequestUser(req);
     const saleResult = dataStore.recordSale({
       items,
       customerName,
@@ -406,7 +446,9 @@ apiV1Router.post('/sales', (req: Request, res: Response) => {
       paymentMethod,
       discount,
       notes,
-      dueDate
+      dueDate,
+      employeeId: employee?.id,
+      employeeName: employee?.name
     });
 
     res.status(201).json({

@@ -106,7 +106,7 @@ export const AiAnalystView: React.FC<AiAnalystViewProps> = ({
   movements,
   debts,
   storeInfo,
-  apiKey = 'pb_pos_sec_77a94d8b'
+  apiKey = ''
 }) => {
   // Tabs: 'procurement' (Xarid Rejasi), 'mistakes' (Xatolar Diagnostikasi), 'chat' (AI Maslahatchi), 'telegram' (Sozlamalar)
   const [subTab, setSubTab] = useState<'procurement' | 'mistakes' | 'chat' | 'telegram'>('procurement');

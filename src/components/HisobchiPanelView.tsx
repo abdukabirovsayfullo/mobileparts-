@@ -16,9 +16,7 @@ import {
   ArrowUpDown, 
   Sparkles, 
   FileSpreadsheet,
-  AlertCircle,
-  KeyRound,
-  Lock
+  AlertCircle
 } from 'lucide-react';
 
 interface HisobchiPanelViewProps {
@@ -59,8 +57,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
     phone: storeInfo.phone || '+998 95 200 13 33, +998 91 174 13 33',
     phone2: storeInfo.phone2 || '+998 91 174 13 33',
     accountantName: storeInfo.accountantName || 'Sayfullo (Hisobchi / Kassir)',
-    workingHours: storeInfo.workingHours || '08:00 - 20:00',
-    adminPin: storeInfo.adminPin || '2508'
+    workingHours: storeInfo.workingHours || '08:00 - 20:00'
   });
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -307,29 +304,6 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
                 className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-amber-400 text-stone-800"
                 placeholder="08:00 - 20:00"
               />
-            </div>
-
-            <div className="bg-amber-50/60 p-3.5 rounded-xl border border-amber-300/70 space-y-1.5">
-              <label className="block text-stone-900 font-bold text-xs flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-stone-900">
-                  <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Rahbar PIN-kodi (Foyda va qarzlarni himoyalash):</span>
-                </span>
-                <span className="text-[11px] font-mono font-black text-amber-800 bg-amber-200/80 px-1.5 py-0.5 rounded">
-                  Maxfiy: 4 xonali
-                </span>
-              </label>
-              <input
-                type="password"
-                maxLength={8}
-                value={formData.adminPin || ''}
-                onChange={(e) => setFormData({ ...formData, adminPin: e.target.value })}
-                className="w-full px-3 py-2 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-400 font-mono text-base tracking-widest text-stone-900 bg-white"
-                placeholder="••••"
-              />
-              <p className="text-[11px] text-stone-600">
-                Ishchilar kunlik foyda, ta'minotchi qarzlari va tan narxlarni ko'ra olmasligi uchun ushbu PIN-kod ishlatiladi. Xohlagan 4 xonali kodni o'rnatishingiz mumkin.
-              </p>
             </div>
 
             <button

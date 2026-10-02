@@ -428,5 +428,4 @@ export const STORE_INFO: StoreSettings = {
   phone2: '+998 91 174 13 33',
   accountantName: 'Sayfullo (Hisobchi / Kassir)',
   workingHours: '08:00 - 20:00',
-  adminPin: '2508'
 };

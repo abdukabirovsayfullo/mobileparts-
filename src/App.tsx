@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings } from './types';
+import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings, AuthUser } from './types';
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_MOVEMENTS, 
@@ -22,7 +22,6 @@ import { SupplierDebtsView } from './components/SupplierDebtsView';
 import { HisobchiPanelView } from './components/HisobchiPanelView';
 import { PrintReceiptModal } from './components/PrintReceiptModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
-import { PinLockModal } from './components/PinLockModal';
 import { VazvratModal } from './components/VazvratModal';
 import { ExcelImportModal } from './components/ExcelImportModal';
 import { PdfReportModal, PdfReportType } from './components/PdfReportModal';
@@ -31,6 +30,8 @@ import { ApiIntegrationModal } from './components/ApiIntegrationModal';
 import { AiAnalystView } from './components/AiAnalystView';
 import { TelegramMiniAppView } from './components/TelegramMiniAppView';
 import { TelegramOrdersManagementView } from './components/TelegramOrdersManagementView';
+import { LoginScreen } from './components/LoginScreen';
+import { WorkerManagement } from './components/WorkerManagement';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
 import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
@@ -77,18 +78,15 @@ const mergeOnlineOrders = (localOrders: OnlineOrder[], serverOrders: OnlineOrder
 };
 
 export default function App() {
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
-    return sessionStorage.getItem('pb_admin_unlocked') === 'true';
-  });
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const isAdminUnlocked = authUser?.role === 'owner';
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingTab, setPendingTab] = useState<AccountingTab | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // If unlocked, default to 'report'; if locked for employee/cashier, default to 'chiqim'
-  const [activeTab, setActiveTab] = useState<AccountingTab>(() => {
-    const unlocked = sessionStorage.getItem('pb_admin_unlocked') === 'true';
-    return unlocked ? 'report' : 'chiqim';
-  });
+  const [activeTab, setActiveTab] = useState<AccountingTab>('chiqim');
   const [activeReceiptToPrint, setActiveReceiptToPrint] = useState<SaleReceiptData | null>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
@@ -112,11 +110,52 @@ export default function App() {
 
   // REST API & Tashqi Integratsiya modal holati
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
-  const [apiKey, setApiKey] = useState('pb_pos_sec_77a94d8b');
+  const [apiKey, setApiKey] = useState('');
   const [isSyncingWithServer, setIsSyncingWithServer] = useState(false);
   const serverSyncReadyRef = useRef(false);
   const applyingServerStateRef = useRef(false);
   const serverRevisionRef = useRef<string | null>(null);
+  const legacyHistoryImportedRef = useRef(false);
+
+  useEffect(() => {
+    fetch('/api/v1/auth/me')
+      .then(async response => response.ok ? response.json() : null)
+      .then(data => {
+        if (data?.user) {
+          setAuthUser(data.user);
+          setActiveTab(data.user.role === 'owner' ? 'report' : 'chiqim');
+        }
+      })
+      .finally(() => setIsAuthLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
+    let lastTouch = 0;
+    let ownerTimer: ReturnType<typeof setTimeout> | undefined;
+    const logoutLocally = () => {
+      setAuthUser(null);
+      setActiveTab('chiqim');
+    };
+    const registerActivity = () => {
+      const now = Date.now();
+      if (authUser.role === 'owner') {
+        if (ownerTimer) clearTimeout(ownerTimer);
+        ownerTimer = setTimeout(logoutLocally, 15 * 60 * 1000);
+      }
+      if (now - lastTouch > 30_000) {
+        lastTouch = now;
+        fetch('/api/v1/auth/touch', { method: 'POST' }).catch(() => undefined);
+      }
+    };
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'touchstart'];
+    events.forEach(event => window.addEventListener(event, registerActivity, { passive: true }));
+    registerActivity();
+    return () => {
+      events.forEach(event => window.removeEventListener(event, registerActivity));
+      if (ownerTimer) clearTimeout(ownerTimer);
+    };
+  }, [authUser]);
 
   // Telegram Mini App & Online Buyurtmalar holati
   const [onlineOrders, setOnlineOrders] = useState<OnlineOrder[]>(() => {
@@ -172,10 +211,10 @@ export default function App() {
         ) {
           return STORE_INFO;
         }
+        const { adminPin: _legacyPin, ...safeParsed } = parsed;
         return {
           ...STORE_INFO,
-          ...parsed,
-          adminPin: typeof parsed.adminPin === 'string' && /^\d{4}$/.test(parsed.adminPin) ? parsed.adminPin : (STORE_INFO.adminPin || '2508')
+          ...safeParsed
         };
       } catch (e) { console.error(e); }
     }
@@ -255,6 +294,16 @@ export default function App() {
   // Serverdan eng so'nggi ma'lumotlarni tortib olish (Pull latest live data from server)
   const fetchLatestStateFromServer = async () => {
     try {
+      if (authUser?.role === 'owner' && !legacyHistoryImportedRef.current) {
+        legacyHistoryImportedRef.current = true;
+        if (movements.length || debts.length || supplierDebts.length) {
+          await fetch('/api/v1/sync/import-legacy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ movements, debts, supplierDebts })
+          });
+        }
+      }
       const res = await fetch('/api/v1/sync');
       if (res.ok) {
         const data = await res.json();
@@ -262,6 +311,7 @@ export default function App() {
           applyingServerStateRef.current = true;
           const s = data.state;
           serverRevisionRef.current = data.serverTimestamp || s.lastUpdated || null;
+          if (typeof data.apiKey === 'string') setApiKey(data.apiKey);
           const serverProducts = Array.isArray(s.products) ? removeDemoProducts(s.products) : [];
           setProducts(serverProducts);
           if (Array.isArray(s.categories)) setCategories(s.categories);
@@ -285,6 +335,7 @@ export default function App() {
 
   // Dastur yuklanganda va har 5 soniyada serverdan yangilanishlarni olish (Real vaqt rejimida telefon <-> kompyuter sinxronlash)
   useEffect(() => {
+    if (!authUser) return;
     fetchLatestStateFromServer();
 
     const interval = setInterval(fetchLatestStateFromServer, 4000);
@@ -295,10 +346,11 @@ export default function App() {
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
     };
-  }, []);
+  }, [authUser?.id]);
 
   // Server REST API bilan ikki tomonlama sinxronizatsiya (Push changes to server)
   async function handleSyncWithServer(overrideProducts?: Product[]) {
+    if (authUser?.role !== 'owner') return;
     setIsSyncingWithServer(true);
     try {
       const res = await fetch('/api/v1/sync', {
@@ -695,6 +747,29 @@ export default function App() {
     const previousCustomerDebt = customerDebtTotal(debts, customerName);
     const batchId = `batch-${Date.now()}`;
     const receiptNum = debtDetails?.receiptNumber || `PB-${nowISO.slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+
+    if (authUser?.role === 'worker') {
+      fetch('/api/v1/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map(item => ({ productId: item.product.id, quantity: item.quantity, unitPrice: item.unitPrice })),
+          paymentMethod,
+          customerName,
+          customerPhone,
+          customerAddress,
+          notes,
+          dueDate: debtDetails?.dueDate,
+          discount: debtDetails?.discountAmount
+        })
+      }).then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Savdo saqlanmadi.');
+        await fetchLatestStateFromServer();
+      }).catch(error => {
+        window.alert(error instanceof Error ? error.message : 'Savdo serverga saqlanmadi.');
+      });
+    }
 
     setProducts((prevProducts) => {
       return prevProducts.map((p) => {
@@ -1283,17 +1358,11 @@ export default function App() {
   };
 
   const handleRequireAdminPin = (targetTab?: AccountingTab) => {
-    if (targetTab) {
-      setPendingTab(targetTab);
-    } else {
-      setPendingTab(null);
-    }
-    setIsPinModalOpen(true);
+    setPendingTab(targetTab || null);
+    window.alert("Rahbar bo'limiga kirish uchun kassir hisobidan chiqing va Rahbar foydalanuvchisini tanlang.");
   };
 
   const handleAdminUnlockSuccess = () => {
-    setIsAdminUnlocked(true);
-    sessionStorage.setItem('pb_admin_unlocked', 'true');
     if (pendingTab) {
       setActiveTab(pendingTab);
       setPendingTab(null);
@@ -1301,8 +1370,8 @@ export default function App() {
   };
 
   const handleAdminLock = () => {
-    setIsAdminUnlocked(false);
-    sessionStorage.removeItem('pb_admin_unlocked');
+    fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => undefined);
+    setAuthUser(null);
     const protectedTabs: AccountingTab[] = ['report', 'supplier-debts', 'hisobchi'];
     if (protectedTabs.includes(activeTab)) {
       setActiveTab('chiqim');
@@ -1325,6 +1394,17 @@ export default function App() {
         }}
       />
     );
+  }
+
+  if (isAuthLoading) {
+    return <div className="min-h-screen bg-stone-950 text-stone-300 flex items-center justify-center text-sm font-bold">CRM yuklanmoqda…</div>;
+  }
+
+  if (!authUser) {
+    return <LoginScreen onLogin={(user) => {
+      setAuthUser(user);
+      setActiveTab(user.role === 'owner' ? 'report' : 'chiqim');
+    }} />;
   }
 
   return (
@@ -1532,16 +1612,19 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <HisobchiPanelView
-              products={products}
-              movements={movements}
-              debts={debts}
-              supplierDebts={supplierDebts}
-              storeInfo={storeInfo}
-              onUpdateStoreInfo={handleUpdateStoreInfo}
-              onBatchUpdatePrices={handleBatchUpdatePrices}
-              onUpdateSingleProductPrices={handleUpdateSingleProductPrices}
-            />
+            <>
+              <WorkerManagement />
+              <HisobchiPanelView
+                products={products}
+                movements={movements}
+                debts={debts}
+                supplierDebts={supplierDebts}
+                storeInfo={storeInfo}
+                onUpdateStoreInfo={handleUpdateStoreInfo}
+                onBatchUpdatePrices={handleBatchUpdatePrices}
+                onUpdateSingleProductPrices={handleUpdateSingleProductPrices}
+              />
+            </>
           )
         )}
 
@@ -1616,17 +1699,6 @@ export default function App() {
       <PWAInstallModal
         isOpen={isInstallModalOpen}
         onClose={() => setIsInstallModalOpen(false)}
-      />
-
-      {/* Admin PIN Unlock Modal */}
-      <PinLockModal
-        isOpen={isPinModalOpen}
-        correctPin={storeInfo.adminPin || '2508'}
-        onSuccess={handleAdminUnlockSuccess}
-        onClose={() => {
-          setIsPinModalOpen(false);
-          setPendingTab(null);
-        }}
       />
 
       {/* Vazvrat Modal (Mijozdan tovar qaytarish) */}

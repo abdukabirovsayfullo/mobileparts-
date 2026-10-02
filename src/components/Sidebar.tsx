@@ -99,6 +99,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return 'text-stone-300 hover:text-white hover:bg-stone-900 border border-transparent';
   };
 
+  if (!isAdminUnlocked) {
+    return (
+      <>
+        {isMobileOpen && <div onClick={onCloseMobile} className="fixed inset-0 z-40 bg-black/70 lg:hidden" />}
+        <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-stone-950 text-white border-r border-stone-800 flex flex-col transition-transform lg:translate-x-0 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="p-4 border-b border-stone-800 flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-amber-400 text-stone-950 flex items-center justify-center shrink-0"><Smartphone className="w-5 h-5" /></div>
+              <div className="min-w-0"><div className="font-black text-sm truncate">{storeInfo.name}</div><div className="text-[10px] text-emerald-400 font-bold">● KASSA ONLAYN</div></div>
+            </div>
+            <button type="button" onClick={onCloseMobile} className="lg:hidden p-2"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="p-3 flex-1">
+            <button type="button" onClick={() => handleTabClick('chiqim')} className="w-full rounded-xl bg-amber-400 px-4 py-3 text-stone-950 font-black flex items-center gap-2">
+              <ArrowUpRight className="w-4 h-4" /> Sotuv va qidiruv
+            </button>
+            <p className="mt-4 px-2 text-[11px] leading-relaxed text-stone-500">Kassir rejimida faqat tovar qidirish, savat, savdo va chek chiqarish ochiq.</p>
+          </div>
+          <div className="p-3 border-t border-stone-800">
+            <div className="mb-2 rounded-xl bg-stone-900 px-3 py-2"><div className="text-[10px] text-stone-500">Bugungi tushum</div><div className="font-mono font-black text-amber-300">{formatMoney(todayRevenue)}</div></div>
+            <button type="button" onClick={onLockAdmin} className="w-full rounded-xl border border-stone-700 px-3 py-2 text-xs font-bold text-stone-300 hover:bg-stone-900">Hisobdan chiqish</button>
+          </div>
+        </aside>
+      </>
+    );
+  }
+
   return (
     <>
       {/* Mobile Backdrop */}

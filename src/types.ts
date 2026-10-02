@@ -2,6 +2,16 @@ export type MovementType = 'kirim' | 'chiqim' | 'spisaniye' | 'vazvrat';
 
 export type PaymentMethod = 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
 
+export type UserRole = 'owner' | 'worker';
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  role: UserRole;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -46,6 +56,8 @@ export interface StockMovement {
   returnReason?: string;  // Tovar qaytarilish sababi
   isReturn?: boolean;     // Qaytarilgan tovar belgisi
   notes?: string;
+  employeeId?: string;   // Savdoni amalga oshirgan xodim
+  employeeName?: string;
 }
 
 export interface StoreSettings {

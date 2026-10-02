@@ -32,7 +32,7 @@ interface ApiIntegrationModalProps {
 export const ApiIntegrationModal: React.FC<ApiIntegrationModalProps> = ({
   isOpen,
   onClose,
-  apiKey = 'pb_pos_sec_77a94d8b',
+  apiKey = '',
   onSyncNow,
   isSyncing = false
 }) => {

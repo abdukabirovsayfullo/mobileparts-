@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { 
   Product, 
   StockMovement, 
@@ -46,7 +47,13 @@ export interface PosDatabaseState {
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'pos_database.json');
 
-const DEFAULT_API_KEY = process.env.POS_API_KEY || 'pb_pos_sec_77a94d8b';
+const withoutLegacyPin = (settings: StoreSettings): StoreSettings => {
+  const { adminPin: _adminPin, ...safeSettings } = settings;
+  return safeSettings;
+};
+
+const LEGACY_PUBLIC_API_KEY = 'pb_pos_sec_77a94d8b';
+const DEFAULT_API_KEY = process.env.POS_API_KEY || `mp_${crypto.randomBytes(32).toString('base64url')}`;
 const DEMO_PRODUCT_KEYS = new Set(
   INITIAL_PRODUCTS.map(product => `${product.id}\u0000${product.barcode}\u0000${product.name}`)
 );
@@ -66,6 +73,9 @@ class DataStore {
 
   constructor() {
     this.state = this.loadDatabase();
+    // Eski brauzer PINi kabi endi ruxsat etilmaydigan maydonlarni diskdan ham
+    // darhol chiqarib tashlaydi. Yozish vaqtinchalik fayl orqali atomik bajariladi.
+    this.saveDatabaseSync(this.state);
   }
 
   private loadDatabase(): PosDatabaseState {
@@ -74,8 +84,8 @@ class DataStore {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         return {
-          apiKey: parsed.apiKey || DEFAULT_API_KEY,
-          storeInfo: parsed.storeInfo || STORE_INFO,
+          apiKey: parsed.apiKey && parsed.apiKey !== LEGACY_PUBLIC_API_KEY ? parsed.apiKey : DEFAULT_API_KEY,
+          storeInfo: withoutLegacyPin(parsed.storeInfo || STORE_INFO),
           categories: Array.isArray(parsed.categories) ? parsed.categories : DEFAULT_CATEGORIES,
           products: Array.isArray(parsed.products) ? removeDemoProducts(parsed.products) : [],
           movements: Array.isArray(parsed.movements) ? removeDemoMovements(parsed.movements) : [],
@@ -98,7 +108,7 @@ class DataStore {
 
     const initialState: PosDatabaseState = {
       apiKey: DEFAULT_API_KEY,
-      storeInfo: STORE_INFO,
+      storeInfo: withoutLegacyPin(STORE_INFO),
       categories: DEFAULT_CATEGORIES,
       products: [],
       movements: [],
@@ -124,7 +134,10 @@ class DataStore {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
-      fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
+      const safeState = { ...state, storeInfo: withoutLegacyPin(state.storeInfo) };
+      const tempFile = `${DB_FILE}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(safeState, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      fs.renameSync(tempFile, DB_FILE);
     } catch (err) {
       console.error('[DataStore] Failed to write database file:', err);
     }
@@ -287,6 +300,8 @@ class DataStore {
     discount?: number;
     notes?: string;
     dueDate?: string;
+    employeeId?: string;
+    employeeName?: string;
   }): {
     receiptNumber: string;
     totalRevenue: number;
@@ -307,6 +322,19 @@ class DataStore {
     const customerName = (salePayload.customerName || 'Chakana xaridor').trim();
     const customerPhone = (salePayload.customerPhone || '').trim();
     const discount = Math.max(0, Number(salePayload.discount || 0));
+
+    // Avval butun savatni tekshiramiz. Bitta xato mahsulot sabab yarim savdo
+    // yozilib qolmasligi va qoldiq manfiyga tushmasligi kerak.
+    for (const item of salePayload.items) {
+      const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
+      const product = item.productId
+        ? this.getProductById(item.productId)
+        : item.barcode
+          ? this.getProductById(item.barcode)
+          : undefined;
+      if (!product) throw new Error(`Tovar topilmadi (${item.productId || item.barcode || 'noma\'lum'})`);
+      if (product.stock < qty) throw new Error(`${product.name}: omborda ${product.stock} dona, so'ralgan ${qty} dona.`);
+    }
 
     for (const item of salePayload.items) {
       const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
@@ -353,6 +381,8 @@ class DataStore {
         receiptNumber,
         batchSaleId,
         notes: salePayload.notes || ''
+        ,employeeId: salePayload.employeeId
+        ,employeeName: salePayload.employeeName
       };
 
       movements.push(mov);
@@ -773,7 +803,7 @@ class DataStore {
       this.state.categories = clientData.categories;
     }
     if (clientData.storeInfo) {
-      this.state.storeInfo = clientData.storeInfo;
+      this.state.storeInfo = withoutLegacyPin(clientData.storeInfo);
     }
     if (clientData.telegramConfig) {
       this.state.telegramConfig = {
@@ -785,6 +815,31 @@ class DataStore {
     this.state.lastUpdated = new Date().toISOString();
     this.scheduleSave();
     return this.state;
+  }
+
+  public importLegacyHistory(clientData: Pick<Partial<PosDatabaseState>, 'movements' | 'debts' | 'supplierDebts'>): {
+    movementsAdded: number;
+    debtsAdded: number;
+    supplierDebtsAdded: number;
+  } {
+    const mergeById = <T extends { id: string }>(current: T[], incoming: T[] | undefined): number => {
+      if (!Array.isArray(incoming)) return 0;
+      const known = new Set(current.map(item => item.id));
+      const additions = incoming.filter(item => item?.id && !known.has(item.id));
+      current.unshift(...additions);
+      return additions.length;
+    };
+
+    const result = {
+      movementsAdded: mergeById(this.state.movements, clientData.movements),
+      debtsAdded: mergeById(this.state.debts, clientData.debts),
+      supplierDebtsAdded: mergeById(this.state.supplierDebts, clientData.supplierDebts)
+    };
+    if (result.movementsAdded || result.debtsAdded || result.supplierDebtsAdded) {
+      this.state.lastUpdated = new Date().toISOString();
+      this.scheduleSave();
+    }
+    return result;
   }
 }
 
