@@ -203,7 +203,7 @@ apiV1Router.get('/sync', requireSession, (req: Request, res: Response) => {
   const user = getRequestUser(req)!;
   const today = tashkentDate();
   const products = user.role === 'worker'
-    ? state.products.map(({ purchasePrice: _purchasePrice, costPrice: _costPrice, wholesalePrice: _wholesalePrice, ...product }) => ({
+    ? state.products.map(({ purchasePrice: _purchasePrice, costPrice: _costPrice, ...product }) => ({
         ...product,
         purchasePrice: 0,
         costPrice: 0

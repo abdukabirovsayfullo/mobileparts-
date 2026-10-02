@@ -91,7 +91,13 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // If unlocked, default to 'report'; if locked for employee/cashier, default to 'chiqim'
-  const [activeTab, setActiveTab] = useState<AccountingTab>('chiqim');
+  const [activeTabState, setActiveTabState] = useState<AccountingTab>('chiqim');
+  // Ishchi faqat Kassa (sotuv) va Nasiya bo'limlarini ko'ra oladi. Boshqa bo'limga o'tishga urinish kassaga qaytaradi.
+  const WORKER_TABS: AccountingTab[] = ['chiqim', 'debts'];
+  const isWorkerUser = authUser?.role === 'worker';
+  const activeTab: AccountingTab = isWorkerUser && !WORKER_TABS.includes(activeTabState) ? 'chiqim' : activeTabState;
+  const setActiveTab = (tab: AccountingTab) =>
+    setActiveTabState(authUser?.role === 'worker' && !WORKER_TABS.includes(tab) ? 'chiqim' : tab);
   const [activeReceiptToPrint, setActiveReceiptToPrint] = useState<SaleReceiptData | null>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
@@ -270,32 +276,50 @@ export default function App() {
 
   // Sync with LocalStorage
   useEffect(() => {
+    if (authUser?.role === 'worker') return;
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-  }, [products]);
+  }, [products, authUser?.role]);
 
   useEffect(() => {
+    if (authUser?.role === 'worker') return;
     localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
-  }, [categories]);
+  }, [categories, authUser?.role]);
 
   useEffect(() => {
+    if (authUser?.role === 'worker') return;
     localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
-  }, [movements]);
+  }, [movements, authUser?.role]);
 
   useEffect(() => {
+    if (authUser?.role === 'worker') return;
     localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(debts));
-  }, [debts]);
+  }, [debts, authUser?.role]);
 
   useEffect(() => {
+    if (authUser?.role === 'worker') return;
     localStorage.setItem(STORAGE_KEYS.SUPPLIER_DEBTS, JSON.stringify(supplierDebts));
-  }, [supplierDebts]);
+  }, [supplierDebts, authUser?.role]);
 
   useEffect(() => {
+    if (authUser?.role === 'worker') return;
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-  }, [customers]);
+  }, [customers, authUser?.role]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STORE_INFO, JSON.stringify(storeInfo));
   }, [storeInfo]);
+
+  // Ishchi kirganda shu qurilmada oldin saqlangan (rahbarga tegishli) ma'lumotlar o'chiriladi va ekranda qoldirilmaydi.
+  useEffect(() => {
+    if (authUser?.role !== 'worker') return;
+    Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+    localStorage.removeItem('pb_beeline_online_orders_v1');
+    setProducts([]);
+    setMovements([]);
+    setDebts([]);
+    setSupplierDebts([]);
+    setCustomers([]);
+  }, [authUser?.id, authUser?.role]);
 
   // Serverdan eng so'nggi ma'lumotlarni tortib olish (Pull latest live data from server)
   const fetchLatestStateFromServer = async () => {
@@ -1780,7 +1804,25 @@ export default function App() {
         isSyncing={isSyncingWithServer}
       />
 
+      {/* Ishchi uchun telefon pastki menyusi: faqat Kassa, Nasiya, Qaytarish, Chiqish */}
+      {isWorkerUser && (
+        <div className="no-print lg:hidden fixed bottom-0 inset-x-0 z-40 bg-stone-950/95 backdrop-blur-md border-t border-stone-800 px-2 py-1 shadow-2xl safe-area-bottom">
+          <div className="flex items-center justify-around">
+            {([
+              { label: 'Kassa', active: activeTab === 'chiqim', onClick: () => setActiveTab('chiqim') },
+              { label: 'Nasiya', active: activeTab === 'debts', onClick: () => setActiveTab('debts') },
+              { label: 'Qaytarish', active: false, onClick: () => handleOpenVazvratModal() },
+              { label: 'Chiqish', active: false, onClick: () => handleAdminLock() }
+            ]).map(item => (
+              <button key={item.label} type="button" onClick={() => { setIsMobileMenuOpen(false); item.onClick(); }}
+                className={`flex-1 py-3 text-[11px] font-black ${item.active ? 'text-amber-400' : 'text-stone-300'}`}>{item.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Mobile Sticky Bottom Navigation Bar (Telefonda Asosiy Qulay Boshqaruv) */}
+      {!isWorkerUser && (
       <div className="no-print lg:hidden fixed bottom-0 inset-x-0 z-40 bg-stone-950/95 backdrop-blur-md border-t border-stone-800 px-2 py-1 shadow-2xl safe-area-bottom">
         <div className="flex items-center justify-around">
           {/* 1. Kassa (Sotuv) */}
@@ -1895,9 +1937,10 @@ export default function App() {
           </button>
         </div>
       </div>
+      )}
 
-      {/* Mobile Management Sheet (Boshqaruv va Rahbar Menyu) */}
-      {isMobileMenuOpen && (
+      {/* Mobile Management Sheet (Boshqaruv va Rahbar Menyu): faqat Rahbar */}
+      {isMobileMenuOpen && !isWorkerUser && (
         <div className="no-print lg:hidden fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-xs flex flex-col justify-end transition-opacity">
           <div 
             className="flex-1"

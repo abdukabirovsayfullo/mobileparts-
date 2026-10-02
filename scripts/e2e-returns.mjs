@@ -47,13 +47,17 @@ try {
   r = await owner.post('/auth/manage/users', { name: 'Test Ishchi', pin: '1234' });
   const workerId = r.data?.user?.id;
   ok('Ishchi yaratildi', r.status === 201 && !!workerId);
-  r = await owner.post('/products', { name: 'TEST OYNA', category: 'Oyna', brand: 'T', barcode: 'TST001', purchasePrice: 12000, sellingPrice: 20000, stock: 10, minStockAlert: 1 });
+  r = await owner.post('/products', { name: 'TEST OYNA', category: 'Oyna', brand: 'T', barcode: 'TST001', purchasePrice: 12000, sellingPrice: 20000, wholesalePrice: 16000, stock: 10, minStockAlert: 1 });
   const productId = r.data?.data?.id;
   ok('Mahsulot yaratildi', (r.status === 201 || r.status === 200) && !!productId, String(r.status));
 
   const worker = new Client();
   r = await worker.post('/auth/login', { userId: workerId, pin: '1234' });
   ok('Ishchi kirishi', r.status === 200);
+
+  r = await worker.get('/sync');
+  const wp = r.data?.state?.products?.find(p => p.id === productId);
+  ok('Ishchi /sync: optom narx saqlanadi, tannarx yashirin', wp?.wholesalePrice === 16000 && wp?.purchasePrice === 0 && wp?.costPrice === 0, JSON.stringify(wp));
 
   // Sotuv (naqd, 3 dona) — ishchi
   r = await worker.post('/sales', { items: [{ productId, quantity: 3, unitPrice: 20000 }], paymentMethod: 'naqd', customerName: 'Naqd Mijoz' });
