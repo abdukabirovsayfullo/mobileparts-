@@ -39,7 +39,7 @@ interface StockBalanceViewProps {
   onEditCategory?: (oldName: string, newName: string) => boolean;
   onDeleteCategory?: (categoryName: string) => boolean;
   onOpenExcelImport?: () => void;
-  onOpenPdfReports?: (reportType?: 'out_of_stock' | 'stock_inventory') => void;
+  onOpenPdfReports?: (reportType?: 'out_of_stock' | 'stock_inventory' | 'low_stock') => void;
   onNavigateToAiAnalyst?: () => void;
 }
 
@@ -437,6 +437,18 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
               >
                 <FileText className="w-4 h-4" />
                 <span>📋 Zakaz PDF</span>
+              </button>
+            )}
+
+            {onOpenPdfReports && (
+              <button
+                type="button"
+                onClick={() => onOpenPdfReports('low_stock')}
+                className="px-3.5 py-2.5 bg-orange-500 hover:bg-orange-400 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                title="Faqat kam qolgan tovarlar ro'yxatini PDF qilish"
+              >
+                <FileText className="w-4 h-4" />
+                <span>⚠️ Kam qolgan PDF</span>
               </button>
             )}
 

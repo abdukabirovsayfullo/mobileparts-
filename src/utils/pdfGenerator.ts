@@ -617,6 +617,90 @@ export function createStockInventoryPdf(params: GenerateStockPdfParams): jsPDF {
 }
 
 // ============================================================================
+// 3b. KAM QOLGAN TOVARLAR RO'YXATI (narxsiz; qo'lda zakaz soni yozish uchun bo'sh ustun)
+// ============================================================================
+export interface GenerateLowStockPdfParams {
+  storeInfo: StoreSettings;
+  products: Product[];
+  dateStr?: string;
+}
+
+export function createLowStockPdf(params: GenerateLowStockPdfParams): jsPDF {
+  const { storeInfo, products, dateStr } = params;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const displayDate = dateStr || new Date().toLocaleDateString('uz-UZ');
+  const zeroCount = products.filter((p) => p.stock <= 0).length;
+
+  doc.setFillColor(24, 24, 27);
+  doc.rect(14, 12, 182, 24, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text(sanitizeText(storeInfo.name.toUpperCase()), 20, 21);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(200, 200, 200);
+  doc.text(`Kam qolgan tovarlar | Sana: ${sanitizeText(displayDate)}`, 20, 28);
+  doc.setFillColor(245, 158, 11);
+  doc.roundedRect(138, 16, 52, 15, 2, 2, 'F');
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('KAM QOLGAN TOVARLAR', 141, 22);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text("ZAKAZ UCHUN RO'YXAT", 141, 27);
+
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, 43, 182, 14, 2, 2, 'FD');
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Jami: ${products.length} xil tovar`, 20, 52);
+  doc.text(`Shundan tugagan (0 dona): ${zeroCount} xil`, 90, 52);
+
+  autoTable(doc, {
+    startY: 61,
+    head: [['#', 'Tovar Nomi & Modeli', 'Toifasi', 'Qoldiq', 'Minimum', 'Zakaz soni']],
+    body: products.map((p, idx) => [
+      String(idx + 1),
+      sanitizeText(p.name),
+      sanitizeText(p.category || 'Boshqa'),
+      p.stock <= 0 ? '0' : String(p.stock),
+      String(p.minStockAlert || 0),
+      ''
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+    styles: { fontSize: 8, cellPadding: 2.4, textColor: [15, 23, 42] },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 9 },
+      1: { cellWidth: 78, fontStyle: 'bold' },
+      2: { cellWidth: 32 },
+      3: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
+      4: { halign: 'center', cellWidth: 18 },
+      5: { halign: 'center', cellWidth: 27 }
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 3 && data.cell.raw === '0') {
+        data.cell.styles.textColor = [190, 18, 60];
+      }
+    },
+    margin: { left: 14, right: 14, bottom: 25 }
+  });
+
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Sahifa ${i} / ${totalPages}  |  ${sanitizeText(storeInfo.name)} - kam qolgan tovarlar`, 14, pageHeight - 8);
+  }
+  return doc;
+}
+
+// ============================================================================
 // 4. QARZDORLIKLAR (DEBTS PDF)
 // ============================================================================
 export interface GenerateDebtsPdfParams {

@@ -5,6 +5,7 @@ import {
   createOrderPdf, 
   createSalesPdf, 
   createStockInventoryPdf, 
+  createLowStockPdf,
   createDebtsPdf, 
   triggerPdfDownload, 
   openPdfInNewTab, 
@@ -36,6 +37,7 @@ import {
 
 export type PdfReportType = 
   | 'out_of_stock'       // Tugagan va kam qolgan tovarlar (Zakaz varaqasi)
+  | 'low_stock'          // Faqat kam qolgan tovarlar ro'yxati (narxsiz)
   | 'daily_sales'        // Kunlik / Oraliq savdo va kassa hisoboti
   | 'stock_inventory'    // Ombor inventarizatsiyasi va qoldiqlar
   | 'customer_debts'     // Nasiyalar va mijozlar qarzi
@@ -89,6 +91,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'zero' | 'low' | 'adequate'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [lowIncludeZero, setLowIncludeZero] = useState<boolean>(true);
 
   // Toggles for PDF layout
   const [includeProfitInPdf, setIncludeProfitInPdf] = useState<boolean>(isAdminUnlocked);
@@ -190,6 +193,16 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       return matchesCat && matchesSearch && matchesStatus;
     });
   }, [orderItems, selectedCategoryFilter, searchQuery, stockStatusFilter]);
+
+  // Kam qolgan tovarlar: qoldiq minimumdan oshmagan (xohlasa tugaganlar ham), eng kami birinchi
+  const lowStockProducts = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return products
+      .filter((p) => p.stock <= (p.minStockAlert || 5) && (lowIncludeZero || p.stock > 0))
+      .filter((p) => selectedCategoryFilter === 'all' || p.category === selectedCategoryFilter)
+      .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q))
+      .sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
+  }, [products, searchQuery, selectedCategoryFilter, lowIncludeZero]);
 
   const totalEstimatedOrderCost = useMemo(() => {
     return printableOrderItems.reduce((sum, item) => sum + (item.quantity * item.purchasePrice), 0);
@@ -401,6 +414,9 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
   // Generate vector PDF document using jsPDF & autotable
   const generateCurrentPdfDoc = () => {
+    if (reportType === 'low_stock') {
+      return createLowStockPdf({ storeInfo, products: lowStockProducts, dateStr: new Date().toLocaleDateString('uz-UZ') });
+    }
     if (reportType === 'out_of_stock') {
       return createOrderPdf({
         storeInfo,
@@ -453,7 +469,9 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       const dateTag = startDate === endDate ? startDate : `${startDate}_${endDate}`;
       let fileName = 'Hisobot';
 
-      if (reportType === 'out_of_stock') {
+      if (reportType === 'low_stock') {
+        fileName = `Kam_Qolgan_Tovarlar_${dateTag}`;
+      } else if (reportType === 'out_of_stock') {
         fileName = `Zakaz_Varaqasi_${supplierTarget.replace(/\s+/g, '_').slice(0, 15)}_${dateTag}`;
       } else if (reportType === 'daily_sales') {
         fileName = `Savdo_Kassa_Hisoboti_${dateTag}`;
@@ -503,13 +521,13 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in print:p-0 print:bg-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in print:p-0 print:bg-white">
       <div 
         id="pdf-report-modal-card"
-        className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-6xl max-h-[96vh] flex flex-col shadow-2xl overflow-hidden my-auto print:border-none print:shadow-none print:max-w-none print:max-h-none print:bg-white"
+        className="bg-stone-900 border border-stone-800 rounded-none sm:rounded-3xl w-full max-w-6xl h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[96vh] flex flex-col shadow-2xl overflow-hidden sm:my-auto print:border-none print:shadow-none print:max-w-none print:max-h-none print:bg-white"
       >
         {/* Header (No-print) */}
-        <div className="no-print px-5 sm:px-7 py-4 bg-gradient-to-r from-amber-950/70 via-stone-900 to-stone-900 border-b border-stone-800 flex items-center justify-between shrink-0">
+        <div className="no-print px-3 sm:px-7 py-2.5 sm:py-4 bg-gradient-to-r from-amber-950/70 via-stone-900 to-stone-900 border-b border-stone-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-400 flex items-center justify-center text-stone-950 shadow-md">
               <FileText className="w-5 h-5 stroke-[2.5]" />
@@ -519,11 +537,11 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                 <h2 className="text-base sm:text-lg font-black text-white">
                   Rasmiy Rangli PDF & Zakaz Tizimi
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-400 text-stone-950">
+                <span className="hidden sm:inline px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-400 text-stone-950">
                   A4 Eksport
                 </span>
               </div>
-              <p className="text-xs text-stone-400 mt-0.5">
+              <p className="hidden sm:block text-xs text-stone-400 mt-0.5">
                 Ta'minotchi uchun narxlarsiz zakaz varaqasi, kunlik savdo va ombor hisobotlari
               </p>
             </div>
@@ -539,12 +557,12 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
         </div>
 
         {/* Tab Selection Bar (No-print) */}
-        <div className="no-print px-5 py-2.5 bg-stone-950 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-stone-900 rounded-xl border border-stone-800 text-xs font-bold">
+        <div className="no-print px-3 sm:px-5 py-2 sm:py-2.5 bg-stone-950 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2 sm:gap-2.5 shrink-0">
+          <div className="flex flex-nowrap sm:flex-wrap items-center gap-1.5 p-1 bg-stone-900 rounded-xl border border-stone-800 text-xs font-bold w-full sm:w-auto overflow-x-auto sm:overflow-visible">
             <button
               type="button"
               onClick={() => setReportType('out_of_stock')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                 reportType === 'out_of_stock'
                   ? 'bg-amber-400 text-stone-950 shadow font-black'
                   : 'text-stone-300 hover:text-white hover:bg-stone-800'
@@ -561,8 +579,24 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
             <button
               type="button"
+              onClick={() => setReportType('low_stock')}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                reportType === 'low_stock'
+                  ? 'bg-amber-400 text-stone-950 shadow font-black'
+                  : 'text-stone-300 hover:text-white hover:bg-stone-800'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              <span>⚠️ Kam qolgan tovarlar PDF</span>
+              {lowStockProducts.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px]">{lowStockProducts.length}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setReportType('daily_sales')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                 reportType === 'daily_sales'
                   ? 'bg-amber-400 text-stone-950 shadow font-black'
                   : 'text-stone-300 hover:text-white hover:bg-stone-800'
@@ -575,7 +609,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
             <button
               type="button"
               onClick={() => setReportType('stock_inventory')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                 reportType === 'stock_inventory'
                   ? 'bg-amber-400 text-stone-950 shadow font-black'
                   : 'text-stone-300 hover:text-white hover:bg-stone-800'
@@ -588,7 +622,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
             <button
               type="button"
               onClick={() => setReportType('customer_debts')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                 reportType === 'customer_debts'
                   ? 'bg-amber-400 text-stone-950 shadow font-black'
                   : 'text-stone-300 hover:text-white hover:bg-stone-800'
@@ -601,7 +635,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
             <button
               type="button"
               onClick={() => setReportType('supplier_debts')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                 reportType === 'supplier_debts'
                   ? 'bg-amber-400 text-stone-950 shadow font-black'
                   : 'text-stone-300 hover:text-white hover:bg-stone-800'
@@ -614,11 +648,11 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
           {/* Sub-view toggle for Zakaz: Preview vs Builder */}
           {reportType === 'out_of_stock' && (
-            <div className="flex items-center gap-1 p-1 bg-stone-900 border border-amber-500/30 rounded-xl text-xs font-bold">
+            <div className="flex items-center gap-1 p-1 bg-stone-900 border border-amber-500/30 rounded-xl text-xs font-bold w-full sm:w-auto overflow-x-auto">
               <button
                 type="button"
                 onClick={() => setZakazViewMode('preview')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                   zakazViewMode === 'preview'
                     ? 'bg-amber-400 text-stone-950 font-black'
                     : 'text-stone-300 hover:text-white'
@@ -630,7 +664,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
               <button
                 type="button"
                 onClick={() => setZakazViewMode('builder')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                   zakazViewMode === 'builder'
                     ? 'bg-amber-400 text-stone-950 font-black'
                     : 'text-amber-300 hover:text-white'
@@ -644,7 +678,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
         </div>
 
         {/* Dynamic Filters & Date Range Controls Bar (No-print) */}
-        <div className="no-print px-5 py-3 bg-stone-900/90 border-b border-stone-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="no-print px-3 sm:px-5 py-2 sm:py-3 bg-stone-900/90 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2 sm:gap-3 text-xs max-h-[28vh] sm:max-h-none overflow-y-auto sm:overflow-visible shrink-0">
           {/* Left: Date Range presets for Sales / Movements */}
           {reportType === 'daily_sales' ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -741,6 +775,18 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
               </select>
             </div>
 
+            {reportType === 'low_stock' && (
+              <button
+                type="button"
+                onClick={() => setLowIncludeZero((v) => !v)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                  lowIncludeZero ? 'bg-rose-950/40 border-rose-500/50 text-rose-300' : 'bg-stone-900 border-stone-700 text-stone-400'
+                }`}
+              >
+                {lowIncludeZero ? 'Tugaganlar ham bor (0 dona)' : 'Faqat kam qolgan (>0)'}
+              </button>
+            )}
+
             {/* Stock status filter for out of stock & stock inventory */}
             {(reportType === 'out_of_stock' || reportType === 'stock_inventory') && (
               <select
@@ -803,7 +849,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-stone-950/90 print:bg-white print:p-0">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-6 bg-stone-950/90 print:bg-white print:p-0">
           <div className="max-w-4xl mx-auto print:max-w-none space-y-4">
             {/* If Zakaz & in Builder Mode, show OrderBuilderPanel */}
             {reportType === 'out_of_stock' && zakazViewMode === 'builder' && (
@@ -831,7 +877,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
             <div
               id="printable-pdf-document"
               ref={reportContainerRef}
-              className={`bg-white text-stone-900 p-6 sm:p-10 rounded-2xl shadow-2xl border border-stone-200 min-h-[750px] space-y-6 text-sm print:p-0 print:border-none print:shadow-none print:rounded-none ${
+              className={`bg-white text-stone-900 p-4 sm:p-10 rounded-2xl shadow-2xl border border-stone-200 min-h-[320px] sm:min-h-[750px] space-y-6 text-sm print:p-0 print:border-none print:shadow-none print:rounded-none ${
                 reportType === 'out_of_stock' && zakazViewMode === 'builder' ? 'hidden print:block' : 'block'
               }`}
               style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
@@ -854,6 +900,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
                 <div className="text-left sm:text-right text-xs text-stone-600 space-y-1">
                   <div className="inline-block px-3 py-1 rounded-full font-black text-stone-900 text-xs uppercase tracking-wide bg-amber-100 border border-amber-300">
+                    {reportType === 'low_stock' && "⚠️ KAM QOLGAN TOVARLAR RO'YXATI"}
                     {reportType === 'out_of_stock' && '📋 RASMIY BUYURTMA (ZAKAZ) VARAQASI'}
                     {reportType === 'daily_sales' && (startDate === endDate ? '📊 KUNLIK SAVDO VA KASSA HISOBOTI' : '📊 DAVRIY SAVDO VA KASSA HISOBOTI')}
                     {reportType === 'stock_inventory' && '📦 OMBOR INVENTARIZATSIYA HISOBOTI'}
@@ -1400,6 +1447,46 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                 </div>
               )}
 
+              {/* REPORT TYPE: KAM QOLGAN TOVARLAR (narxsiz; zakaz sonini qo'lda yozish uchun bo'sh ustun) */}
+              {reportType === 'low_stock' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1 p-3 rounded-xl bg-stone-50 border border-stone-200 text-sm">
+                    <span>Jami: <strong className="text-stone-950">{lowStockProducts.length} xil tovar</strong></span>
+                    <span>Tugagan (0): <strong className="text-rose-700">{lowStockProducts.filter((p) => p.stock <= 0).length} xil</strong></span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-stone-800 text-white text-left">
+                          <th className="p-2 w-8 text-center">#</th>
+                          <th className="p-2">Tovar nomi</th>
+                          <th className="p-2">Toifasi</th>
+                          <th className="p-2 text-center">Qoldiq</th>
+                          <th className="p-2 text-center">Minimum</th>
+                          <th className="p-2 text-center w-24">Zakaz soni</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lowStockProducts.length === 0 ? (
+                          <tr><td colSpan={6} className="p-6 text-center text-stone-500">Kam qolgan tovar yo'q.</td></tr>
+                        ) : (
+                          lowStockProducts.map((p, idx) => (
+                            <tr key={p.id} className="border-b border-stone-200 avoid-break">
+                              <td className="p-2 text-center text-stone-500">{idx + 1}</td>
+                              <td className="p-2 font-bold text-stone-900">{p.name}</td>
+                              <td className="p-2 text-stone-600">{p.category}</td>
+                              <td className={`p-2 text-center font-black ${p.stock <= 0 ? 'text-rose-700' : 'text-stone-900'}`}>{p.stock <= 0 ? 0 : p.stock}</td>
+                              <td className="p-2 text-center text-stone-600">{p.minStockAlert || 0}</td>
+                              <td className="p-2 border-l border-stone-300"></td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {/* Signatures and Official Store Stamp Footer */}
               <div className="pt-8 border-t-2 border-stone-200 flex items-end justify-between text-xs text-stone-700 avoid-break">
                 <div className="space-y-4">
@@ -1439,17 +1526,19 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
         )}
 
         {/* Footer Actions (No-print) */}
-        <div className="no-print px-5 sm:px-7 py-3.5 bg-stone-950 border-t border-stone-800 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-stone-400 flex items-center gap-2">
+        <div className="no-print px-3 sm:px-7 py-2.5 sm:py-3.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] bg-stone-950 border-t border-stone-800 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3 shrink-0">
+          <div className="hidden sm:flex text-xs text-stone-400 items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>
-              {reportType === 'out_of_stock'
+              {reportType === 'low_stock'
+                ? "Narxsiz ro'yxat: «Zakaz soni» ustunini qo'lda to'ldirish mumkin."
+                : reportType === 'out_of_stock'
                 ? "Ta'minotchi rejimi faol (Narxlar berkitilgan, faqat model va zakaz soni)."
                 : 'A4 formatiga moslashtirilgan. Rangli jadvallar bilan to\'g\'ridan-to\'g\'ri chop etish yoki yuklash mumkin.'}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-2.5 w-full sm:w-auto [&>button]:justify-center">
             {reportType === 'out_of_stock' && (
               <button
                 type="button"
@@ -1486,7 +1575,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
               type="button"
               onClick={handleDownloadPdf}
               disabled={isGeneratingPdf}
-              className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-black rounded-xl shadow-lg flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+              className="col-span-2 order-first sm:order-none px-6 py-3 sm:py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-black rounded-xl shadow-lg flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
             >
               <Download className="w-4 h-4 stroke-[2.5]" />
               <span>{isGeneratingPdf ? 'PDF Tayyorlanmoqda...' : '📥 Rangli PDF Yuklab Olish'}</span>
