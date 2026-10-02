@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Product, StockMovement } from '../types';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { CategoryManagerModal } from './CategoryManagerModal';
+import { searchProducts } from '../utils/productSearch';
 import { 
   ArrowDownLeft, 
   Plus, 
@@ -145,21 +146,8 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   };
 
   const filteredDropdownProducts = useMemo(() => {
-    return products.filter((p) => {
-      if (!p) return false;
-      const matchesCat =
-        selectedCategoryFilter === 'all' || p.category === selectedCategoryFilter;
-      const q = productSearch.trim().toLowerCase();
-      const pName = String(p.name || '').toLowerCase();
-      const pBrand = String(p.brand || '').toLowerCase();
-      const pBarcode = String(p.barcode || '').toLowerCase();
-      const matchesSearch =
-        !q ||
-        pName.includes(q) ||
-        pBrand.includes(q) ||
-        pBarcode.includes(q);
-      return matchesCat && matchesSearch;
-    });
+    const categoryProducts = selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter);
+    return searchProducts(categoryProducts, productSearch);
   }, [products, selectedCategoryFilter, productSearch]);
 
   // When selected product changes

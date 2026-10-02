@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Product, PaymentMethod } from '../types';
 import { formatMoney } from '../utils/formatters';
+import { searchProducts } from '../utils/productSearch';
 import { 
   ShoppingBag, 
   Search, 
@@ -155,15 +156,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   // Filtered products list
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    const categoryProducts = products.filter(p => {
       const matchCat = selectedCategory === 'Barchasi' || p.category.toLowerCase() === selectedCategory.toLowerCase();
-      const q = searchQuery.toLowerCase().trim();
-      const matchSearch = !q || 
-        p.name.toLowerCase().includes(q) || 
-        p.brand.toLowerCase().includes(q) || 
-        p.category.toLowerCase().includes(q);
-      return matchCat && matchSearch;
+      return matchCat;
     });
+    return searchProducts(categoryProducts, searchQuery);
   }, [products, selectedCategory, searchQuery]);
 
   // Cart operations

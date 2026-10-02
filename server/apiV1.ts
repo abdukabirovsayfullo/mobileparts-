@@ -5,6 +5,7 @@ import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSes
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 import { calculateShiftTotals } from './shiftLogic';
 import { buildReport, previousRange } from './reportLogic';
+import { searchProducts } from '../src/utils/productSearch';
 import { 
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
@@ -412,12 +413,7 @@ apiV1Router.get('/products', (req: Request, res: Response) => {
   }
 
   if (search) {
-    products = products.filter(p => 
-      p.name.toLowerCase().includes(search) || 
-      p.brand.toLowerCase().includes(search) || 
-      p.barcode.includes(search) ||
-      p.category.toLowerCase().includes(search)
-    );
+    products = searchProducts(products, search);
   }
 
   if (lowStock) {

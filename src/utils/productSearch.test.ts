@@ -1,0 +1,6 @@
+import assert from 'node:assert/strict'; import test from 'node:test'; import type { Product } from '../types'; import { exactProductCodeMatch, normalizeSearchText, searchProducts } from './productSearch';
+const products:Product[]=[{id:'p1',name:'CHEXOL JENSKIY',category:'CHEXOL',brand:'Universal',barcode:'9757C4',purchasePrice:1,sellingPrice:2,stock:5,minStockAlert:1},{id:'p2',name:'KABEL Type-C Samsung',category:'KABEL',brand:'Samsung',barcode:'ABC123',purchasePrice:1,sellingPrice:2,stock:0,minStockAlert:1}];
+test('harf, apostrof, belgi va kirill normallashadi',()=>{assert.equal(normalizeSearchText("  G‘ILOF-чехол  "),'gilof chexol');});
+test('so‘z tartibi, qisman va bir harf xato topiladi',()=>{assert.equal(searchProducts(products,'samsung kabel')[0].id,'p2');assert.equal(searchProducts(products,'jensk')[0].id,'p1');assert.equal(searchProducts(products,'chexl')[0].id,'p1');assert.equal(searchProducts(products,'кабел type c')[0].id,'p2');});
+test('aniq shtrix kod ustun va yagona',()=>assert.equal(exactProductCodeMatch(products,'abc123')?.id,'p2'));
+test('1500 tovarda qidiruv tez ishlaydi',()=>{const large=Array.from({length:1500},(_,i)=>({...products[i%2],id:`p${i}`,barcode:`B${i}`}));const started=performance.now();assert.ok(searchProducts(large,'type c kabel').length>0);assert.ok(performance.now()-started<250);});

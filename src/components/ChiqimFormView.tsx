@@ -3,6 +3,7 @@ import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, Cus
 import { formatMoney, formatDate } from '../utils/formatters';
 import { PrintReceiptModal } from './PrintReceiptModal';
 import { customerDebtTotal } from '../utils/saleAccounting';
+import { exactProductCodeMatch, searchProducts } from '../utils/productSearch';
 import { 
   ArrowUpRight, 
   Search, 
@@ -166,22 +167,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   };
 
   // Filter products for quick selection
-  const filteredProducts = products.filter((p) => {
-    if (!p) return false;
-    if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const pName = String(p.name || '').toLowerCase();
-      const pBarcode = String(p.barcode || '').toLowerCase();
-      const pBrand = String(p.brand || '').toLowerCase();
-      return (
-        pName.includes(q) ||
-        pBarcode.includes(q) ||
-        pBrand.includes(q)
-      );
-    }
-    return true;
-  });
+  const filteredProducts = useMemo(() => searchProducts(
+    selectedCategory === 'all' ? products : products.filter(p => p.category === selectedCategory),
+    searchQuery
+  ), [products, selectedCategory, searchQuery]);
 
   const categories = ['all', ...Array.from(new Set(products.map((p) => p.category)))];
 
@@ -565,6 +554,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 placeholder="Aksessuar nomi, brendi yoki shtrix-kodi..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  const exact = exactProductCodeMatch(products, searchQuery);
+                  if (exact) { e.preventDefault(); handleAddToCart(exact); setSearchQuery(''); }
+                }}
                 className="w-full pl-9 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-400"
               />
             </div>
@@ -588,6 +582,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
           {/* Product Items Cards with both Retail & Wholesale prices */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-1">
+            {filteredProducts.length === 0 && <div className="sm:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">Hech narsa topilmadi. Tovar nomi yoki kodini tekshiring.</div>}
             {filteredProducts.map((p) => {
               const isLowStock = p.stock <= p.minStockAlert;
               const isOutOfStock = p.stock <= 0;

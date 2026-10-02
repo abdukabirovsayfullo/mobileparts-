@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Product } from '../types';
 import { formatMoney, downloadCSV } from '../utils/formatters';
 import { CategoryManagerModal } from './CategoryManagerModal';
+import { searchProducts } from '../utils/productSearch';
 import { 
   Package, 
   Search, 
@@ -178,7 +179,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
 
   // Filter products
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    const filtered = products.filter((p) => {
       if (!p) return false;
       if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
       const stockNum = Number(p.stock) || 0;
@@ -187,19 +188,9 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
       if (stockStatusFilter === 'low' && (stockNum > minAlert || stockNum <= 0)) return false;
       if (stockStatusFilter === 'zero' && stockNum > 0) return false;
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const pName = String(p.name || '').toLowerCase();
-        const pBrand = String(p.brand || '').toLowerCase();
-        const pBarcode = String(p.barcode || '').toLowerCase();
-        return (
-          pName.includes(q) ||
-          pBrand.includes(q) ||
-          pBarcode.includes(q)
-        );
-      }
       return true;
     });
+    return searchProducts(filtered, searchQuery);
   }, [products, selectedCategory, stockStatusFilter, searchQuery]);
 
   const handleOpenCreate = () => {
