@@ -13,7 +13,7 @@ import {
   OnlineOrderStatus,
   SaleReceiptData
 } from '../src/types';
-import type { AuthUser, CashExpense, CashExpenseCategory } from '../src/types';
+import type { AuthUser, CashExpense, CashExpenseCategory, CashShift } from '../src/types';
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_MOVEMENTS,
@@ -42,6 +42,7 @@ export interface PosDatabaseState {
   supplierDebts: SupplierDebtRecord[];
   onlineOrders: OnlineOrder[];
   expenses: CashExpense[];
+  cashShifts: CashShift[];
   telegramConfig?: TelegramConfig;
   lastUpdated: string;
 }
@@ -95,6 +96,7 @@ class DataStore {
           supplierDebts: Array.isArray(parsed.supplierDebts) ? removeDemoSupplierDebts(parsed.supplierDebts) : [],
           onlineOrders: Array.isArray(parsed.onlineOrders) ? parsed.onlineOrders : [],
           expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
+          cashShifts: Array.isArray(parsed.cashShifts) ? parsed.cashShifts : [],
           telegramConfig: parsed.telegramConfig || {
             botToken: process.env.TELEGRAM_BOT_TOKEN || '',
             chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -119,6 +121,7 @@ class DataStore {
       supplierDebts: [],
       onlineOrders: [],
       expenses: [],
+      cashShifts: [],
       telegramConfig: {
         botToken: process.env.TELEGRAM_BOT_TOKEN || '',
         chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -235,6 +238,37 @@ class DataStore {
     this.state.lastUpdated = expense.cancelledAt;
     this.scheduleSave();
     return expense;
+  }
+
+  public getCashShifts(): CashShift[] {
+    return this.state.cashShifts || [];
+  }
+
+  public getClosedShift(employeeId: string, businessDate: string): CashShift | undefined {
+    return this.getCashShifts().find(item => item.employeeId === employeeId && item.businessDate === businessDate && !item.reopenedAt);
+  }
+
+  public closeCashShift(shift: CashShift): CashShift {
+    if (this.getClosedShift(shift.employeeId, shift.businessDate)) throw new Error('Bu smena avval yopilgan.');
+    this.state.cashShifts ||= [];
+    this.state.cashShifts.unshift(shift);
+    this.state.lastUpdated = shift.closedAt;
+    this.scheduleSave();
+    return shift;
+  }
+
+  public reopenCashShift(id: string, reason: string, user: AuthUser): CashShift {
+    const shift = this.getCashShifts().find(item => item.id === id);
+    if (!shift) throw new Error('Smena topilmadi.');
+    if (shift.reopenedAt) throw new Error('Smena allaqachon qayta ochilgan.');
+    if (reason.trim().length < 3) throw new Error("Qayta ochish sababini yozing.");
+    shift.reopenedAt = new Date().toISOString();
+    shift.reopenedById = user.id;
+    shift.reopenedByName = user.name;
+    shift.reopenReason = reason.trim();
+    this.state.lastUpdated = shift.reopenedAt;
+    this.scheduleSave();
+    return shift;
   }
 
   // --- Telegram Integration ---

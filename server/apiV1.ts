@@ -1,7 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
+import crypto from 'node:crypto';
 import { dataStore } from './dataStore';
 import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession } from './auth';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
+import { calculateShiftTotals } from './shiftLogic';
 import { 
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
@@ -284,7 +286,8 @@ apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
   const canReadProducts = req.method === 'GET' && (req.path === '/products' || req.path.startsWith('/products/'));
   const canCreateSale = req.method === 'POST' && req.path === '/sales';
   const canUseExpenses = req.path === '/expenses' && (req.method === 'GET' || req.method === 'POST');
-  if (canReadProducts || canCreateSale || canUseExpenses) return next();
+  const canUseCashShift = (req.path === '/cash-shifts/current' && req.method === 'GET') || (req.path === '/cash-shifts/close' && req.method === 'POST');
+  if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift) return next();
   return res.status(403).json({ success: false, error: 'Kassir uchun bu bo\'lim yopiq.' });
 });
 
@@ -308,6 +311,7 @@ apiV1Router.get('/expenses', (req: Request, res: Response) => {
 apiV1Router.post('/expenses', (req: Request, res: Response) => {
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (dataStore.getClosedShift(user.id, tashkentDate())) return res.status(409).json({ success: false, error: 'Smena yopilgan. Davom etish uchun Rahbar qayta ochishi kerak.' });
   try {
     const expense = dataStore.addExpense({
       recipient: String(req.body?.recipient || ''),
@@ -319,6 +323,50 @@ apiV1Router.post('/expenses', (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(400).json({ success: false, error: error?.message || 'Chiqim saqlanmadi.' });
   }
+});
+
+// --- Smena / kassani yopish ---
+apiV1Router.get('/cash-shifts/current', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  const date = tashkentDate();
+  const previous = dataStore.getCashShifts().find(item => item.employeeId === user.id && item.businessDate < date && !item.reopenedAt);
+  const openingCash = Math.max(0, Math.round(Number(req.query.openingCash ?? previous?.leftForNextDay ?? 0)));
+  res.json({ success: true, businessDate: date, closedShift: dataStore.getClosedShift(user.id, date) || null, suggestedOpeningCash: previous?.leftForNextDay || 0, totals: calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, date, openingCash) });
+});
+
+apiV1Router.post('/cash-shifts/close', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  try {
+    const businessDate = tashkentDate();
+    const openingCash = Math.max(0, Math.round(Number(req.body?.openingCash) || 0));
+    const countedCash = Math.max(0, Math.round(Number(req.body?.countedCash) || 0));
+    const leftForNextDay = Math.max(0, Math.round(Number(req.body?.leftForNextDay) || 0));
+    const note = String(req.body?.note || '').trim();
+    const totals = calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, businessDate, openingCash);
+    const difference = countedCash - totals.expectedCash;
+    if (difference !== 0 && note.length < 3) return res.status(400).json({ success: false, error: "Kamomat yoki ortiqcha bo'lsa izoh yozish majburiy." });
+    const shift = dataStore.closeCashShift({ id: `shift-${crypto.randomUUID()}`, businessDate, employeeId: user.id, employeeName: user.name, openingCash, ...totals, countedCash, difference, leftForNextDay, note: note || undefined, closedAt: new Date().toISOString() });
+    res.status(201).json({ success: true, data: shift });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error?.message || 'Smena yopilmadi.' });
+  }
+});
+
+apiV1Router.get('/cash-shifts', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (user.role !== 'owner') return res.status(403).json({ success: false, error: 'Faqat Rahbar uchun.' });
+  res.json({ success: true, data: dataStore.getCashShifts() });
+});
+
+apiV1Router.post('/cash-shifts/:id/reopen', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (user.role !== 'owner') return res.status(403).json({ success: false, error: 'Smenani faqat Rahbar qayta ochadi.' });
+  try { res.json({ success: true, data: dataStore.reopenCashShift(req.params.id, String(req.body?.reason || ''), user) }); }
+  catch (error: any) { res.status(400).json({ success: false, error: error?.message || 'Smena ochilmadi.' }); }
 });
 
 apiV1Router.post('/expenses/:id/cancel', (req: Request, res: Response) => {
@@ -491,6 +539,9 @@ apiV1Router.post('/sales', (req: Request, res: Response) => {
     }
 
     const employee = getRequestUser(req);
+    if (employee && dataStore.getClosedShift(employee.id, tashkentDate())) {
+      return res.status(409).json({ success: false, error: 'Smena yopilgan. Yangi savdo uchun Rahbar smenani qayta ochishi kerak.' });
+    }
     const saleResult = dataStore.recordSale({
       items,
       customerName,

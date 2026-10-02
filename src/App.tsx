@@ -33,6 +33,7 @@ import { TelegramOrdersManagementView } from './components/TelegramOrdersManagem
 import { LoginScreen } from './components/LoginScreen';
 import { WorkerManagement } from './components/WorkerManagement';
 import { CashExpensePanel } from './components/CashExpensePanel';
+import { CashShiftPanel } from './components/CashShiftPanel';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
 import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
@@ -1514,6 +1515,7 @@ export default function App() {
               user={authUser}
               cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
             />
+            <CashShiftPanel user={authUser} />
             <ChiqimFormView
               products={products}
               recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}

@@ -29,6 +29,29 @@ export interface CashExpense {
   cancellationReason?: string;
 }
 
+export interface CashShift {
+  id: string;
+  businessDate: string;
+  employeeId: string;
+  employeeName: string;
+  openingCash: number;
+  cashRevenue: number;
+  clickRevenue: number;
+  uzumRevenue: number;
+  debtRevenue: number;
+  expenseTotal: number;
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  leftForNextDay: number;
+  note?: string;
+  closedAt: string;
+  reopenedAt?: string;
+  reopenedById?: string;
+  reopenedByName?: string;
+  reopenReason?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
