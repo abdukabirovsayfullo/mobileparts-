@@ -96,3 +96,50 @@ export function clampDebtPayment(debt: DebtRecord, amount: number): number {
   if (debt.status === 'yopildi' || !(amount > 0)) return 0;
   return Math.min(amount, Math.max(0, debt.remainingAmount));
 }
+
+export interface PeriodDebtRow {
+  debt: DebtRecord;
+  /** "Tovar × soni" qatorlari; sotuv topilmasa nasiya izohi. */
+  itemLines: string[];
+}
+
+export interface PeriodCustomerReport {
+  key: string;
+  name: string;
+  phone: string;
+  rows: PeriodDebtRow[];
+  saleTotal: number;
+  paid: number;
+  remaining: number;
+}
+
+/** [fromMs, toMs] oralig'ida (ikkala chegara kiradi) yozilgan nasiyalar: mijoz bo'yicha, olingan tovarlari bilan. Eng katta qoldiq birinchi. */
+export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[], fromMs: number, toMs: number): PeriodCustomerReport[] {
+  const anonymous = cleanName("Do'kon mijozi");
+  const groups = new Map<string, PeriodCustomerReport>();
+  for (const d of debts) {
+    const created = new Date(d.createdAt).getTime();
+    if (isNaN(created) || created < fromMs || created > toMs) continue;
+
+    const sale = movements.find(m => m.id === d.movementId);
+    const related = sale ? (sale.batchSaleId ? movements.filter(m => m.batchSaleId === sale.batchSaleId) : [sale]) : [];
+    const itemLines = related.filter(m => m.type === 'chiqim' && !m.isReturn).map(m => `${m.productName} × ${m.quantity}`);
+    if (!itemLines.length && d.notes) itemLines.push(d.notes);
+
+    const name = cleanName(d.customerName);
+    const key = !name || name === anonymous ? `id:${d.id}` : name;
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, name: d.customerName.trim(), phone: d.customerPhone, rows: [], saleTotal: 0, paid: 0, remaining: 0 };
+      groups.set(key, group);
+    }
+    group.rows.push({ debt: d, itemLines });
+    group.saleTotal += d.totalDebt;
+    group.paid += d.paidAmount;
+    group.remaining += d.remainingAmount;
+    if (!group.phone && d.customerPhone) group.phone = d.customerPhone;
+  }
+  const result = [...groups.values()];
+  for (const g of result) g.rows.sort((a, b) => a.debt.createdAt.localeCompare(b.debt.createdAt));
+  return result.sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
+}

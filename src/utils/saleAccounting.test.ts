@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment } from './saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment, debtPeriodReport } from './saleAccounting';
 import { thermalReceiptHtml } from './thermalReceiptHtml';
 import { DebtRecord, StockMovement, SaleReceiptData } from '../types';
 
@@ -84,4 +84,32 @@ test('overdue days, customer grouping and payment clamping', () => {
   assert.equal(clampDebtPayment(a, 999999), 50000);
   assert.equal(clampDebtPayment(a, -5), 0);
   assert.equal(clampDebtPayment(closed, 1000), 0);
+});
+
+test('debt period report lists items, date and remaining debt per customer inside the range only', () => {
+  const sale = (id: string, name: string, qty: number, batch?: string): StockMovement => ({ ...movement(saleAccounting([10000], 0).lines[0], id), productName: name, quantity: qty, batchSaleId: batch });
+  const movements = [sale('m1', 'Kabel', 2, 'b1'), sale('m2', 'Himoya oynasi', 1, 'b1'), sale('m3', 'Quvvatlagich', 1)];
+  const rec = (id: string, name: string, createdAt: string, movementId: string, remaining: number, notes?: string): DebtRecord =>
+    ({ ...debt(remaining, name), id, createdAt, movementId, totalDebt: 100000, paidAmount: 100000 - remaining, notes });
+  const debts = [
+    rec('d1', 'Akromjon', '2026-10-02T09:15:00', 'm1', 70000),
+    rec('d2', ' akromjon ', '2026-10-04T18:40:00', 'm3', 30000),
+    rec('d3', 'Akromjon', '2026-09-20T10:00:00', 'm3', 99000),
+    rec('d4', "Do'kon mijozi", '2026-10-03T12:00:00', 'manual-1', 5000, 'Qo\'lda kiritilgan nasiya')
+  ];
+  const from = new Date('2026-10-01T00:00:00').getTime();
+  const to = new Date('2026-10-05T23:59:59.999').getTime();
+  const report = debtPeriodReport(debts, movements, from, to);
+
+  assert.equal(report.length, 2);
+  const akrom = report[0];
+  assert.equal(akrom.name, 'Akromjon');
+  assert.equal(akrom.rows.length, 2); // d3 is outside the range
+  assert.equal(akrom.remaining, 100000);
+  assert.equal(akrom.saleTotal, 200000);
+  assert.deepEqual(akrom.rows[0].itemLines, ['Kabel × 2', 'Himoya oynasi × 1']);
+  assert.deepEqual(akrom.rows[1].itemLines, ['Quvvatlagich × 1']);
+  assert.equal(akrom.rows[0].debt.createdAt, '2026-10-02T09:15:00');
+  assert.deepEqual(report[1].rows[0].itemLines, ["Qo'lda kiritilgan nasiya"]);
+  assert.equal(debtPeriodReport(debts, movements, to + 1, to + 2).length, 0);
 });

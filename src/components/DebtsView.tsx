@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { DebtRecord, PaymentMethod } from '../types';
+import { DebtRecord, PaymentMethod, StockMovement } from '../types';
+import { DebtPeriodReport } from './DebtPeriodReport';
 import { STORE_INFO } from '../data/initialData';
 import { customerDebtTotal, debtOverdueDays, groupDebtsByCustomer } from '../utils/saleAccounting';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
@@ -21,19 +22,21 @@ import {
 
 interface DebtsViewProps {
   debts: DebtRecord[];
+  movements: StockMovement[];
   onAddDebtPayment: (debtId: string, amount: number, method: 'naqd' | 'click_payme') => void;
   onAddNewDebt: (debt: DebtRecord) => void;
 }
 
 export const DebtsView: React.FC<DebtsViewProps> = ({
   debts,
+  movements,
   onAddDebtPayment,
   onAddNewDebt
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'barchasi' | 'faol' | 'yopildi'>('faol');
   const [sortBy, setSortBy] = useState<'muddat' | 'summa' | 'yangi'>('muddat');
-  const [viewMode, setViewMode] = useState<'qarzlar' | 'mijozlar'>('qarzlar');
+  const [viewMode, setViewMode] = useState<'qarzlar' | 'mijozlar' | 'davr'>('qarzlar');
   
   // Payment modal state
   const [paymentModalDebt, setPaymentModalDebt] = useState<DebtRecord | null>(null);
@@ -272,6 +275,12 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
             >
               Mijozlar bo'yicha
             </button>
+            <button
+              onClick={() => setViewMode('davr')}
+              className={`px-3 py-1 rounded-lg cursor-pointer transition-colors ${viewMode === 'davr' ? 'bg-stone-950 text-white' : 'text-stone-700'}`}
+            >
+              Kunlar oralig'i
+            </button>
           </div>
 
           <select
@@ -302,6 +311,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {viewMode === 'davr' && <DebtPeriodReport debts={debts} movements={movements} query={searchQuery} />}
 
       {viewMode === 'mijozlar' && (
         <div className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">

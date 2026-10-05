@@ -1621,6 +1621,7 @@ export default function App() {
         {activeTab === 'debts' && isAdminUnlocked && (
           <DebtsView
             debts={debts}
+            movements={movements}
             onAddDebtPayment={handleAddDebtPayment}
             onAddNewDebt={handleAddNewDebtManual}
           />
