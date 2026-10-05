@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { DebtRecord, PaymentMethod, StockMovement } from '../types';
+import { DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
 import { DebtPeriodReport } from './DebtPeriodReport';
 import { STORE_INFO } from '../data/initialData';
 import { customerDebtTotal, debtOverdueDays, groupDebtsByCustomer } from '../utils/saleAccounting';
@@ -23,6 +23,7 @@ import {
 interface DebtsViewProps {
   debts: DebtRecord[];
   movements: StockMovement[];
+  storeInfo?: StoreSettings;
   onAddDebtPayment: (debtId: string, amount: number, method: 'naqd' | 'click_payme') => void;
   onAddNewDebt: (debt: DebtRecord) => void;
 }
@@ -30,6 +31,7 @@ interface DebtsViewProps {
 export const DebtsView: React.FC<DebtsViewProps> = ({
   debts,
   movements,
+  storeInfo,
   onAddDebtPayment,
   onAddNewDebt
 }) => {
@@ -312,7 +314,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
         </div>
       </div>
 
-      {viewMode === 'davr' && <DebtPeriodReport debts={debts} movements={movements} query={searchQuery} />}
+      {viewMode === 'davr' && <DebtPeriodReport debts={debts} movements={movements} store={storeInfo ?? STORE_INFO} query={searchQuery} />}
 
       {viewMode === 'mijozlar' && (
         <div className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">

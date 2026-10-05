@@ -1622,6 +1622,7 @@ export default function App() {
           <DebtsView
             debts={debts}
             movements={movements}
+            storeInfo={storeInfo}
             onAddDebtPayment={handleAddDebtPayment}
             onAddNewDebt={handleAddNewDebtManual}
           />

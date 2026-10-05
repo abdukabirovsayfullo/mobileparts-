@@ -4,7 +4,7 @@ import { StoreSettings, OrderItem, Product, DebtRecord, SupplierDebtRecord, Stoc
 import { formatMoney } from './formatters';
 
 // Clean text for jsPDF standard font (replace curly quotes with straight quotes)
-function sanitizeText(str: string | undefined | null): string {
+export function sanitizeText(str: string | undefined | null): string {
   if (!str) return '';
   return String(str)
     .replace(/[\u2018\u2019\u02BB\u02BC`]/g, "'")

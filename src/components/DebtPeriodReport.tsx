@@ -1,12 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { Download } from 'lucide-react';
-import type { DebtRecord, StockMovement } from '../types';
-import { debtPeriodReport } from '../utils/saleAccounting';
+import { Download, FileText, Printer } from 'lucide-react';
+import type { DebtRecord, StockMovement, StoreSettings } from '../types';
+import { customerDebtTotal, debtPeriodReport, PeriodCustomerReport } from '../utils/saleAccounting';
 import { downloadCSV, formatMoney } from '../utils/formatters';
+import { triggerPdfDownload } from '../utils/pdfGenerator';
+import { createDebtStatementPdf, debtStatementFileName } from '../utils/debtStatementPdf';
+import { DebtStatementParams, debtStatementReceiptHtml, formatDateTime, printThermalHtml } from '../utils/debtStatementReceipt';
 
 interface Props {
   debts: DebtRecord[];
   movements: StockMovement[];
+  store: StoreSettings;
   query: string;
 }
 
@@ -20,13 +24,7 @@ const daysAgo = (days: number) => {
   return toInputDate(d);
 };
 
-const formatDateTime = (iso: string) => {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, query }) => {
+export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, query }) => {
   const [from, setFrom] = useState(() => daysAgo(6));
   const [to, setTo] = useState(() => toInputDate(new Date()));
 
@@ -49,6 +47,30 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, query }) =
     setTo(toDate);
   };
 
+  const statementParams = (c: PeriodCustomerReport): DebtStatementParams => ({
+    customer: c,
+    store,
+    from,
+    to,
+    totalDebt: c.key.startsWith('id:') ? c.remaining : customerDebtTotal(debts, c.name)
+  });
+
+  const downloadPdf = (c: PeriodCustomerReport) => {
+    const p = statementParams(c);
+    if (!triggerPdfDownload(createDebtStatementPdf(p), debtStatementFileName(c.name, from, to))) {
+      alert('PDF saqlanmadi. Brauzerda yuklab olishga ruxsat berilganini tekshiring.');
+    }
+  };
+
+  const printReceipt = async (c: PeriodCustomerReport) => {
+    try {
+      await printThermalHtml(debtStatementReceiptHtml(statementParams(c)));
+    } catch (error) {
+      console.error('[Print] Nasiya hisobi:', error);
+      alert("Printer oynasi ochilmadi. CRM-AvtoPrint yorlig'idan oching yoki PDF dan foydalaning.");
+    }
+  };
+
   const exportCSV = () => {
     const rows: string[][] = [['Mijoz', 'Telefon', 'Sana va soat', 'Olingan tovarlar', 'Sotuv summasi', 'To‘langan', 'Nasiya qoldig‘i', 'Muddat']];
     for (const c of customers) {
@@ -69,6 +91,7 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, query }) =
   };
 
   const quickButton = 'px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-bold text-stone-800 cursor-pointer';
+  const actionButton = 'px-3 py-1.5 rounded-lg bg-white hover:bg-stone-100 border border-stone-300 text-xs font-bold text-stone-800 flex items-center gap-1.5 cursor-pointer';
 
   return (
     <div className="space-y-4">
@@ -144,14 +167,24 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, query }) =
       ) : (
         customers.map((c) => (
           <section key={c.key} className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">
-            <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200">
+            <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-stone-50 border-b border-stone-200">
               <div>
                 <div className="font-black text-sm text-stone-900">{c.name}</div>
                 {c.phone && <div className="text-[11px] text-stone-500">{c.phone}</div>}
               </div>
-              <div className="text-right text-xs">
-                <div className="text-stone-500">Nasiya qoldig‘i</div>
-                <div className="font-black text-red-600 text-sm">{formatMoney(c.remaining)}</div>
+              <div className="flex items-center gap-3">
+                <div className="text-right text-xs">
+                  <div className="text-stone-500">Nasiya qoldig‘i</div>
+                  <div className="font-black text-red-600 text-sm">{formatMoney(c.remaining)}</div>
+                </div>
+                <button type="button" onClick={() => downloadPdf(c)} className={actionButton} title="Mijozga eslatish uchun PDF">
+                  <FileText className="w-3.5 h-3.5" />
+                  PDF
+                </button>
+                <button type="button" onClick={() => printReceipt(c)} className={actionButton} title="80 mm chek chiqarish">
+                  <Printer className="w-3.5 h-3.5" />
+                  Chek
+                </button>
               </div>
             </header>
             <ul className="divide-y divide-stone-100">
