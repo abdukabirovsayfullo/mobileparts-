@@ -1461,15 +1461,12 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        todayRevenue={todayRevenue}
-        todayProfit={todayProfit}
         activeDebtsCount={activeDebtsCount}
         activeSupplierDebtsCount={activeSupplierDebtsCount}
         outOfStockCount={outOfStockCount}
         unprintedOrdersCount={unprintedOrdersCount}
         storeInfo={storeInfo}
         isAdminUnlocked={isAdminUnlocked}
-        onRequireAdminPin={handleRequireAdminPin}
         onLockAdmin={handleAdminLock}
         onOpenVazvrat={() => handleOpenVazvratModal()}
         onOpenExcelImport={() => setIsExcelImportModalOpen(true)}
@@ -1501,19 +1498,10 @@ export default function App() {
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           todayRevenue={todayRevenue}
           outOfStockCount={outOfStockCount}
-          activeDebtsCount={activeDebtsCount}
-          activeSupplierDebtsCount={activeSupplierDebtsCount}
-          unprintedOrdersCount={unprintedOrdersCount}
-          onOpenTelegramOrders={() => setActiveTab('telegram-orders')}
-          storeInfo={storeInfo}
           isAdminUnlocked={isAdminUnlocked}
-          onRequireAdminPin={handleRequireAdminPin}
           onLockAdmin={handleAdminLock}
           onOpenPdfReports={handleOpenPdfReports}
-          onOpenInstallModal={() => setIsInstallModalOpen(true)}
-          onOpenVazvrat={() => handleOpenVazvratModal()}
           onOpenPhotoKirim={() => setIsPhotoKirimModalOpen(true)}
-          onOpenApiModal={() => setIsApiModalOpen(true)}
         />
 
         {/* Main Container */}
