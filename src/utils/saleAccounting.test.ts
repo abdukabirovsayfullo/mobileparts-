@@ -104,7 +104,8 @@ test('debt period report lists items, date and remaining debt per customer insid
     rec('d1', 'Akromjon', '2026-10-02T09:15:00', 'm1', 70000),
     rec('d2', ' akromjon ', '2026-10-04T18:40:00', 'm3', 30000),
     rec('d3', 'Akromjon', '2026-09-20T10:00:00', 'm3', 99000),
-    rec('d4', "Do'kon mijozi", '2026-10-03T12:00:00', 'manual-1', 5000, 'Qo\'lda kiritilgan nasiya')
+    rec('d4', "Do'kon mijozi", '2026-10-03T12:00:00', 'manual-1', 5000, 'Qo\'lda kiritilgan nasiya'),
+    { ...rec('paid-off', 'Yopilgan Mijoz', '2026-10-03T13:00:00', 'm3', 0), status: 'yopildi' as const }
   ];
   const from = new Date('2026-10-01T00:00:00').getTime();
   const to = new Date('2026-10-05T23:59:59.999').getTime();
@@ -122,6 +123,7 @@ test('debt period report lists items, date and remaining debt per customer insid
   assert.deepEqual(akrom.rows[1].itemLines, ['Quvvatlagich × 1']);
   assert.equal(akrom.rows[0].debt.createdAt, '2026-10-02T09:15:00');
   assert.deepEqual(report[1].rows[0].itemLines, ["Qo'lda kiritilgan nasiya"]);
+  assert.ok(report.every(customer => customer.name !== 'Yopilgan Mijoz'));
   assert.equal(debtPeriodReport(debts, movements, to + 1, to + 2).length, 0);
 });
 

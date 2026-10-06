@@ -127,6 +127,9 @@ export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[]
   const anonymous = cleanName("Do'kon mijozi");
   const groups = new Map<string, PeriodCustomerReport>();
   for (const d of debts) {
+    // Bu ekran mijozga yuboriladigan qarz eslatmasi uchun: to'liq yopilgan
+    // nasiyalar tanlangan davrda yozilgan bo'lsa ham ro'yxatga kirmaydi.
+    if (d.status === 'yopildi' || d.remainingAmount <= 0) continue;
     const created = new Date(d.createdAt).getTime();
     if (isNaN(created) || created < fromMs || created > toMs) continue;
 

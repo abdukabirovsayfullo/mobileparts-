@@ -97,6 +97,9 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-xs space-y-3">
+        <p className="text-xs text-stone-600">
+          Tanlangan davrda nasiyaga olgan va hozir ham qarzi qolgan mijozlar. Har bir mijoz uchun alohida PDF yuborish yoki 80 mm chek chiqarish mumkin.
+        </p>
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-[11px] font-bold text-stone-600">
             Boshlanish sanasi
@@ -180,11 +183,11 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
                 </div>
                 <button type="button" onClick={() => downloadPdf(c)} className={actionButton} title="Mijozga eslatish uchun PDF">
                   <FileText className="w-3.5 h-3.5" />
-                  PDF
+                  Eslatma PDF
                 </button>
                 <button type="button" onClick={() => printReceipt(c)} className={actionButton} title="80 mm chek chiqarish">
                   <Printer className="w-3.5 h-3.5" />
-                  Chek
+                  Print 80 mm
                 </button>
               </div>
             </header>
