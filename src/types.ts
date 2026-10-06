@@ -100,6 +100,9 @@ export interface StockMovement {
   notes?: string;
   employeeId?: string;   // Savdoni amalga oshirgan xodim
   employeeName?: string;
+  isHistoricalAggregate?: boolean; // Eski tizimdan oylik jami; oddiy savdo tushumiga qo'shilmaydi
+  turnoverImportId?: string;
+  turnoverPeriod?: { from: string; to: string };
   approvedByName?: string; // 7 kundan eski qaytarishni tasdiqlagan Rahbar
 }
 

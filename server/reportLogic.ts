@@ -8,7 +8,11 @@ const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T
 const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
 export const buildReport = (state: ReportInput, from: string, to: string) => {
-  const sales = state.movements.filter(m => m.type === 'chiqim' && inRange(m.timestamp, from, to));
+  const allOutgoing = state.movements.filter(m => m.type === 'chiqim' && inRange(m.timestamp, from, to));
+  const historicalOutgoing = allOutgoing.filter(m => m.isHistoricalAggregate);
+  // Eski ombor hisobotida chiqim tannarxda berilgan, sotuv narxi va chek soni yo'q.
+  // Uni tushum/foyda bilan aralashtirmaymiz; tovar aylanmasida alohida ko'rsatamiz.
+  const sales = allOutgoing.filter(m => !m.isHistoricalAggregate);
   const returns = state.movements.filter(m => m.type === 'vazvrat' && inRange(m.timestamp, from, to));
   const kirim = state.movements.filter(m => m.type === 'kirim' && inRange(m.timestamp, from, to));
   const expenses = state.expenses.filter(item => !item.cancelledAt && inRange(item.occurredAt, from, to));
@@ -23,6 +27,8 @@ export const buildReport = (state: ReportInput, from: string, to: string) => {
   const productMap = new Map<string, { id: string; name: string; quantity: number; revenue: number; profit: number }>();
   sales.forEach(m => { const row = productMap.get(m.productId) || { id: m.productId, name: m.productName, quantity: 0, revenue: 0, profit: 0 }; row.quantity += m.quantity; row.revenue += m.totalRevenue; row.profit += m.profit; productMap.set(m.productId, row); });
   const products = [...productMap.values()].sort((a, b) => b.quantity - a.quantity);
+  const historicalProductMap = new Map<string, { id: string; name: string; quantity: number; cost: number }>();
+  historicalOutgoing.forEach(m => { const row = historicalProductMap.get(m.productId) || { id: m.productId, name: m.productName, quantity: 0, cost: 0 }; row.quantity += m.quantity; row.cost += m.totalCost; historicalProductMap.set(m.productId, row); });
   const employeeMap = new Map<string, { name: string; revenue: number; sales: Set<string> }>();
   sales.forEach(m => { const id = m.employeeId || 'legacy'; const row = employeeMap.get(id) || { name: m.employeeName || 'Eski savdolar', revenue: 0, sales: new Set<string>() }; row.revenue += m.totalRevenue; row.sales.add(m.batchSaleId || m.id); employeeMap.set(id, row); });
   const categoryMap = new Map<string, number>(); expenses.forEach(item => categoryMap.set(item.category, (categoryMap.get(item.category) || 0) + item.amount));
@@ -34,7 +40,7 @@ export const buildReport = (state: ReportInput, from: string, to: string) => {
   return {
     range: { from, to, days: span, grouping: monthly ? 'month' : 'day' },
     sales: { revenue, cost, grossProfit, expenses: expensesTotal, netProfit: grossProfit - expensesTotal, count: saleIds.size, items: sales.reduce((sum, m) => sum + m.quantity, 0), averageCheck: saleIds.size ? Math.round(revenue / saleIds.size) : 0, payments: { cash: payment('naqd'), click: payment('click_payme'), uzum: payment('uzum'), debt: payment('nasiya') } },
-    inventory: { kirimQuantity: kirim.reduce((s, m) => s + m.quantity, 0), kirimCost: kirim.reduce((s, m) => s + m.totalCost, 0), currentCostValue: state.products.reduce((s, p) => s + p.stock * (p.purchasePrice || 0), 0), currentRetailValue: state.products.reduce((s, p) => s + p.stock * p.sellingPrice, 0), top: products.slice(0, 10), low: products.slice().sort((a, b) => a.quantity - b.quantity).slice(0, 10), unsoldCount: state.products.filter(p => !productMap.has(p.id)).length },
+    inventory: { kirimQuantity: kirim.reduce((s, m) => s + m.quantity, 0), kirimCost: kirim.reduce((s, m) => s + m.totalCost, 0), historicalOutgoingQuantity: historicalOutgoing.reduce((s, m) => s + m.quantity, 0), historicalOutgoingCost: historicalOutgoing.reduce((s, m) => s + m.totalCost, 0), historicalTop: [...historicalProductMap.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 10), currentCostValue: state.products.reduce((s, p) => s + p.stock * (p.purchasePrice || 0), 0), currentRetailValue: state.products.reduce((s, p) => s + p.stock * p.sellingPrice, 0), top: products.slice(0, 10), low: products.slice().sort((a, b) => a.quantity - b.quantity).slice(0, 10), unsoldCount: state.products.filter(p => !productMap.has(p.id)).length },
     debts: { issued: debtsCreated.reduce((s, d) => s + d.totalDebt, 0), paid: debtPaid, remaining: state.debts.reduce((s, d) => s + d.remainingAmount, 0) },
     expenses: { total: expensesTotal, count: expenses.length, byCategory: [...categoryMap].map(([category, total]) => ({ category, total })) },
     returns: { count: new Set(returns.map(m => m.batchSaleId || m.id)).size, amount: refundRevenue },
