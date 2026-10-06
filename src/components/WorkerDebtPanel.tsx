@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BookOpen, CheckCircle2, Search } from 'lucide-react';
+import { BookOpen, CalendarDays, CheckCircle2, Search } from 'lucide-react';
 import { formatMoney } from '../utils/formatters';
+import type { StoreSettings } from '../types';
+import type { PeriodCustomerReport } from '../utils/saleAccounting';
+import { DebtPeriodReport } from './DebtPeriodReport';
 
 interface DebtLookup {
   id: string;
@@ -17,7 +20,8 @@ const methodLabel = (method: string) => (method === 'naqd' ? 'naqd' : method ===
 const dateLabel = (iso: string) => new Date(iso).toLocaleDateString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: '2-digit' });
 
 /** Ishchi uchun nasiya: mijozni qidirish va to'lov qabul qilish. Umumiy ro'yxat, jami qarz va o'chirish yo'q. */
-export const WorkerDebtPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
+export const WorkerDebtPanel: React.FC<{ onChanged?: () => void; storeInfo: StoreSettings }> = ({ onChanged, storeInfo }) => {
+  const [view, setView] = useState<'lookup' | 'period'>('lookup');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<DebtLookup[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -25,6 +29,15 @@ export const WorkerDebtPanel: React.FC<{ onChanged?: () => void }> = ({ onChange
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
+
+  const loadPeriodReport = useCallback(async (from: string, to: string, searchQuery: string): Promise<PeriodCustomerReport[]> => {
+    const params = new URLSearchParams({ from, to });
+    if (searchQuery.trim()) params.set('q', searchQuery.trim());
+    const response = await fetch(`/api/v1/debts/period?${params.toString()}`, { cache: 'no-store' });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'Nasiya hisoboti yuklanmadi.');
+    return Array.isArray(body.data) ? body.data : [];
+  }, []);
 
   const search = useCallback(async (text: string) => {
     if (text.trim().length < 2) { setResults([]); return; }
@@ -66,11 +79,22 @@ export const WorkerDebtPanel: React.FC<{ onChanged?: () => void }> = ({ onChange
   };
 
   return (
-    <section className="mx-auto max-w-2xl space-y-4">
+    <section className={`mx-auto space-y-4 ${view === 'period' ? 'max-w-6xl' : 'max-w-2xl'}`}>
       <div className="flex items-center gap-3">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-amber-400 text-stone-950"><BookOpen className="h-5 w-5" /></span>
         <div><h2 className="text-lg font-black">Nasiya</h2><p className="text-xs text-stone-500">Mijozni toping, qarz qoldig‘ini ko‘ring va to‘lovni qabul qiling</p></div>
       </div>
+      <div className="inline-flex rounded-xl bg-stone-100 p-1 text-xs font-bold">
+        <button type="button" onClick={() => setView('lookup')} className={`rounded-lg px-3 py-2 ${view === 'lookup' ? 'bg-stone-950 text-white' : 'text-stone-700'}`}>
+          <Search className="mr-1 inline h-3.5 w-3.5" /> Mijozni qidirish
+        </button>
+        <button type="button" onClick={() => setView('period')} className={`rounded-lg px-3 py-2 ${view === 'period' ? 'bg-stone-950 text-white' : 'text-stone-700'}`}>
+          <CalendarDays className="mr-1 inline h-3.5 w-3.5" /> Kunlar oralig‘i
+        </button>
+      </div>
+      {view === 'period' ? (
+        <DebtPeriodReport debts={[]} movements={[]} store={storeInfo} query="" loadReport={loadPeriodReport} />
+      ) : (<>
       <label className="flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-3">
         <Search className="h-4 w-4 text-stone-400" />
         <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Mijoz ismi yoki telefon (kamida 2 belgi)" className="w-full bg-transparent text-sm outline-none" />
@@ -105,6 +129,7 @@ export const WorkerDebtPanel: React.FC<{ onChanged?: () => void }> = ({ onChange
           </article>
         ))}
       </div>
+      </>)}
     </section>
   );
 };

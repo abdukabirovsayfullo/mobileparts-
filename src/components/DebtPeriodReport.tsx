@@ -12,6 +12,7 @@ interface Props {
   movements: StockMovement[];
   store: StoreSettings;
   query: string;
+  loadReport?: (from: string, to: string, query: string) => Promise<PeriodCustomerReport[]>;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -24,11 +25,14 @@ const daysAgo = (days: number) => {
   return toInputDate(d);
 };
 
-export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, query }) => {
+export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, query, loadReport }) => {
   const [from, setFrom] = useState(() => daysAgo(6));
   const [to, setTo] = useState(() => toInputDate(new Date()));
+  const [remoteCustomers, setRemoteCustomers] = useState<PeriodCustomerReport[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
-  const customers = useMemo(() => {
+  const localCustomers = useMemo(() => {
     const fromMs = new Date(`${from}T00:00:00`).getTime();
     const toMs = new Date(`${to}T23:59:59.999`).getTime();
     if (isNaN(fromMs) || isNaN(toMs)) return [];
@@ -37,6 +41,20 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
       (c) => !q || c.name.toLowerCase().includes(q) || c.phone.includes(q)
     );
   }, [debts, movements, from, to, query]);
+
+  React.useEffect(() => {
+    if (!loadReport || from > to) return;
+    let active = true;
+    setLoading(true);
+    setLoadError('');
+    loadReport(from, to, query)
+      .then(data => { if (active) setRemoteCustomers(data); })
+      .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'Hisobot yuklanmadi.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [from, to, query, loadReport]);
+
+  const customers = loadReport ? remoteCustomers : localCustomers;
 
   const totalSale = customers.reduce((s, c) => s + c.saleTotal, 0);
   const totalRemaining = customers.reduce((s, c) => s + c.remaining, 0);
@@ -147,6 +165,8 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
           </button>
         </div>
         {rangeInvalid && <p className="text-xs font-bold text-red-600">Boshlanish sanasi tugash sanasidan keyin bo‘lmasligi kerak.</p>}
+        {loading && <p className="text-xs font-bold text-amber-700">Hisobot yuklanmoqda…</p>}
+        {loadError && <p className="text-xs font-bold text-red-600">{loadError}</p>}
       </div>
 
       <div className="grid grid-cols-3 gap-2.5 sm:gap-4">

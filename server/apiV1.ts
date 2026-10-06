@@ -7,6 +7,7 @@ import { calculateShiftTotals } from './shiftLogic';
 import { buildReport, previousRange } from './reportLogic';
 import { summarizeReturns, RETURN_FLAG_DAILY_AMOUNT, RETURN_FLAG_DAILY_COUNT, WORKER_RETURN_WINDOW_DAYS } from './returnLogic';
 import { searchProducts } from '../src/utils/productSearch';
+import { debtPeriodReport } from '../src/utils/saleAccounting';
 import { 
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
@@ -292,7 +293,7 @@ apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
   const canUseCashShift = (req.path === '/cash-shifts/current' && req.method === 'GET') || (req.path === '/cash-shifts/close' && req.method === 'POST');
   // Ishchi: tovar qaytarish va nasiya (faqat qidirish + to'lov qabul qilish; ro'yxat/jami/o'chirish yo'q)
   const canReturn = (req.path === '/returns/search' && req.method === 'GET') || (req.path === '/returns' && req.method === 'POST');
-  const canUseDebts = (req.path === '/debts/lookup' && req.method === 'GET') || (/^\/debts\/[^/]+\/pay$/.test(req.path) && req.method === 'POST');
+  const canUseDebts = ((req.path === '/debts/lookup' || req.path === '/debts/period') && req.method === 'GET') || (/^\/debts\/[^/]+\/pay$/.test(req.path) && req.method === 'POST');
   // Ishchi: doimiy mijozlarni ko'rish, qidirish va yangisini qo'shish (o'chirish va ommaviy import yo'q)
   const canUseCustomers = req.path === '/customers' && (req.method === 'GET' || req.method === 'POST');
   if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift || canReturn || canUseDebts || canUseCustomers) return next();
@@ -650,6 +651,42 @@ apiV1Router.get('/debts/lookup', (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
   const query = typeof req.query.q === 'string' ? req.query.q : '';
   res.json({ success: true, data: dataStore.lookupDebts(query) });
+});
+
+// Ishchi va Rahbar uchun mijozga yuboriladigan sana oralig'idagi nasiya eslatmasi.
+// Tannarx, foyda va boshqa boshqaruv ma'lumotlari javobga kiritilmaydi.
+apiV1Router.get('/debts/period', (req: Request, res: Response) => {
+  const from = typeof req.query.from === 'string' ? req.query.from : '';
+  const to = typeof req.query.to === 'string' ? req.query.to : '';
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
+    return res.status(400).json({ success: false, error: "To'g'ri sana oralig'ini tanlang." });
+  }
+  const fromMs = Date.parse(`${from}T00:00:00+05:00`);
+  const toMs = Date.parse(`${to}T23:59:59.999+05:00`);
+  const state = dataStore.getState();
+  const report = debtPeriodReport(state.debts, state.movements, fromMs, toMs)
+    .filter(customer => !query || customer.name.toLowerCase().includes(query) || customer.phone.includes(query))
+    .map(customer => ({
+      ...customer,
+      rows: customer.rows.map(row => ({
+        itemLines: row.itemLines,
+        paid: row.paid,
+        returned: row.returned,
+        debt: {
+          id: row.debt.id,
+          customerName: row.debt.customerName,
+          customerPhone: row.debt.customerPhone,
+          totalDebt: row.debt.totalDebt,
+          paidAmount: row.debt.paidAmount,
+          remainingAmount: row.debt.remainingAmount,
+          dueDate: row.debt.dueDate,
+          createdAt: row.debt.createdAt,
+          status: row.debt.status
+        }
+      }))
+    }));
+  res.json({ success: true, data: report });
 });
 
 // --- Doimiy mijozlar reestri ---

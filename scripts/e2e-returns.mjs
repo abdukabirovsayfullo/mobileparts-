@@ -112,6 +112,11 @@ try {
   r = await worker.get('/debts/lookup?q=a'); ok('Nasiya qidiruvi: 1 belgi bo\'sh', r.status === 200 && r.data.data.length === 0);
   r = await worker.get('/debts/lookup?q=ali');
   ok('Nasiya qidiruvi mijozni topdi, telefon faqat oxirgi 4 raqam', r.data?.data?.length === 1 && r.data.data[0].phoneTail === '2233' && !JSON.stringify(r.data).includes('+998901112233'));
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
+  r = await worker.get(`/debts/period?from=${today}&to=${today}`);
+  const periodCustomer = r.data?.data?.find(customer => customer.name === 'Ali Test');
+  ok('Ishchi kunlar oralig‘idagi nasiya eslatmasini ko‘radi', r.status === 200 && periodCustomer?.rows?.[0]?.itemLines?.includes('TEST OYNA × 4'));
+  ok('Ishchi nasiya hisobotida tannarx va foyda yo‘q', !JSON.stringify(r.data).match(/unitCost|totalCost|profit|purchasePrice/));
   r = await worker.post(`/debts/${debtId}/pay`, { amount: 30000, method: 'naqd' });
   ok('Ishchi nasiya to\'lovini qabul qildi (30 000 naqd)', r.status === 200 && r.data?.data?.remainingAmount === 50000, JSON.stringify(r.data?.data));
   r = await worker.post(`/debts/${debtId}/pay`, { amount: 999999, method: 'naqd' });

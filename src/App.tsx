@@ -1615,7 +1615,7 @@ export default function App() {
         )}
 
         {activeTab === 'debts' && !isAdminUnlocked && (
-          <WorkerDebtPanel onChanged={fetchLatestStateFromServer} />
+          <WorkerDebtPanel onChanged={fetchLatestStateFromServer} storeInfo={storeInfo} />
         )}
 
         {activeTab === 'debts' && isAdminUnlocked && (
