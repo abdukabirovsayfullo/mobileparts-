@@ -2,10 +2,16 @@ import { DebtRecord, StockMovement } from '../types';
 
 const cleanName = (name: string) => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 
-export function customerDebtTotal(debts: DebtRecord[], name: string): number {
+const customerKey = (name: string, phone?: string) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return digits.length >= 9 ? `phone:${digits.slice(-9)}` : `name:${cleanName(name)}`;
+};
+
+export function customerDebtTotal(debts: DebtRecord[], name: string, phone?: string): number {
   const key = cleanName(name);
   if (!key || key === cleanName("Do'kon mijozi")) return 0;
-  return debts.filter(d => cleanName(d.customerName) === key && d.status !== 'yopildi')
+  const identity = customerKey(name, phone);
+  return debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity && d.status !== 'yopildi')
     .reduce((sum, d) => sum + Math.max(0, d.remainingAmount), 0);
 }
 
@@ -36,7 +42,7 @@ export function movementPaymentSummary(m: StockMovement, related: StockMovement[
     ? related.reduce((sum, row) => sum + (row.paidAmount || 0), 0)
     : m.paymentMethod === 'nasiya' ? initialPaid : total;
   const remaining = Math.max(0, total - paidAmount);
-  const currentDebt = customerDebtTotal(debts, m.counterparty);
+  const currentDebt = customerDebtTotal(debts, m.counterparty, m.customerPhone);
   return {
     paidAmount, debtRemaining: remaining, isDebt: remaining > 0,
     previousCustomerDebt: m.previousCustomerDebt,
@@ -74,7 +80,7 @@ export function groupDebtsByCustomer(debts: DebtRecord[], now = Date.now()): Cus
   for (const d of debts) {
     if (d.status === 'yopildi' || d.remainingAmount <= 0) continue;
     const name = cleanName(d.customerName);
-    const key = !name || name === anonymous ? `id:${d.id}` : name;
+    const key = !name || name === anonymous ? `id:${d.id}` : customerKey(d.customerName, d.customerPhone);
     const overdue = debtOverdueDays(d, now);
     const current = map.get(key);
     if (!current) {
@@ -101,6 +107,8 @@ export interface PeriodDebtRow {
   debt: DebtRecord;
   /** "Tovar × soni" qatorlari; sotuv topilmasa nasiya izohi. */
   itemLines: string[];
+  paid: number;
+  returned: number;
 }
 
 export interface PeriodCustomerReport {
@@ -110,6 +118,7 @@ export interface PeriodCustomerReport {
   rows: PeriodDebtRow[];
   saleTotal: number;
   paid: number;
+  returned: number;
   remaining: number;
 }
 
@@ -127,15 +136,20 @@ export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[]
     if (!itemLines.length && d.notes) itemLines.push(d.notes);
 
     const name = cleanName(d.customerName);
-    const key = !name || name === anonymous ? `id:${d.id}` : name;
+    const key = !name || name === anonymous ? `id:${d.id}` : customerKey(d.customerName, d.customerPhone);
+    const returned = (d.paymentHistory || [])
+      .filter(payment => payment.method === 'vazvrat')
+      .reduce((sum, payment) => sum + payment.amount, 0);
+    const paid = Math.max(0, d.paidAmount - returned);
     let group = groups.get(key);
     if (!group) {
-      group = { key, name: d.customerName.trim(), phone: d.customerPhone, rows: [], saleTotal: 0, paid: 0, remaining: 0 };
+      group = { key, name: d.customerName.trim(), phone: d.customerPhone, rows: [], saleTotal: 0, paid: 0, returned: 0, remaining: 0 };
       groups.set(key, group);
     }
-    group.rows.push({ debt: d, itemLines });
+    group.rows.push({ debt: d, itemLines, paid, returned });
     group.saleTotal += d.totalDebt;
-    group.paid += d.paidAmount;
+    group.paid += paid;
+    group.returned += returned;
     group.remaining += d.remainingAmount;
     if (!group.phone && d.customerPhone) group.phone = d.customerPhone;
   }

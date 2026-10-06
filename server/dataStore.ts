@@ -14,7 +14,7 @@ import {
   SaleReceiptData
 } from '../src/types';
 import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, CustomerProfile } from '../src/types';
-import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity } from './returnLogic';
+import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity, sameCustomer } from './returnLogic';
 import { tashkentDate } from './expenseLogic';
 
 export class OwnerApprovalRequiredError extends Error {
@@ -228,7 +228,7 @@ class DataStore {
       .slice(0, limit);
   }
 
-  public upsertCustomer(input: { name: string; phone?: string; address?: string; notes?: string; visited?: boolean }): CustomerProfile {
+  public upsertCustomer(input: { name: string; phone?: string; address?: string; notes?: string; visited?: boolean }, allowUpdate = true): CustomerProfile {
     const name = String(input.name || '').trim().slice(0, 80);
     const phone = String(input.phone || '').trim().slice(0, 30);
     const address = String(input.address || '').trim().slice(0, 160);
@@ -240,6 +240,9 @@ class DataStore {
     const key = DataStore.customerKey(name, phone);
     const existing = this.state.customers.find(c => DataStore.customerKey(c.name, c.phone) === key);
     if (existing) {
+      // Kassir mavjud mijozning ismi, manzili yoki izohini bilmasdan o'zgartirib
+      // yubormasligi kerak. Savdo va Rahbar amallari esa reestrni yangilashi mumkin.
+      if (!allowUpdate) return existing;
       existing.name = name;
       if (phone.replace(/\D/g, '').length >= 9) existing.phone = phone;
       if (address) existing.address = address;
@@ -561,8 +564,23 @@ class DataStore {
       this.state.movements.unshift(mov);
     }
 
-    // Apply overall discount if any to profit/revenue
-    totalRevenue = Math.max(0, totalRevenue - discount);
+    // Chegirmani qatorlarga proporsional taqsimlaymiz. Qaytarish aynan
+    // harakatdagi sof tushumdan hisoblanadi, shuning uchun chegirma faqat
+    // umumiy jami qiymatda qolib ketmasligi kerak.
+    const grossRevenue = totalRevenue;
+    const appliedDiscount = Math.min(grossRevenue, discount);
+    let discountLeft = appliedDiscount;
+    movements.forEach((movement, index) => {
+      const last = index === movements.length - 1;
+      const lineDiscount = last
+        ? discountLeft
+        : Math.min(discountLeft, Math.round(appliedDiscount * movement.totalRevenue / Math.max(1, grossRevenue)));
+      movement.discountAmount = lineDiscount;
+      movement.totalRevenue = Math.max(0, movement.totalRevenue - lineDiscount);
+      movement.profit = movement.totalRevenue - movement.totalCost;
+      discountLeft -= lineDiscount;
+    });
+    totalRevenue = movements.reduce((sum, movement) => sum + movement.totalRevenue, 0);
     const totalProfit = totalRevenue - totalCost;
 
     let debtRecord: DebtRecord | undefined;
@@ -794,8 +812,9 @@ class DataStore {
     let debtReduced = 0;
     let nextDebts: DebtRecord[] | undefined;
     if (input.refundMethod === 'nasiya') {
-      if (prepared.some(item => normalizeName(item.original.counterparty) !== normalizeName(customerName))) throw new Error("Nasiyaga qaytarish faqat bitta mijozning sotuvlari uchun mumkin.");
-      const result = applyRefundToDebts(this.state.debts, customerName, totalRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name });
+      const customerPhone = prepared[0].original.customerPhone;
+      if (prepared.some(item => !sameCustomer(item.original.counterparty, item.original.customerPhone, customerName, customerPhone))) throw new Error("Nasiyaga qaytarish faqat bitta mijozning sotuvlari uchun mumkin.");
+      const result = applyRefundToDebts(this.state.debts, customerName, customerPhone, totalRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name });
       if (result.applied < totalRefund) throw new Error(`${customerName} mijozning faol nasiyasi ${result.applied} so'm; qaytarish ${totalRefund} so'm. Naqd yoki boshqa usulni tanlang.`);
       nextDebts = result.debts;
       debtReduced = result.applied;

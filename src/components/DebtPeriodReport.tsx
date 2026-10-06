@@ -52,7 +52,7 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
     store,
     from,
     to,
-    totalDebt: c.key.startsWith('id:') ? c.remaining : customerDebtTotal(debts, c.name)
+    totalDebt: c.key.startsWith('id:') ? c.remaining : customerDebtTotal(debts, c.name, c.phone)
   });
 
   const downloadPdf = (c: PeriodCustomerReport) => {
@@ -72,7 +72,7 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
   };
 
   const exportCSV = () => {
-    const rows: string[][] = [['Mijoz', 'Telefon', 'Sana va soat', 'Olingan tovarlar', 'Sotuv summasi', 'To‘langan', 'Nasiya qoldig‘i', 'Muddat']];
+    const rows: string[][] = [['Mijoz', 'Telefon', 'Sana va soat', 'Olingan tovarlar', 'Sotuv summasi', 'To‘langan', 'Qaytarish', 'Nasiya qoldig‘i', 'Muddat']];
     for (const c of customers) {
       for (const r of c.rows) {
         rows.push([
@@ -81,7 +81,8 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
           formatDateTime(r.debt.createdAt),
           r.itemLines.join('; '),
           String(r.debt.totalDebt),
-          String(r.debt.paidAmount),
+          String(r.paid),
+          String(r.returned),
           String(r.debt.remainingAmount),
           r.debt.dueDate
         ]);
@@ -200,7 +201,8 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
                   </div>
                   <div className="sm:text-right whitespace-nowrap space-y-0.5">
                     <div className="text-stone-500">Sotuv: <span className="font-semibold text-stone-800">{formatMoney(r.debt.totalDebt)}</span></div>
-                    <div className="text-stone-500">To‘langan: <span className="font-semibold text-emerald-700">{formatMoney(r.debt.paidAmount)}</span></div>
+                    <div className="text-stone-500">To‘langan: <span className="font-semibold text-emerald-700">{formatMoney(r.paid)}</span></div>
+                    {r.returned > 0 && <div className="text-stone-500">Qaytarish: <span className="font-semibold text-amber-700">{formatMoney(r.returned)}</span></div>}
                     <div className="font-black text-red-600">Nasiya: {formatMoney(r.debt.remainingAmount)}</div>
                   </div>
                 </li>

@@ -133,20 +133,27 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       return { totalDebt: 0, activeDebts: [], customerRecord: null };
     }
     const cleanName = customerName.trim().toLowerCase();
+    const phoneDigits = customerPhone.replace(/\D/g, '').slice(-9);
     
     // Find debts matching name
     const activeDebts = debts.filter(
-      (d) => d.customerName.trim().toLowerCase() === cleanName && d.status !== 'yopildi'
+      (d) => {
+        const debtPhone = d.customerPhone.replace(/\D/g, '').slice(-9);
+        const sameCustomer = phoneDigits.length >= 9 ? debtPhone === phoneDigits : d.customerName.trim().toLowerCase() === cleanName;
+        return sameCustomer && d.status !== 'yopildi';
+      }
     );
-    const totalDebt = customerDebtTotal(debts, customerName);
+    const totalDebt = customerDebtTotal(debts, customerName, customerPhone);
 
     // Find known customer profile
     const customerRecord = customers.find(
-      (c) => c.name.trim().toLowerCase() === cleanName
+      (c) => phoneDigits.length >= 9
+        ? c.phone.replace(/\D/g, '').slice(-9) === phoneDigits
+        : c.name.trim().toLowerCase() === cleanName
     );
 
     return { totalDebt, activeDebts, customerRecord };
-  }, [customerName, debts, customers]);
+  }, [customerName, customerPhone, debts, customers]);
 
   // Autocomplete matching customers
   const matchingCustomers = useMemo(() => {

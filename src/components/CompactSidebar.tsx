@@ -151,7 +151,7 @@ export const CompactSidebar: React.FC<Props> = ({
         </div>
         <div className="min-w-0 flex-1">
           <strong className="block text-sm truncate">{storeInfo.name}</strong>
-          <span className="text-[10px] text-emerald-400">● VPS ONLAYN</span>
+          <span className="text-[10px] text-stone-400">VPS SERVER</span>
         </div>
         <button type="button" onClick={onCloseMobile} className="lg:hidden">
           <X className="w-4 h-4" />

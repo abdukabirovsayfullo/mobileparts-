@@ -788,7 +788,7 @@ export default function App() {
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     const accounting = saleAccounting(items.map(item => item.quantity * item.unitPrice), debtDetails?.paidNow ?? (paymentMethod === 'nasiya' ? 0 : subtotal), debtDetails?.discountAmount);
     const saleTotalRevenue = accounting.total;
-    const previousCustomerDebt = customerDebtTotal(debts, customerName);
+    const previousCustomerDebt = customerDebtTotal(debts, customerName, customerPhone);
     const batchId = `batch-${Date.now()}`;
     const receiptNum = debtDetails?.receiptNumber || `PB-${nowISO.slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
 

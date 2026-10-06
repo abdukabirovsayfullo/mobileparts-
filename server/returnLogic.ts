@@ -7,6 +7,15 @@ export const RETURN_FLAG_DAILY_AMOUNT = Number(process.env.POS_RETURN_FLAG_AMOUN
 
 export const normalizeName = (value: string): string => value.toLowerCase().replace(/\s+/g, ' ').trim();
 
+const phoneKey = (value?: string): string => String(value || '').replace(/\D/g, '').slice(-9);
+
+export const sameCustomer = (nameA: string, phoneA: string | undefined, nameB: string, phoneB: string | undefined): boolean => {
+  const aPhone = phoneKey(phoneA);
+  const bPhone = phoneKey(phoneB);
+  if (aPhone.length >= 9 && bPhone.length >= 9) return aPhone === bPhone;
+  return normalizeName(nameA) === normalizeName(nameB);
+};
+
 const dayNumber = (date: string): number => Math.round(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
 export const daysAgo = (iso: string, today = tashkentDate()): number => dayNumber(today) - dayNumber(tashkentDate(iso));
 export const isWithinWorkerWindow = (iso: string, today = tashkentDate()): boolean => daysAgo(iso, today) <= WORKER_RETURN_WINDOW_DAYS;
@@ -23,14 +32,13 @@ export const refundAmount = (original: StockMovement, quantity: number): number 
 
 /** Mijozning faol nasiyalaridan qaytarilgan summani FIFO tartibida ayiradi. O'zgargan nusxalarni qaytaradi. */
 export const applyRefundToDebts = (
-  debts: DebtRecord[], customerName: string, amount: number, receiptNumber: string, nowIso: string,
+  debts: DebtRecord[], customerName: string, customerPhone: string | undefined, amount: number, receiptNumber: string, nowIso: string,
   actor: { id?: string; name?: string }
 ): { debts: DebtRecord[]; applied: number } => {
   let left = Math.max(0, Math.round(amount));
   let applied = 0;
-  const name = normalizeName(customerName);
   const candidates = debts
-    .filter(debt => debt.status !== 'yopildi' && debt.remainingAmount > 0 && normalizeName(debt.customerName) === name)
+    .filter(debt => debt.status !== 'yopildi' && debt.remainingAmount > 0 && sameCustomer(customerName, customerPhone, debt.customerName, debt.customerPhone))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const updated = new Map<string, DebtRecord>();
   for (const debt of candidates) {

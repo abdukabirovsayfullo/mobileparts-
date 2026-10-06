@@ -657,7 +657,10 @@ apiV1Router.get('/customers', (req: Request, res: Response) => {
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
   const query = typeof req.query.q === 'string' ? req.query.q : '';
-  res.json({ success: true, data: dataStore.listCustomers(query) });
+  if (user.role === 'worker' && query.trim().length < 2) {
+    return res.json({ success: true, data: [] });
+  }
+  res.json({ success: true, data: dataStore.listCustomers(query, user.role === 'worker' ? 20 : 200) });
 });
 
 apiV1Router.post('/customers', (req: Request, res: Response) => {
@@ -665,7 +668,7 @@ apiV1Router.post('/customers', (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
   try {
     const { name, phone, address, notes } = req.body || {};
-    res.status(201).json({ success: true, data: dataStore.upsertCustomer({ name, phone, address, notes }) });
+    res.status(201).json({ success: true, data: dataStore.upsertCustomer({ name, phone, address, notes }, user.role === 'owner') });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err?.message || 'Mijoz saqlanmadi.' });
   }
