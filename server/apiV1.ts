@@ -201,6 +201,9 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
 // -----------------------------------------------------------------------------
 apiV1Router.get('/sync', requireSession, (req: Request, res: Response) => {
   const state = dataStore.getState();
+  if (typeof req.query.since === 'string' && req.query.since === state.lastUpdated) {
+    return res.status(304).end();
+  }
   const user = getRequestUser(req)!;
   const today = tashkentDate();
   const products = user.role === 'worker'
@@ -223,6 +226,7 @@ apiV1Router.get('/sync', requireSession, (req: Request, res: Response) => {
             .map(movement => ({ ...movement, unitCost: 0, totalCost: 0, profit: 0 })),
       debts: user.role === 'owner' ? state.debts : [],
       supplierDebts: user.role === 'owner' ? state.supplierDebts : [],
+      customers: user.role === 'owner' ? state.customers : [],
       expenses: user.role === 'owner' ? state.expenses : [],
       categories: state.categories,
       storeInfo: { ...state.storeInfo, adminPin: undefined }
@@ -545,7 +549,7 @@ apiV1Router.delete('/products/:id', (req: Request, res: Response) => {
 // --- Sales (Chiqim) ---
 apiV1Router.post('/sales', (req: Request, res: Response) => {
   try {
-    const { items, customerName, customerPhone, customerAddress, paymentMethod, discount, notes, dueDate } = req.body;
+    const { items, customerName, customerPhone, customerAddress, paymentMethod, discount, paidNow, receiptNumber, notes, dueDate } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -565,6 +569,8 @@ apiV1Router.post('/sales', (req: Request, res: Response) => {
       customerAddress,
       paymentMethod,
       discount,
+      paidNow,
+      receiptNumber,
       notes,
       dueDate,
       employeeId: employee?.id,

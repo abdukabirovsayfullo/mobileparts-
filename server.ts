@@ -97,8 +97,9 @@ function rateLimit(map: Map<string, RateLimitRecord>, maxRequests: number, windo
   };
 }
 
-// General API rate limit: 120 requests per minute
-app.use("/api/", rateLimit(ipRequestMap, 120, 60 * 1000));
+// Several POS phones can share one shop IP. Background sync alone used to hit
+// 120/minute and intermittently return 429, so keep a safe shared-IP ceiling.
+app.use("/api/", rateLimit(ipRequestMap, 600, 60 * 1000));
 
 // Specific strict rate limit for AI OCR: 20 image parses per minute
 const geminiRateLimiter = rateLimit(geminiRequestMap, 20, 60 * 1000);

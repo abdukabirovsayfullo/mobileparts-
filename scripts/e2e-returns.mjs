@@ -58,6 +58,9 @@ try {
   r = await worker.get('/sync');
   const wp = r.data?.state?.products?.find(p => p.id === productId);
   ok('Ishchi /sync: optom narx saqlanadi, tannarx yashirin', wp?.wholesalePrice === 16000 && wp?.purchasePrice === 0 && wp?.costPrice === 0, JSON.stringify(wp));
+  const workerRevision = r.data?.serverTimestamp;
+  r = await worker.get(`/sync?since=${encodeURIComponent(workerRevision)}`);
+  ok('O\'zgarish bo\'lmasa /sync ortiqcha ma\'lumot yubormaydi (304)', r.status === 304, String(r.status));
 
   // Sotuv (naqd, 3 dona) — ishchi
   r = await worker.post('/sales', { items: [{ productId, quantity: 3, unitPrice: 20000 }], paymentMethod: 'naqd', customerName: 'Naqd Mijoz' });
@@ -150,6 +153,29 @@ try {
   ok('Kassa: naqd qaytarish 40 000', t?.refundTotal === 40000, JSON.stringify(t));
   ok('Kassa: naqd nasiya to\'lovi 31 000', t?.debtCashReceived === 31000);
   ok('Kassa: kutilgan = 60 000 + 31 000 − 40 000 = 51 000', t?.expectedCash === 51000, String(t?.expectedCash));
+
+  // Qisman to'lov va internet xatosidan keyingi xavfsiz qayta urinish.
+  const partialReceipt = 'CHK-PARTIAL-IDEMPOTENT';
+  const partialPayload = {
+    items: [{ productId, quantity: 2, unitPrice: 20000 }],
+    paymentMethod: 'nasiya',
+    customerName: 'Partial Test',
+    customerPhone: '+998909999999',
+    paidNow: 10000,
+    receiptNumber: partialReceipt
+  };
+  r = await worker.post('/sales', partialPayload);
+  const partialMovement = r.data?.data?.movements?.[0];
+  const partialDebt = r.data?.data?.debtRecord;
+  ok('Qisman nasiya: 40 000 dan 10 000 to\'landi, 30 000 qarz', r.status === 201 && partialMovement?.paidAmount === 10000 && partialDebt?.paidAmount === 10000 && partialDebt?.remainingAmount === 30000, JSON.stringify(r.data?.data));
+  r = await owner.get('/sync');
+  const stockAfterPartial = r.data?.state?.products?.find(p => p.id === productId)?.stock;
+  r = await worker.post('/sales', partialPayload);
+  ok('Bir xil chekni qayta yuborish yangi savdo yaratmaydi', r.status === 201 && r.data?.data?.movements?.[0]?.id === partialMovement?.id, String(r.status));
+  r = await owner.get('/sync');
+  const duplicateLines = r.data?.state?.movements?.filter(m => m.receiptNumber === partialReceipt) || [];
+  const stockAfterRetry = r.data?.state?.products?.find(p => p.id === productId)?.stock;
+  ok('Qayta urinishda ombor ikki marta kamaymadi', duplicateLines.length === 1 && stockAfterRetry === stockAfterPartial, `${duplicateLines.length}/${stockAfterPartial}/${stockAfterRetry}`);
 
   // 7 kundan eski sotuv: bazaga qo'lda yozamiz
   await new Promise(res => setTimeout(res, 1500));

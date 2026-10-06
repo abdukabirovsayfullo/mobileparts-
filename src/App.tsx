@@ -348,7 +348,15 @@ export default function App() {
           });
         }
       }
-      const res = await fetch('/api/v1/sync');
+      const revision = serverRevisionRef.current;
+      const syncUrl = revision ? `/api/v1/sync?since=${encodeURIComponent(revision)}` : '/api/v1/sync';
+      const res = await fetch(syncUrl, { cache: 'no-store' });
+      if (res.status === 304) return;
+      if (res.status === 401) {
+        setAuthUser(null);
+        setActiveTab('chiqim');
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.state) {
@@ -366,6 +374,9 @@ export default function App() {
           if (Array.isArray(s.supplierDebts)) {
             setSupplierDebts(s.supplierDebts);
           }
+          if (Array.isArray(s.customers)) {
+            setCustomers(s.customers);
+          }
           window.setTimeout(() => {
             applyingServerStateRef.current = false;
             serverSyncReadyRef.current = true;
@@ -382,7 +393,7 @@ export default function App() {
     if (!authUser) return;
     fetchLatestStateFromServer();
 
-    const interval = setInterval(fetchLatestStateFromServer, 4000);
+    const interval = setInterval(fetchLatestStateFromServer, 10_000);
     const handleFocus = () => fetchLatestStateFromServer();
     window.addEventListener('focus', handleFocus);
 
@@ -542,6 +553,7 @@ export default function App() {
 
   // Automated background polling for incoming Telegram Mini App orders
   useEffect(() => {
+    if (authUser?.role !== 'owner') return;
     let isSubscribed = true;
 
     const pollPendingOrders = async () => {
@@ -613,13 +625,14 @@ export default function App() {
     // Initial check
     pollPendingOrders();
 
-    // Poll every 3.5 seconds
-    const interval = setInterval(pollPendingOrders, 3500);
+    // Online orders do not need sub-second polling; a calmer interval avoids
+    // rate-limit spikes when several phones share the same shop internet.
+    const interval = setInterval(pollPendingOrders, 15_000);
     return () => {
       isSubscribed = false;
       clearInterval(interval);
     };
-  }, [autoPrintOnlineOrders, audioAlertOnlineOrders]);
+  }, [authUser?.id, authUser?.role, autoPrintOnlineOrders, audioAlertOnlineOrders]);
 
   // Handle Kirim (Incoming stock)
   const handleConfirmKirim = (
@@ -764,7 +777,58 @@ export default function App() {
     setActiveReceiptToPrint(receipt);
   };
 
-  // Handle Chiqim (Sales / Outgoing stock)
+  // Server-authoritative sale: the cart is cleared only after the VPS confirms
+  // the transaction. This prevents intermittent network errors from losing a sale.
+  const handleConfirmChiqimServer = async (
+    items: { product: Product; quantity: number; unitPrice: number }[],
+    paymentMethod: PaymentMethod,
+    customerName: string,
+    customerPhone: string,
+    customerAddress: string,
+    notes: string,
+    debtDetails?: { paidNow: number; dueDate: string; discountAmount?: number; receiptNumber?: string }
+  ): Promise<void> => {
+    const requestBody = JSON.stringify({
+        items: items.map(item => ({ productId: item.product.id, quantity: item.quantity, unitPrice: item.unitPrice })),
+        paymentMethod,
+        customerName,
+        customerPhone,
+        customerAddress,
+        notes,
+        dueDate: debtDetails?.dueDate,
+        discount: debtDetails?.discountAmount,
+        paidNow: debtDetails?.paidNow,
+        receiptNumber: debtDetails?.receiptNumber
+    });
+    const sendSale = () => fetch('/api/v1/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: requestBody
+    });
+    let response: Response;
+    try {
+      response = await sendSale();
+      if ([429, 502, 503, 504].includes(response.status)) {
+        await new Promise(resolve => window.setTimeout(resolve, 700));
+        response = await sendSale();
+      }
+    } catch {
+      // The same receipt number makes this retry safe even if the first request
+      // reached the VPS but its response was lost on a weak connection.
+      await new Promise(resolve => window.setTimeout(resolve, 700));
+      response = await sendSale();
+    }
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      setAuthUser(null);
+      setActiveTab('chiqim');
+      throw new Error('Sessiya tugagan. PIN bilan qayta kiring; savat saqlanib turibdi.');
+    }
+    if (!response.ok) throw new Error(body.error || 'Savdo VPS serveriga saqlanmadi. Qayta urinib ko‘ring.');
+    await fetchLatestStateFromServer();
+  };
+
+  // Legacy local sale builder is kept for old offline data migration only.
   const handleConfirmChiqim = (
     items: {
       product: Product;
@@ -1573,7 +1637,7 @@ export default function App() {
               recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}
               customers={customers}
               debts={debts}
-              onConfirmChiqim={handleConfirmChiqim}
+              onConfirmChiqim={handleConfirmChiqimServer}
               onPrintReceipt={handlePrintMovementReceipt}
               onQuickPayPastDebt={handleAddDebtPayment}
             />

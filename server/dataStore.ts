@@ -16,6 +16,7 @@ import {
 import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, CustomerProfile } from '../src/types';
 import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity, sameCustomer } from './returnLogic';
 import { tashkentDate } from './expenseLogic';
+import { customerDebtTotal, saleAccounting } from '../src/utils/saleAccounting';
 
 export class OwnerApprovalRequiredError extends Error {
   constructor(message = "7 kundan eski sotuvni qaytarish uchun Rahbar PIN'i kerak.") { super(message); this.name = 'OwnerApprovalRequiredError'; }
@@ -473,6 +474,8 @@ class DataStore {
     customerAddress?: string;
     paymentMethod?: 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
     discount?: number;
+    paidNow?: number;
+    receiptNumber?: string;
     notes?: string;
     dueDate?: string;
     employeeId?: string;
@@ -485,7 +488,28 @@ class DataStore {
     movements: StockMovement[];
     debtRecord?: DebtRecord;
   } {
-    const receiptNumber = `CHK-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const requestedReceipt = String(salePayload.receiptNumber || '').trim();
+    const receiptNumber = requestedReceipt || `CHK-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // A slow connection can make the cashier tap "Sotish" again even though
+    // the first request reached the server. The receipt number is the
+    // idempotency key: return the original sale instead of reducing stock twice.
+    if (requestedReceipt) {
+      const existing = this.state.movements.filter(movement =>
+        movement.type === 'chiqim' && !movement.isReturn && movement.receiptNumber === requestedReceipt
+      );
+      if (existing.length > 0) {
+        const movementIds = new Set(existing.map(movement => movement.id));
+        return {
+          receiptNumber,
+          totalRevenue: existing.reduce((sum, movement) => sum + movement.totalRevenue, 0),
+          totalCost: existing.reduce((sum, movement) => sum + movement.totalCost, 0),
+          totalProfit: existing.reduce((sum, movement) => sum + movement.profit, 0),
+          movements: existing,
+          debtRecord: this.state.debts.find(debt => debt.movementId && movementIds.has(debt.movementId))
+        };
+      }
+    }
     const batchSaleId = `batch-${Date.now()}`;
     const timestamp = new Date().toISOString();
 
@@ -497,6 +521,7 @@ class DataStore {
     const customerName = (salePayload.customerName || 'Chakana xaridor').trim();
     const customerPhone = (salePayload.customerPhone || '').trim();
     const discount = Math.max(0, Number(salePayload.discount || 0));
+    const previousCustomerDebt = customerDebtTotal(this.state.debts, customerName, customerPhone);
 
     // Avval butun savatni tekshiramiz. Bitta xato mahsulot sabab yarim savdo
     // yozilib qolmasligi va qoldiq manfiyga tushmasligi kerak.
@@ -564,40 +589,41 @@ class DataStore {
       this.state.movements.unshift(mov);
     }
 
-    // Chegirmani qatorlarga proporsional taqsimlaymiz. Qaytarish aynan
-    // harakatdagi sof tushumdan hisoblanadi, shuning uchun chegirma faqat
-    // umumiy jami qiymatda qolib ketmasligi kerak.
-    const grossRevenue = totalRevenue;
-    const appliedDiscount = Math.min(grossRevenue, discount);
-    let discountLeft = appliedDiscount;
+    // Chegirma, to'langan qism va qarzni barcha qatorlarga aniq taqsimlaymiz.
+    const grossLines = movements.map(movement => movement.totalRevenue);
+    const grossRevenue = grossLines.reduce((sum, amount) => sum + amount, 0);
+    const defaultPaid = paymentMethod === 'nasiya' ? 0 : Math.max(0, grossRevenue - discount);
+    const accounting = saleAccounting(grossLines, salePayload.paidNow ?? defaultPaid, discount);
     movements.forEach((movement, index) => {
-      const last = index === movements.length - 1;
-      const lineDiscount = last
-        ? discountLeft
-        : Math.min(discountLeft, Math.round(appliedDiscount * movement.totalRevenue / Math.max(1, grossRevenue)));
-      movement.discountAmount = lineDiscount;
-      movement.totalRevenue = Math.max(0, movement.totalRevenue - lineDiscount);
+      const line = accounting.lines[index];
+      movement.discountAmount = line.discount;
+      movement.totalRevenue = line.revenue;
+      movement.paidAmount = line.paid;
+      movement.debtRemaining = line.debt;
+      movement.previousCustomerDebt = previousCustomerDebt;
+      movement.customerTotalDebt = previousCustomerDebt + accounting.remaining;
+      movement.debtDueDate = accounting.remaining > 0 ? salePayload.dueDate : undefined;
+      movement.paymentMethod = accounting.remaining > 0 ? 'nasiya' : paymentMethod;
       movement.profit = movement.totalRevenue - movement.totalCost;
-      discountLeft -= lineDiscount;
     });
-    totalRevenue = movements.reduce((sum, movement) => sum + movement.totalRevenue, 0);
+    totalRevenue = accounting.total;
     const totalProfit = totalRevenue - totalCost;
 
     let debtRecord: DebtRecord | undefined;
-    if (paymentMethod === 'nasiya') {
+    if (accounting.remaining > 0) {
       debtRecord = {
         id: `debt-${Date.now()}`,
         movementId: movements[0]?.id,
         customerName,
         customerPhone: customerPhone || '+998',
         totalDebt: totalRevenue,
-        paidAmount: 0,
-        remainingAmount: totalRevenue,
+        paidAmount: accounting.paid,
+        remainingAmount: accounting.remaining,
         dueDate: salePayload.dueDate || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
         createdAt: timestamp,
-        status: 'faol',
+        status: accounting.paid > 0 ? 'qisman_tolandi' : 'faol',
         notes: `Chek raqami: ${receiptNumber}. ${salePayload.notes || ''}`.trim(),
-        paymentHistory: []
+        paymentHistory: accounting.paid > 0 ? [{ date: timestamp, amount: accounting.paid, method: 'naqd' }] : []
       };
       this.state.debts.unshift(debtRecord);
     }

@@ -61,7 +61,7 @@ interface ChiqimFormViewProps {
       discountAmount?: number;
       receiptNumber?: string;
     }
-  ) => void;
+  ) => Promise<void>;
   onPrintReceipt?: (movement: StockMovement) => void;
   onQuickPayPastDebt?: (debtId: string, amount: number, method: 'naqd' | 'click_payme') => void;
 }
@@ -112,6 +112,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   // Phone sale flow: select products, review the cart, then take payment.
   const [mobileTab, setMobileTab] = useState<'catalog' | 'cart' | 'payment'>('catalog');
+  const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+  const [saleError, setSaleError] = useState('');
 
   React.useEffect(() => {
     setVisibleProductCount(60);
@@ -316,7 +318,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   const changeAmount = cashReceived > grandTotalRevenue ? cashReceived - grandTotalRevenue : 0;
 
-  const handleFinalizeSale = (e: React.FormEvent) => {
+  const handleFinalizeSale = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0) {
       alert('Avval sotilayotgan tovarlarni tanlang!');
@@ -337,21 +339,32 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const willBeDebt = effectiveRemainingDebt > 0;
     const salePaymentMethod = willBeDebt ? 'nasiya' : paymentMethod === 'nasiya' ? 'naqd' : paymentMethod;
 
-    const receiptNum = `PB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+    // This number is also the server-side idempotency key, so it must remain
+    // unique even when several cashiers sell at the same time.
+    const receiptNum = `PB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
     const saleNotesWithDiscount = discountAmount > 0
       ? `${currentNotes ? currentNotes + ' | ' : ''}Chegirma (Skitka): ${formatMoney(discountAmount)}`
       : currentNotes;
 
-    onConfirmChiqim(
-      cart,
-      salePaymentMethod,
-      currentCustomer,
-      currentPhone,
-      currentAddress,
-      saleNotesWithDiscount,
-      { paidNow: effectivePaid, dueDate: nasiyaDueDate, discountAmount, receiptNumber: receiptNum }
-    );
+    setIsSubmittingSale(true);
+    setSaleError('');
+    try {
+      await onConfirmChiqim(
+        cart,
+        salePaymentMethod,
+        currentCustomer,
+        currentPhone,
+        currentAddress,
+        saleNotesWithDiscount,
+        { paidNow: effectivePaid, dueDate: nasiyaDueDate, discountAmount, receiptNumber: receiptNum }
+      );
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : 'Savdo saqlanmadi. Internetni tekshirib qayta urinib ko‘ring.');
+      return;
+    } finally {
+      setIsSubmittingSale(false);
+    }
 
     // If autoPrintReceipt is active, open the receipt modal immediately
     if (autoPrintReceipt) {
@@ -1378,6 +1391,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
             </div>
             {/* Sale action panel: notebookda savat pastida qotib turadi, tarkibni yopmaydi */}
+            {saleError && (
+              <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                {saleError}
+              </div>
+            )}
             <div className="sticky bottom-16 lg:static lg:shrink-0 z-20 p-3 bg-stone-950/95 backdrop-blur rounded-2xl border border-stone-700 shadow-2xl space-y-2 lg:space-y-0 lg:flex lg:items-center lg:gap-3">
               <div className="flex items-center justify-between gap-3 text-white lg:flex-col lg:items-start lg:justify-center lg:gap-0 lg:min-w-[40%]">
                 <div>
@@ -1394,15 +1412,15 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
               <button
                 type="submit"
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || isSubmittingSale}
                 className={`w-full lg:flex-1 py-3.5 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  cart.length > 0
+                  cart.length > 0 && !isSubmittingSale
                     ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md active:scale-[0.99]'
                     : 'bg-stone-700 text-stone-400 cursor-not-allowed'
                 }`}
               >
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Sotish</span>
+                <span>{isSubmittingSale ? 'VPSga saqlanmoqda…' : 'Sotish'}</span>
               </button>
             </div>
           </form>
