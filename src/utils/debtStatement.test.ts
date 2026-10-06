@@ -11,10 +11,10 @@ const debt = (id: string, createdAt: string, remaining: number): DebtRecord => (
 
 const params: DebtStatementParams = {
   customer: {
-    key: 'akmal <aka>', name: 'Akmal <aka>', phone: '+998 90 048 31 13', saleTotal: 200000, paid: 60000, remaining: 140000,
+    key: 'phone:900483113', name: 'Akmal <aka>', phone: '+998 90 048 31 13', saleTotal: 200000, paid: 50000, returned: 10000, remaining: 140000,
     rows: [
-      { debt: debt('d1', '2026-10-02T09:15:00', 90000), itemLines: ['Kabel × 2', "Himoya oynasi × 1"] },
-      { debt: debt('d2', '2026-10-04T18:40:00', 50000), itemLines: [] }
+      { debt: debt('d1', '2026-10-02T09:15:00', 90000), itemLines: ['Kabel × 2', "Himoya oynasi × 1"], paid: 10000, returned: 0 },
+      { debt: debt('d2', '2026-10-04T18:40:00', 50000), itemLines: [], paid: 40000, returned: 10000 }
     ]
   },
   store: { name: "Mobile Parts", tagline: '', address: 'Paxtaobod', phone: '+998 90 111 22 33', accountantName: '' },
@@ -30,6 +30,7 @@ test('thermal debt statement lists every debt with date, items and totals, and e
   assert.ok(html.includes('02.10.2026 09:15') && html.includes('04.10.2026 18:40'));
   assert.ok(html.includes('Kabel × 2') && html.includes('Himoya oynasi × 1'));
   assert.ok(html.includes('01.10.2026 - 05.10.2026'));
+  assert.ok(html.includes('Qaytarish'));
   const inHtml = (n: number) => formatSom(n).replace("'", '&#39;');
   assert.ok(html.includes(inHtml(140000)) && html.includes(inHtml(185023)));
   assert.equal(formatSom(1234567), "1 234 567 so'm");

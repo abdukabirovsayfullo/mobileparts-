@@ -36,6 +36,15 @@ test('only the same named customer contributes to their balance', () => {
   assert.equal(customerDebtTotal([debt(10000, "Do'kon mijozi")], "Do'kon mijozi"), 0);
 });
 
+test('same names with different phone numbers remain separate customers', () => {
+  const first = { ...debt(50000, 'Ali'), id: 'ali-1', customerPhone: '+998 90 111 11 11' };
+  const second = { ...debt(70000, 'Ali'), id: 'ali-2', customerPhone: '+998 90 222 22 22' };
+  assert.equal(customerDebtTotal([first, second], 'Ali', first.customerPhone), 50000);
+  assert.equal(customerDebtTotal([first, second], 'Ali', second.customerPhone), 70000);
+  assert.equal(groupDebtsByCustomer([first, second]).length, 2);
+  assert.equal(debtPeriodReport([first, second], [], 0, Date.now()).length, 2);
+});
+
 test('legacy reprint uses initial payment, not later payments', () => {
   const row = movement(saleAccounting([100000], 0).lines[0], 'old');
   delete row.paidAmount;
@@ -95,7 +104,8 @@ test('debt period report lists items, date and remaining debt per customer insid
     rec('d1', 'Akromjon', '2026-10-02T09:15:00', 'm1', 70000),
     rec('d2', ' akromjon ', '2026-10-04T18:40:00', 'm3', 30000),
     rec('d3', 'Akromjon', '2026-09-20T10:00:00', 'm3', 99000),
-    rec('d4', "Do'kon mijozi", '2026-10-03T12:00:00', 'manual-1', 5000, 'Qo\'lda kiritilgan nasiya')
+    rec('d4', "Do'kon mijozi", '2026-10-03T12:00:00', 'manual-1', 5000, 'Qo\'lda kiritilgan nasiya'),
+    { ...rec('paid-off', 'Yopilgan Mijoz', '2026-10-03T13:00:00', 'm3', 0), status: 'yopildi' as const }
   ];
   const from = new Date('2026-10-01T00:00:00').getTime();
   const to = new Date('2026-10-05T23:59:59.999').getTime();
@@ -107,10 +117,13 @@ test('debt period report lists items, date and remaining debt per customer insid
   assert.equal(akrom.rows.length, 2); // d3 is outside the range
   assert.equal(akrom.remaining, 100000);
   assert.equal(akrom.saleTotal, 200000);
+  assert.equal(akrom.paid, 100000);
+  assert.equal(akrom.returned, 0);
   assert.deepEqual(akrom.rows[0].itemLines, ['Kabel × 2', 'Himoya oynasi × 1']);
   assert.deepEqual(akrom.rows[1].itemLines, ['Quvvatlagich × 1']);
   assert.equal(akrom.rows[0].debt.createdAt, '2026-10-02T09:15:00');
   assert.deepEqual(report[1].rows[0].itemLines, ["Qo'lda kiritilgan nasiya"]);
+  assert.ok(report.every(customer => customer.name !== 'Yopilgan Mijoz'));
   assert.equal(debtPeriodReport(debts, movements, to + 1, to + 2).length, 0);
 });
 test('active customer debt report merges only that customer\'s open debts with items', () => {
@@ -131,4 +144,20 @@ test('active customer debt report merges only that customer\'s open debts with i
   assert.deepEqual(report.rows[1].itemLines, ['Kabel × 1']);
   assert.equal(activeCustomerDebtReport(debts, movements, debts[2])!.remaining, 65000);
   assert.equal(activeCustomerDebtReport([debts[2]], movements, debts[2]), undefined);
+});
+
+test('debt period report separates cash payments from return reductions', () => {
+  const row = {
+    ...debt(40000, 'Dilshod'),
+    id: 'return-split', totalDebt: 100000, paidAmount: 60000,
+    paymentHistory: [
+      { date: '2026-10-02T10:00:00Z', amount: 40000, method: 'naqd' as const },
+      { date: '2026-10-03T10:00:00Z', amount: 20000, method: 'vazvrat' as const }
+    ]
+  };
+  const [report] = debtPeriodReport([row], [], 0, Date.now());
+  assert.equal(report.paid, 40000);
+  assert.equal(report.returned, 20000);
+  assert.equal(report.rows[0].paid, 40000);
+  assert.equal(report.rows[0].returned, 20000);
 });

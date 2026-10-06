@@ -44,7 +44,8 @@ export function debtStatementReceiptHtml({ customer, store, from, to, totalDebt 
         <div class="when">${escapeHtml(formatDateTime(r.debt.createdAt))}</div>
         ${r.itemLines.map((line) => `<div class="item">${escapeHtml(line)}</div>`).join('')}
         ${row('Sotuv', formatSom(r.debt.totalDebt))}
-        ${row("To'langan", formatSom(r.debt.paidAmount))}
+        ${row("To'langan", formatSom(r.paid))}
+        ${r.returned > 0 ? row('Qaytarish', formatSom(r.returned)) : ''}
         ${row('Nasiya', formatSom(r.debt.remainingAmount), true)}
         ${r.debt.dueDate ? `<div class="item">Muddat: ${escapeHtml(r.debt.dueDate)}</div>` : ''}
       </div>`
@@ -83,6 +84,7 @@ export function debtStatementReceiptHtml({ customer, store, from, to, totalDebt 
       ${debts}
       <div class="grand">
         ${row('Davr nasiyasi', formatSom(customer.remaining), true)}
+        ${customer.returned > 0 ? row('Qaytarishlar', formatSom(customer.returned), true) : ''}
         ${row('Umumiy qarz', formatSom(totalDebt), true)}
       </div>
       <div class="footer">Iltimos, nasiyani muddatida to'lang. Rahmat!</div>

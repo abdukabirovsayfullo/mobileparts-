@@ -40,7 +40,7 @@ const debt = (id: string, createdAt: string, remaining: number, name = 'Ali Vali
 
 test('nasiyaga qaytarish eng eski qarzdan ayiradi, ism katta-kichik harfga e’tiborsiz, boshqa mijozga tegmaydi', () => {
   const debts = [debt('new', '2026-09-20T00:00:00Z', 40_000), debt('old', '2026-09-01T00:00:00Z', 20_000), debt('other', '2026-09-02T00:00:00Z', 50_000, 'Vali')];
-  const result = applyRefundToDebts(debts, '  ali  VALIYEV ', 30_000, 'VZV-1', '2026-10-02T10:00:00Z', { id: 'w1', name: 'Ishchi' });
+  const result = applyRefundToDebts(debts, '  ali  VALIYEV ', undefined, 30_000, 'VZV-1', '2026-10-02T10:00:00Z', { id: 'w1', name: 'Ishchi' });
   const byId = Object.fromEntries(result.debts.map(item => [item.id, item]));
   assert.equal(result.applied, 30_000);
   assert.equal(byId.old.remainingAmount, 0);
@@ -49,7 +49,15 @@ test('nasiyaga qaytarish eng eski qarzdan ayiradi, ism katta-kichik harfga e’t
   assert.equal(byId.new.status, 'qisman_tolandi');
   assert.equal(byId.other.remainingAmount, 50_000);
   assert.equal(byId.old.paymentHistory?.[0].method, 'vazvrat');
-  assert.equal(applyRefundToDebts(debts, 'Noma\'lum', 10_000, 'VZV-2', '2026-10-02T10:00:00Z', {}).applied, 0);
+  assert.equal(applyRefundToDebts(debts, 'Noma\'lum', undefined, 10_000, 'VZV-2', '2026-10-02T10:00:00Z', {}).applied, 0);
+});
+
+test('bir xil ismli mijozlarning nasiyasi telefon bo‘yicha ajratiladi', () => {
+  const first = { ...debt('ali-1', '2026-09-01T00:00:00Z', 50_000, 'Ali'), customerPhone: '+998 90 111 11 11' };
+  const second = { ...debt('ali-2', '2026-09-01T00:00:00Z', 70_000, 'Ali'), customerPhone: '+998 90 222 22 22' };
+  const result = applyRefundToDebts([first, second], 'Ali', first.customerPhone, 20_000, 'VZV-PHONE', '2026-10-02T10:00:00Z', {});
+  assert.equal(result.debts.find(item => item.id === 'ali-1')?.remainingAmount, 30_000);
+  assert.equal(result.debts.find(item => item.id === 'ali-2')?.remainingAmount, 70_000);
 });
 
 test('Rahbar nazorati: ko‘p yoki katta qaytarishlar belgilanadi, kam bo‘lsa belgilanmaydi', () => {

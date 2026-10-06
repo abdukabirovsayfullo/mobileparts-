@@ -43,17 +43,17 @@ export function createDebtStatementPdf({ customer, store, from, to, totalDebt }:
 
   autoTable(doc, {
     startY: 72,
-    head: [['#', 'Sana va soat', 'Olingan tovarlar', 'Sotuv', "To'langan", 'Nasiya', 'Muddat']],
+    head: [['#', 'Sana va soat', 'Olingan tovarlar', 'Sotuv', "To'langan / qaytarish", 'Nasiya', 'Muddat']],
     body: customer.rows.map((r, i) => [
       String(i + 1),
       formatDateTime(r.debt.createdAt),
       sanitizeText(r.itemLines.join('\n')) || '-',
       formatSom(r.debt.totalDebt),
-      formatSom(r.debt.paidAmount),
+      r.returned > 0 ? `${formatSom(r.paid)}\nQayt: ${formatSom(r.returned)}` : formatSom(r.paid),
       formatSom(r.debt.remainingAmount),
       r.debt.dueDate || '-'
     ]),
-    foot: [['', '', 'Davr bo\'yicha jami', formatSom(customer.saleTotal), formatSom(customer.paid), formatSom(customer.remaining), '']],
+    foot: [['', '', 'Davr bo\'yicha jami', formatSom(customer.saleTotal), customer.returned > 0 ? `${formatSom(customer.paid)}\nQayt: ${formatSom(customer.returned)}` : formatSom(customer.paid), formatSom(customer.remaining), '']],
     margin: { left: 14, right: 14 },
     styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, valign: 'top' },
     headStyles: { fillColor: [24, 24, 27], textColor: 255 },

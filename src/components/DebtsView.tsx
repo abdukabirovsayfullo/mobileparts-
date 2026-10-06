@@ -134,7 +134,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   };
 
   const handleCopyReminder = (debt: DebtRecord) => {
-    const customerTotal = customerDebtTotal(debts, debt.customerName);
+    const customerTotal = customerDebtTotal(debts, debt.customerName, debt.customerPhone);
     const totalLine = customerTotal > debt.remainingAmount ? ` Umumiy qarzdorligingiz: ${formatMoney(customerTotal)}.` : '';
     const text = `Assalomu alaykum, ${debt.customerName}! ${STORE_INFO.name} do'konidan olingan mahsulotlar bo'yicha ${formatMoney(debt.remainingAmount)} miqdoridagi nasiya to'lovini eslatib o'tamiz.${totalLine} To'lov muddati: ${debt.dueDate}. Murojaat uchun: ${STORE_INFO.phone}`;
     navigator.clipboard.writeText(text);
@@ -469,7 +469,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   </div>
                   <div className="flex justify-between font-black text-red-700 border-t border-stone-200 pt-1">
                     <span>Mijozning jami qarzi:</span>
-                    <span>{formatMoney(customerDebtTotal(debts, debt.customerName) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))}</span>
+                    <span>{formatMoney(customerDebtTotal(debts, debt.customerName, debt.customerPhone) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))}</span>
                   </div>
                 </div>
 
@@ -586,7 +586,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
                       <td className="py-3 px-4 text-right font-black text-amber-600 whitespace-nowrap">
                         {formatMoney(debt.remainingAmount)}
-                        <div className="text-[10px] text-red-700">Mijoz jami: {formatMoney(customerDebtTotal(debts, debt.customerName) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))}</div>
+                        <div className="text-[10px] text-red-700">Mijoz jami: {formatMoney(customerDebtTotal(debts, debt.customerName, debt.customerPhone) || (debt.customerName === "Do'kon mijozi" ? debt.remainingAmount : 0))}</div>
                       </td>
 
                       <td className="py-3 px-4 whitespace-nowrap">

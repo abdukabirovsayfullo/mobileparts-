@@ -39,18 +39,19 @@ export const CompactTopNavbar: React.FC<Props> = ({
   onOpenPhotoKirim,
   onOpenPdfReports
 }) => (
-  <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur border-b flex items-center px-3 sm:px-6 gap-3">
+  <header className="sticky top-0 z-30 h-14 sm:h-16 bg-white/95 backdrop-blur border-b flex items-center px-2.5 sm:px-6 gap-2.5 sm:gap-3">
     <button
       type="button"
       onClick={onOpenMobileMenu}
-      className="lg:hidden w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center"
+      aria-label="Asosiy menyuni ochish"
+      className="lg:hidden w-10 h-10 rounded-xl bg-stone-100 flex items-center justify-center active:bg-stone-200"
     >
       <Menu className="w-4 h-4" />
     </button>
 
     <div className="flex-1 min-w-0">
-      <h1 className="font-black text-base truncate">{tabNames[activeTab]}</h1>
-      <p className="text-[10px] text-stone-500">MOBILE PARTS • VPS</p>
+      <h1 className="font-black text-[15px] sm:text-base truncate">{tabNames[activeTab]}</h1>
+      <p className="hidden min-[360px]:block text-[9px] sm:text-[10px] text-stone-500">MOBILE PARTS • VPS</p>
     </div>
 
     {isAdminUnlocked && (
@@ -89,7 +90,7 @@ export const CompactTopNavbar: React.FC<Props> = ({
     <button
       type="button"
       onClick={onLockAdmin}
-      className="rounded-xl bg-stone-950 text-white px-3 py-2 text-xs font-bold flex gap-1.5"
+      className="rounded-xl bg-stone-950 text-white px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold flex gap-1.5"
     >
       <UserRound className="w-4 h-4" />
       {isAdminUnlocked ? 'Rahbar' : 'Ishchi'}

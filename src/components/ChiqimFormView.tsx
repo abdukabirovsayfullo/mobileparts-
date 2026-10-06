@@ -87,6 +87,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [cart, setCart] = useState<ChiqimCartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [visibleProductCount, setVisibleProductCount] = useState(60);
 
   // Optom vs Chakana mode
   const [priceMode, setPriceMode] = useState<'chakana' | 'optom'>('chakana');
@@ -109,8 +110,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [receiptToPrint, setReceiptToPrint] = useState<SaleReceiptData | null>(null);
   const [showAdditional, setShowAdditional] = useState(false);
 
-  // Mobile view tab toggle: 'catalog' vs 'cart'
-  const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
+  // Phone sale flow: select products, review the cart, then take payment.
+  const [mobileTab, setMobileTab] = useState<'catalog' | 'cart' | 'payment'>('catalog');
+
+  React.useEffect(() => {
+    setVisibleProductCount(60);
+  }, [searchQuery, selectedCategory]);
 
   // CRM autocomplete & dropdown state
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -133,20 +138,27 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       return { totalDebt: 0, activeDebts: [], customerRecord: null };
     }
     const cleanName = customerName.trim().toLowerCase();
+    const phoneDigits = customerPhone.replace(/\D/g, '').slice(-9);
     
     // Find debts matching name
     const activeDebts = debts.filter(
-      (d) => d.customerName.trim().toLowerCase() === cleanName && d.status !== 'yopildi'
+      (d) => {
+        const debtPhone = d.customerPhone.replace(/\D/g, '').slice(-9);
+        const sameCustomer = phoneDigits.length >= 9 ? debtPhone === phoneDigits : d.customerName.trim().toLowerCase() === cleanName;
+        return sameCustomer && d.status !== 'yopildi';
+      }
     );
-    const totalDebt = customerDebtTotal(debts, customerName);
+    const totalDebt = customerDebtTotal(debts, customerName, customerPhone);
 
     // Find known customer profile
     const customerRecord = customers.find(
-      (c) => c.name.trim().toLowerCase() === cleanName
+      (c) => phoneDigits.length >= 9
+        ? c.phone.replace(/\D/g, '').slice(-9) === phoneDigits
+        : c.name.trim().toLowerCase() === cleanName
     );
 
     return { totalDebt, activeDebts, customerRecord };
-  }, [customerName, debts, customers]);
+  }, [customerName, customerPhone, debts, customers]);
 
   // Autocomplete matching customers
   const matchingCustomers = useMemo(() => {
@@ -183,6 +195,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     selectedCategory === 'all' ? products : products.filter(p => p.category === selectedCategory),
     searchQuery
   ), [products, selectedCategory, searchQuery]);
+  const displayedProducts = filteredProducts.slice(0, visibleProductCount);
 
   const categories = ['all', ...Array.from(new Set(products.map((p) => p.category)))];
 
@@ -375,6 +388,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     }
 
     setCart([]);
+    setMobileTab('catalog');
     setCashReceived(0);
     setDiscountValue(0);
     setNotes('');
@@ -439,7 +453,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         </div>
       </div>
 
-      {/* Mobile Segmented Switch (Telefonda Katalog vs Savat) */}
+      {/* Mobile three-step sale flow */}
       <div className="lg:hidden flex items-center bg-stone-900 p-1 rounded-2xl border border-stone-800 shadow-xs">
         <button
           type="button"
@@ -451,7 +465,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           }`}
         >
           <Package className="w-4 h-4" />
-          <span>Katalog (Tovarlar)</span>
+          <span>1. Tovarlar</span>
         </button>
         <button
           type="button"
@@ -463,10 +477,25 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           }`}
         >
           <ShoppingCart className="w-4 h-4" />
-          <span>Savat &amp; To'lov ({cart.reduce((s, i) => s + i.quantity, 0)})</span>
+          <span>2. Savat ({cart.reduce((s, i) => s + i.quantity, 0)})</span>
           {cart.length > 0 && (
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           )}
+        </button>
+        <button
+          type="button"
+          disabled={cart.length === 0}
+          onClick={() => setMobileTab('payment')}
+          className={`flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+            mobileTab === 'payment'
+              ? 'bg-amber-400 text-stone-950 shadow-xs'
+              : cart.length > 0
+              ? 'text-stone-300 active:text-white'
+              : 'text-stone-600 cursor-not-allowed'
+          }`}
+        >
+          <Wallet className="w-4 h-4" />
+          <span>3. To'lov</span>
         </button>
       </div>
 
@@ -474,7 +503,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
         {/* Left Side: Product Picker */}
         <div className={`${mobileTab === 'catalog' ? 'block' : 'hidden'} lg:block lg:col-span-7 xl:col-span-8 space-y-3`}>
-          {topSlot}
           {/* Price Mode Selector: Chakana vs Optom */}
           <div className="bg-stone-900 text-white rounded-2xl px-3 py-2 shadow-xs flex flex-wrap items-center justify-between gap-2.5 border border-stone-800">
             <div className="flex items-center gap-1.5">
@@ -534,7 +562,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
               <input
                 type="text"
-                autoFocus
+                autoFocus={typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches}
                 placeholder="Tovar nomi, brendi yoki shtrix-kodini yozing..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -567,7 +595,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           {/* Product Items Cards with both Retail & Wholesale prices */}
           <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5 max-h-[70vh] lg:max-h-[calc(100vh-17rem)] overflow-y-auto pr-1 content-start">
             {filteredProducts.length === 0 && <div className="sm:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">Hech narsa topilmadi. Tovar nomi yoki kodini tekshiring.</div>}
-            {filteredProducts.map((p) => {
+            {displayedProducts.map((p) => {
               const isLowStock = p.stock <= p.minStockAlert;
               const isOutOfStock = p.stock <= 0;
               const wholesalePrice = p.wholesalePrice || Math.round(p.sellingPrice * 0.8);
@@ -625,7 +653,19 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               );
             })}
+            {visibleProductCount < filteredProducts.length && (
+              <button
+                type="button"
+                onClick={() => setVisibleProductCount(count => count + 60)}
+                className="sm:col-span-2 2xl:col-span-3 rounded-xl border-2 border-dashed border-stone-300 bg-white py-3 text-sm font-black text-stone-700 active:bg-stone-100"
+              >
+                Yana tovarlarni ko‘rsatish ({filteredProducts.length - visibleProductCount} ta)
+              </button>
+            )}
           </div>
+
+          {/* Secondary cash tools stay below the everyday product flow on phones. */}
+          {topSlot}
         </div>
 
         {/* Floating Mobile Cart Bar when browsing Catalog on Phone */}
@@ -646,7 +686,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-1.5 bg-stone-950 text-amber-400 px-3.5 py-2 rounded-xl text-xs font-black shadow-xs">
-                <span>Rasmiylashtirish</span>
+                <span>Savatni ko‘rish</span>
                 <ArrowUpRight className="w-4 h-4" />
               </div>
             </button>
@@ -654,22 +694,22 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         )}
 
         {/* Right Side: Sales Cart & Checkout (5 cols) */}
-        <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-7rem)] lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
+        <div className={`${mobileTab !== 'catalog' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-7rem)] lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
           {/* Mobile Back to Catalog Button */}
           <div className="lg:hidden flex items-center justify-between pb-2 border-b border-stone-100">
             <button
               type="button"
-              onClick={() => setMobileTab('catalog')}
+              onClick={() => setMobileTab(mobileTab === 'payment' ? 'cart' : 'catalog')}
               className="text-xs font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
             >
-              <span>← Katalogga qaytish</span>
+              <span>← {mobileTab === 'payment' ? 'Savatga qaytish' : 'Tovarlarga qaytish'}</span>
             </button>
             <span className="text-xs font-black text-amber-600">
               Jami: {formatMoney(grandTotalRevenue)}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between border-b border-stone-100 pb-3 gap-2">
+          <div className={`${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex flex-wrap items-center justify-between border-b border-stone-100 pb-3 gap-2`}>
             <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
               <ShoppingCart className="w-4 h-4 text-amber-500" />
               <span>Chiqim Savatchasi ({cart.length})</span>
@@ -707,7 +747,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Cart Items List with INLINE PRICE EDITING & QUICK OPTOM/CHAKANA BUTTONS */}
-          <div className="flex-1 lg:flex-none min-h-[120px] max-h-[300px] lg:max-h-[26vh] overflow-y-auto divide-y divide-stone-100">
+          <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:block flex-1 lg:flex-none min-h-[120px] max-h-[52vh] lg:max-h-[26vh] overflow-y-auto divide-y divide-stone-100`}>
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center p-6 text-center text-stone-400 space-y-1">
                 <ShoppingCart className="w-8 h-8 text-stone-300" />
@@ -811,8 +851,24 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
             )}
           </div>
 
+          {mobileTab === 'cart' && (
+            <button
+              type="button"
+              disabled={cart.length === 0}
+              onClick={() => setMobileTab('payment')}
+              className={`lg:hidden sticky bottom-16 z-20 w-full py-3.5 rounded-xl text-base font-black flex items-center justify-center gap-2 ${
+                cart.length > 0
+                  ? 'bg-amber-400 text-stone-950 shadow-lg active:bg-amber-300'
+                  : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+              }`}
+            >
+              <Wallet className="w-5 h-5" />
+              To‘lovga o‘tish · {formatMoney(grandTotalRevenue)}
+            </button>
+          )}
+
           {/* Checkout Form */}
-          <form onSubmit={handleFinalizeSale} className="border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0">
+          <form onSubmit={handleFinalizeSale} className={`${mobileTab === 'payment' ? 'block' : 'hidden'} lg:flex border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0`}>
             <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             {/* Payment Method Selector */}
             <div>
@@ -1354,7 +1410,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       </div>
 
       {/* Recent Sales History */}
-      <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs space-y-3">
+      <div className="hidden lg:block bg-white rounded-2xl border border-stone-200 p-5 shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-amber-600" />
