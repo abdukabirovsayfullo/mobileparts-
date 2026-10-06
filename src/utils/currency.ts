@@ -5,9 +5,9 @@ export function usdToUzs(usd: number, rate: number): number {
   return Math.max(0, Math.round((Number(usd) || 0) * (Number(rate) || 0)));
 }
 
-/** So'mni dollarga o'giradi (sent aniqligida). */
+/** So'mni dollarga o'giradi. 4 xona: so'mga qaytarganda yaxlitlash xatosi chiqmasligi uchun. */
 export function uzsToUsd(uzs: number, rate: number): number {
-  return rate > 0 ? Math.round(((Number(uzs) || 0) / rate) * 100) / 100 : 0;
+  return rate > 0 ? Math.round(((Number(uzs) || 0) / rate) * 10000) / 10000 : 0;
 }
 
 /** Oxirgi kiritilgan kurs (brauzerda saqlanadi); yo'q bo'lsa 0 — foydalanuvchi o'zi kiritadi. */

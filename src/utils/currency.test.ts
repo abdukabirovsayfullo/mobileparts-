@@ -9,4 +9,6 @@ test('dollar costs convert to whole so\'m and back to cents', () => {
   assert.equal(usdToUzs(-3, 12650), 0);
   assert.equal(uzsToUsd(31625, 12650), 2.5);
   assert.equal(uzsToUsd(10000, 0), 0);
+  assert.equal(usdToUzs(uzsToUsd(15000, 12600), 12600), 15000); // so'm -> $ -> so'm yo'qotishsiz
+  assert.equal(usdToUzs(uzsToUsd(45000, 12650), 12650), 45000);
 });

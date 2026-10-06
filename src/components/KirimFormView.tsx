@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Product, StockMovement } from '../types';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { CategoryManagerModal } from './CategoryManagerModal';
-import { searchProducts } from '../utils/productSearch';
+import { KirimProductPicker } from './KirimProductPicker';
+import { displayDay, toLocalDay } from '../utils/debtStatementReceipt';
+import { addDraftItem, costChangePercent, lastKirimByProduct, marginInfo, recentKirimProductIds } from '../utils/kirimHelpers';
 import { loadUsdRate, saveUsdRate, usdToUzs, uzsToUsd } from '../utils/currency';
 import { 
   ArrowDownLeft, 
@@ -121,6 +123,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
   // Search filter for dropdown
   const [productSearch, setProductSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const quantityInputRef = useRef<HTMLInputElement>(null);
+  const lastKirim = useMemo(() => lastKirimByProduct(recentKirimMovements), [recentKirimMovements]);
+  const recentIds = useMemo(() => recentKirimProductIds(recentKirimMovements, 12), [recentKirimMovements]);
 
   // New product inline creation
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -152,13 +158,13 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     }
   };
 
-  const filteredDropdownProducts = useMemo(() => {
-    const categoryProducts = selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter);
-    return searchProducts(categoryProducts, productSearch);
-  }, [products, selectedCategoryFilter, productSearch]);
-
   // Tan narx so'mda: dollarda kiritilsa kurs bo'yicha o'giriladi
   const effectiveUnitCost = costCurrency === 'USD' ? usdToUzs(usdCost, usdRate) : Number(unitCost);
+
+  const selectedProduct = products.find((p) => p.id === selectedProductId);
+  const selectedLast = selectedProduct ? lastKirim.get(selectedProduct.id) : undefined;
+  const costChange = costChangePercent(selectedLast?.movement.unitCost, effectiveUnitCost);
+  const margin = marginInfo(effectiveUnitCost, Number(unitPrice));
 
   const switchCostCurrency = (currency: 'UZS' | 'USD') => {
     if (currency === costCurrency) return;
@@ -211,6 +217,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                 const rate = Number(e.target.value);
                 setUsdRate(rate);
                 saveUsdRate(rate);
+                if (!usdCost && unitCost > 0) setUsdCost(uzsToUsd(unitCost, rate));
               }}
               className="w-20 px-1.5 py-0.5 bg-white border border-stone-300 rounded-lg text-[11px] font-bold"
             />
@@ -243,7 +250,29 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
       if (costCurrency === 'USD') setUsdCost(uzsToUsd(found.purchasePrice, usdRate));
       setWholesalePrice(found.wholesalePrice || Math.round(found.sellingPrice * 0.8));
       setUnitPrice(found.sellingPrice);
+      // Tovar tanlangach darhol miqdorga o'tamiz: qidiruv -> Enter -> miqdor -> Enter
+      window.setTimeout(() => {
+        quantityInputRef.current?.focus();
+        quantityInputRef.current?.select();
+      }, 0);
     }
+  };
+
+  const handleFormEnter = (e: React.KeyboardEvent) => {
+    const target = e.target as HTMLInputElement;
+    if (e.key === 'Enter' && target.tagName === 'INPUT' && target.type === 'number') {
+      e.preventDefault();
+      handleAddDraftItem(e as unknown as React.FormEvent);
+    }
+  };
+
+  const handleChangeDraftQuantity = (index: number, value: number) => {
+    const quantityValue = Math.max(1, Math.floor(value) || 1);
+    setDraftItems((prev) => prev.map((item, i) => (i === index ? { ...item, quantity: quantityValue } : item)));
+  };
+
+  const handleClearDraft = () => {
+    if (draftItems.length > 0 && window.confirm("Nakladnoydagi barcha tovarlar o'chirilsinmi?")) setDraftItems([]);
   };
 
   const handleAddDraftItem = (e: React.FormEvent) => {
@@ -259,20 +288,28 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
       return;
     }
 
-    setDraftItems((prev) => [
-      ...prev,
-      {
+    if (
+      Number(unitPrice) < effectiveUnitCost &&
+      !window.confirm(`Chakana narx (${formatMoney(Number(unitPrice))}) tan narxdan (${formatMoney(effectiveUnitCost)}) past. Baribir qo'shilsinmi?`)
+    ) {
+      return;
+    }
+
+    setDraftItems((prev) =>
+      addDraftItem<KirimDraftItem>(prev, {
         product: found,
         quantity: Number(quantity),
         unitCost: effectiveUnitCost,
         ...(costCurrency === 'USD' ? { usdCost: Number(usdCost), usdRate } : {}),
         wholesalePrice: Number(wholesalePrice) || Math.round(Number(unitPrice) * 0.8),
         unitPrice: Number(unitPrice)
-      }
-    ]);
+      })
+    );
 
-    // Reset draft fields for next item
+    // Keyingi tovar uchun tayyorlash: qidiruvni tozalab, unga qaytamiz
     setQuantity(10);
+    setProductSearch('');
+    searchInputRef.current?.focus();
   };
 
   const handleRemoveDraftItem = (index: number) => {
@@ -645,86 +682,51 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               </button>
             </form>
           ) : (
-            <div className="space-y-3.5 text-xs">
-              {/* Category Filter + Search for fast warehouse product selection */}
-              <div className="space-y-1.5 bg-stone-50 p-2.5 rounded-xl border border-stone-200">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-stone-700 flex items-center gap-1 text-[11px]">
-                    <Filter className="w-3.5 h-3.5 text-stone-500" />
-                    <span>Katalog bo'yicha filter:</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCategoryModalOpen(true)}
-                    className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    <span>Kataloglarni tahrirlash</span>
-                  </button>
-                </div>
+            <div className="space-y-3.5 text-xs" onKeyDown={handleFormEnter}>
+              <KirimProductPicker
+                products={products}
+                categories={categories}
+                selectedId={selectedProductId}
+                query={productSearch}
+                onQueryChange={setProductSearch}
+                category={selectedCategoryFilter}
+                onCategoryChange={setSelectedCategoryFilter}
+                lastKirim={lastKirim}
+                recentIds={recentIds}
+                onSelect={(p) => handleSelectProduct(p.id)}
+                inputRef={searchInputRef}
+              />
 
-                <div className="flex gap-2">
-                  <select
-                    value={selectedCategoryFilter}
-                    onChange={(e) => {
-                      setSelectedCategoryFilter(e.target.value);
-                    }}
-                    className="w-1/2 px-2 py-1.5 bg-white border border-stone-300 rounded-lg text-xs font-semibold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  >
-                    <option value="all">Barcha kataloglar ({products.length} ta)</option>
-                    {categories.map((cat) => {
-                      const count = products.filter((p) => p.category === cat).length;
-                      return (
-                        <option key={cat} value={cat}>
-                          {cat} ({count})
-                        </option>
-                      );
-                    })}
-                  </select>
-
-                  <div className="w-1/2 relative">
-                    <input
-                      type="text"
-                      placeholder="Nomi yoki shtrix-kod..."
-                      value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-stone-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-stone-900"
-                    />
-                    {productSearch && (
-                      <button
-                        type="button"
-                        onClick={() => setProductSearch('')}
-                        className="absolute right-2 top-2 text-stone-400 hover:text-stone-600 text-xs"
-                      >
-                        ✕
-                      </button>
-                    )}
+              {selectedProduct && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5 text-[11px] space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <strong className="text-emerald-950 truncate">{selectedProduct.name}</strong>
+                    <span className="shrink-0 text-stone-600">Hozirgi qoldiq: <strong>{selectedProduct.stock}</strong> ta</span>
                   </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-stone-700 mb-1">
-                  Katalogdagi Tovar * ({filteredDropdownProducts.length} ta mos keldi)
-                </label>
-                <select
-                  value={selectedProductId}
-                  onChange={(e) => handleSelectProduct(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-stone-50 border border-stone-300 rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500 text-stone-900"
-                >
-                  {filteredDropdownProducts.length === 0 ? (
-                    <option value="">Mos tovar topilmadi ("Yangi tovar yaratish"ni bosing)</option>
+                  {selectedLast ? (
+                    <div className="text-stone-600 flex flex-wrap items-center gap-x-1.5">
+                      <span>
+                        Oxirgi kirim: {displayDay(toLocalDay(selectedLast.movement.timestamp))} · {selectedLast.movement.quantity} dona · tan{' '}
+                        <strong>{formatMoney(selectedLast.movement.unitCost)}</strong> · {selectedLast.movement.counterparty}
+                      </span>
+                      {costChange !== undefined && costChange !== 0 && (
+                        <span className={`px-1.5 py-0.5 rounded font-black ${costChange > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}`}>
+                          {costChange > 0 ? '▲' : '▼'} {Math.abs(costChange)}%
+                        </span>
+                      )}
+                    </div>
                   ) : (
-                    filteredDropdownProducts.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        [{p.category}] {p.name} (Qoldiq: {p.stock} ta)
-                      </option>
-                    ))
+                    <div className="text-stone-500">Bu tovar hali kirim qilinmagan (birinchi kirim).</div>
                   )}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {effectiveUnitCost > 0 && (
+                    <div className={margin.profit < 0 ? 'text-rose-700 font-bold' : 'text-stone-600'}>
+                      Chakana foyda: <strong>{formatMoney(margin.profit)}</strong> ({margin.percent}%)
+                      {margin.profit < 0 ? ' — chakana narx tan narxdan past!' : ''}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
                     Miqdori (dona) *
@@ -733,6 +735,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     type="number"
                     min="1"
                     required
+                    ref={quantityInputRef}
                     value={quantity}
                     onChange={(e) => setQuantity(Number(e.target.value))}
                     className="w-full px-2.5 py-2 bg-stone-50 border border-stone-300 rounded-xl font-black text-center text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -775,6 +778,22 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     className="w-full px-2 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-stone-500">Tez miqdor:</span>
+                {[1, 5, 10, 20, 50, 100].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setQuantity(n)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
+                      quantity === n ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -858,6 +877,11 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
             </div>
             <span className="text-xs font-bold bg-stone-100 px-2.5 py-1 rounded-lg text-stone-700">
               {draftItems.length} ta pozitsiya
+              {draftItems.length > 0 && (
+                <button type="button" onClick={handleClearDraft} className="ml-2 text-red-600 hover:underline cursor-pointer">
+                  Tozalash
+                </button>
+              )}
             </span>
           </div>
 
@@ -887,6 +911,33 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                       <span>•</span>
                       <span className="text-stone-700 font-bold bg-stone-100 px-1.5 py-0.5 rounded">Chakana: {formatMoney(item.unitPrice)}</span>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleChangeDraftQuantity(index, item.quantity - 1)}
+                      className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-stone-200 font-black text-stone-700 cursor-pointer"
+                      aria-label="Miqdorni kamaytirish"
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => handleChangeDraftQuantity(index, Number(e.target.value))}
+                      className="w-14 px-1 py-1 text-center text-xs font-black border border-stone-300 rounded-lg"
+                      aria-label="Miqdor"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleChangeDraftQuantity(index, item.quantity + 1)}
+                      className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-stone-200 font-black text-stone-700 cursor-pointer"
+                      aria-label="Miqdorni oshirish"
+                    >
+                      +
+                    </button>
                   </div>
 
                   <div className="text-right shrink-0">
