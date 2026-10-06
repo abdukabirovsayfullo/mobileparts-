@@ -3,9 +3,8 @@ import { Download, FileText, Printer } from 'lucide-react';
 import type { DebtRecord, StockMovement, StoreSettings } from '../types';
 import { customerDebtTotal, debtPeriodReport, PeriodCustomerReport } from '../utils/saleAccounting';
 import { downloadCSV, formatMoney } from '../utils/formatters';
-import { triggerPdfDownload } from '../utils/pdfGenerator';
-import { createDebtStatementPdf, debtStatementFileName } from '../utils/debtStatementPdf';
-import { DebtStatementParams, debtStatementReceiptHtml, formatDateTime, printThermalHtml } from '../utils/debtStatementReceipt';
+import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
+import { DebtStatementParams, formatDateTime } from '../utils/debtStatementReceipt';
 
 interface Props {
   debts: DebtRecord[];
@@ -54,22 +53,6 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
     to,
     totalDebt: c.key.startsWith('id:') ? c.remaining : customerDebtTotal(debts, c.name)
   });
-
-  const downloadPdf = (c: PeriodCustomerReport) => {
-    const p = statementParams(c);
-    if (!triggerPdfDownload(createDebtStatementPdf(p), debtStatementFileName(c.name, from, to))) {
-      alert('PDF saqlanmadi. Brauzerda yuklab olishga ruxsat berilganini tekshiring.');
-    }
-  };
-
-  const printReceipt = async (c: PeriodCustomerReport) => {
-    try {
-      await printThermalHtml(debtStatementReceiptHtml(statementParams(c)));
-    } catch (error) {
-      console.error('[Print] Nasiya hisobi:', error);
-      alert("Printer oynasi ochilmadi. CRM-AvtoPrint yorlig'idan oching yoki PDF dan foydalaning.");
-    }
-  };
 
   const exportCSV = () => {
     const rows: string[][] = [['Mijoz', 'Telefon', 'Sana va soat', 'Olingan tovarlar', 'Sotuv summasi', 'To‘langan', 'Nasiya qoldig‘i', 'Muddat']];
@@ -177,11 +160,11 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
                   <div className="text-stone-500">Nasiya qoldig‘i</div>
                   <div className="font-black text-red-600 text-sm">{formatMoney(c.remaining)}</div>
                 </div>
-                <button type="button" onClick={() => downloadPdf(c)} className={actionButton} title="Mijozga eslatish uchun PDF">
+                <button type="button" onClick={() => downloadDebtStatementPdf(statementParams(c))} className={actionButton} title="Mijozga eslatish uchun PDF">
                   <FileText className="w-3.5 h-3.5" />
                   PDF
                 </button>
-                <button type="button" onClick={() => printReceipt(c)} className={actionButton} title="80 mm chek chiqarish">
+                <button type="button" onClick={() => printDebtStatement(statementParams(c))} className={actionButton} title="80 mm chek chiqarish">
                   <Printer className="w-3.5 h-3.5" />
                   Chek
                 </button>

@@ -143,3 +143,11 @@ export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[]
   for (const g of result) g.rows.sort((a, b) => a.debt.createdAt.localeCompare(b.debt.createdAt));
   return result.sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
 }
+/** Mijozning hozirgi barcha faol nasiyalari (yopilmagan, qoldig'i bor) tovarlari bilan; bunday nasiya bo'lmasa undefined. */
+export function activeCustomerDebtReport(debts: DebtRecord[], movements: StockMovement[], debt: DebtRecord): PeriodCustomerReport | undefined {
+  const anonymous = cleanName("Do'kon mijozi");
+  const name = cleanName(debt.customerName);
+  const sameCustomer = !name || name === anonymous ? [debt] : debts.filter(d => cleanName(d.customerName) === name);
+  const active = sameCustomer.filter(d => d.status !== 'yopildi' && d.remainingAmount > 0);
+  return debtPeriodReport(active, movements, -Infinity, Infinity)[0];
+}

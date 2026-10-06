@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment, debtPeriodReport } from './saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment, debtPeriodReport, activeCustomerDebtReport } from './saleAccounting';
 import { thermalReceiptHtml } from './thermalReceiptHtml';
 import { DebtRecord, StockMovement, SaleReceiptData } from '../types';
 
@@ -112,4 +112,23 @@ test('debt period report lists items, date and remaining debt per customer insid
   assert.equal(akrom.rows[0].debt.createdAt, '2026-10-02T09:15:00');
   assert.deepEqual(report[1].rows[0].itemLines, ["Qo'lda kiritilgan nasiya"]);
   assert.equal(debtPeriodReport(debts, movements, to + 1, to + 2).length, 0);
+});
+test('active customer debt report merges only that customer\'s open debts with items', () => {
+  const sale = (id: string, name: string): StockMovement => ({ ...movement(saleAccounting([10000], 0).lines[0], id), productName: name });
+  const movements = [sale('m1', 'Kabel'), sale('m2', 'Oyna')];
+  const rec = (id: string, name: string, movementId: string, remaining: number, createdAt: string): DebtRecord =>
+    ({ ...debt(remaining, name), id, movementId, createdAt });
+  const debts = [
+    rec('d1', 'Akmal aka', 'm1', 40000, '2026-10-03T10:00:00'),
+    rec('d2', ' akmal AKA ', 'm2', 25000, '2026-10-02T09:00:00'),
+    rec('d3', 'Akmal aka', 'm2', 0, '2026-09-01T09:00:00'),
+    rec('d4', 'Rustam', 'm1', 99000, '2026-10-01T09:00:00')
+  ];
+  const report = activeCustomerDebtReport(debts, movements, debts[0])!;
+  assert.equal(report.rows.length, 2);
+  assert.equal(report.remaining, 65000);
+  assert.equal(report.rows[0].debt.id, 'd2'); // oldest first
+  assert.deepEqual(report.rows[1].itemLines, ['Kabel × 1']);
+  assert.equal(activeCustomerDebtReport(debts, movements, debts[2])!.remaining, 65000);
+  assert.equal(activeCustomerDebtReport([debts[2]], movements, debts[2]), undefined);
 });

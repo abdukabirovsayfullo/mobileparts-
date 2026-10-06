@@ -117,3 +117,9 @@ export async function printThermalHtml(html: string): Promise<void> {
     throw error;
   }
 }
+
+/** Sana yoki ISO qiymatini mahalliy vaqt bo'yicha YYYY-MM-DD ga aylantiradi. */
+export function toLocalDay(value: Date | string): string {
+  const d = typeof value === 'string' ? new Date(value) : value;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

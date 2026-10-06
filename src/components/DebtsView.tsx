@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
 import { DebtPeriodReport } from './DebtPeriodReport';
+import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
+import { DebtStatementParams, toLocalDay } from '../utils/debtStatementReceipt';
 import { STORE_INFO } from '../data/initialData';
-import { customerDebtTotal, debtOverdueDays, groupDebtsByCustomer } from '../utils/saleAccounting';
+import { activeCustomerDebtReport, customerDebtTotal, debtOverdueDays, groupDebtsByCustomer } from '../utils/saleAccounting';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
 import { 
   BookOpen, 
@@ -17,7 +19,9 @@ import {
   Phone, 
   Send,
   X,
-  CreditCard
+  CreditCard,
+  FileText,
+  Printer
 } from 'lucide-react';
 
 interface DebtsViewProps {
@@ -104,6 +108,29 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
     onAddDebtPayment(paymentModalDebt.id, payAmount, payMethod);
     setPaymentModalDebt(null);
+  };
+
+  /** Mijozning hozirgi barcha faol nasiyalari bo'yicha PDF/chek uchun ma'lumot. */
+  const buildStatement = (debt: DebtRecord): DebtStatementParams | null => {
+    const customer = activeCustomerDebtReport(debts, movements, debt);
+    if (!customer) return null;
+    return {
+      customer,
+      store: storeInfo ?? STORE_INFO,
+      from: toLocalDay(customer.rows[0].debt.createdAt),
+      to: toLocalDay(new Date()),
+      totalDebt: customer.remaining
+    };
+  };
+
+  const handleStatementPdf = (debt: DebtRecord) => {
+    const params = buildStatement(debt);
+    if (params) downloadDebtStatementPdf(params);
+  };
+
+  const handleStatementPrint = (debt: DebtRecord) => {
+    const params = buildStatement(debt);
+    if (params) void printDebtStatement(params);
   };
 
   const handleCopyReminder = (debt: DebtRecord) => {
@@ -455,6 +482,24 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                 </div>
 
                 {/* Actions Row */}
+                {!isClosed && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleStatementPdf(debt)}
+                      className="flex-1 py-2 px-3 bg-white border border-stone-300 hover:bg-stone-100 text-stone-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      onClick={() => handleStatementPrint(debt)}
+                      className="flex-1 py-2 px-3 bg-white border border-stone-300 hover:bg-stone-100 text-stone-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Chek</span>
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
                   {!isClosed ? (
                     <button
@@ -591,6 +636,26 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
+                          {!isClosed && (
+                            <>
+                              <button
+                                onClick={() => handleStatementPdf(debt)}
+                                className="px-2 py-1 bg-white border border-stone-300 hover:bg-stone-100 text-stone-800 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                title="Mijozga eslatish uchun PDF (barcha faol nasiyalari)"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                PDF
+                              </button>
+                              <button
+                                onClick={() => handleStatementPrint(debt)}
+                                className="px-2 py-1 bg-white border border-stone-300 hover:bg-stone-100 text-stone-800 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                title="80 mm chek (barcha faol nasiyalari)"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                Chek
+                              </button>
+                            </>
+                          )}
                           {copiedId === debt.id && (
                             <span className="text-[10px] text-emerald-600 font-bold">
                               Nusxa olindi!
