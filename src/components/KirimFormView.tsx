@@ -98,8 +98,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   const [unitCost, setUnitCost] = useState<number>(
     products[0]?.purchasePrice || 45000
   );
-  const [costCurrency, setCostCurrency] = useState<'UZS' | 'USD'>('UZS');
+  const [priceCurrency, setPriceCurrency] = useState<'UZS' | 'USD'>('UZS');
   const [usdCost, setUsdCost] = useState<number>(0);
+  const [usdWholesale, setUsdWholesale] = useState<number>(0);
+  const [usdRetail, setUsdRetail] = useState<number>(0);
   const [usdRate, setUsdRate] = useState<number>(() => loadUsdRate());
   const [wholesalePrice, setWholesalePrice] = useState<number>(
     products[0]?.wholesalePrice || Math.round((products[0]?.sellingPrice || 85000) * 0.8)
@@ -159,97 +161,125 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   };
 
   // Tan narx so'mda: dollarda kiritilsa kurs bo'yicha o'giriladi
-  const effectiveUnitCost = costCurrency === 'USD' ? usdToUzs(usdCost, usdRate) : Number(unitCost);
+  const effectiveUnitCost = priceCurrency === 'USD' ? usdToUzs(usdCost, usdRate) : Number(unitCost);
+  const effectiveWholesale = priceCurrency === 'USD' ? usdToUzs(usdWholesale, usdRate) : Number(wholesalePrice);
+  const effectiveRetail = priceCurrency === 'USD' ? usdToUzs(usdRetail, usdRate) : Number(unitPrice);
 
   const selectedProduct = products.find((p) => p.id === selectedProductId);
   const selectedLast = selectedProduct ? lastKirim.get(selectedProduct.id) : undefined;
   const costChange = costChangePercent(selectedLast?.movement.unitCost, effectiveUnitCost);
-  const margin = marginInfo(effectiveUnitCost, Number(unitPrice));
+  const margin = marginInfo(effectiveUnitCost, effectiveRetail);
 
-  const switchCostCurrency = (currency: 'UZS' | 'USD') => {
-    if (currency === costCurrency) return;
+  const switchPriceCurrency = (currency: 'UZS' | 'USD') => {
+    if (currency === priceCurrency) return;
     if (currency === 'USD') {
       setUsdCost(uzsToUsd(unitCost, usdRate));
-    } else if (effectiveUnitCost > 0) {
-      setUnitCost(effectiveUnitCost);
+      setUsdWholesale(uzsToUsd(wholesalePrice, usdRate));
+      setUsdRetail(uzsToUsd(unitPrice, usdRate));
+    } else {
+      if (effectiveUnitCost > 0) setUnitCost(effectiveUnitCost);
+      if (effectiveWholesale > 0) setWholesalePrice(effectiveWholesale);
+      if (effectiveRetail > 0) setUnitPrice(effectiveRetail);
     }
-    setCostCurrency(currency);
+    setPriceCurrency(currency);
   };
 
-  const costField = (inputClass: string) => (
-    <div className="space-y-1.5">
+  const handleRateChange = (rate: number) => {
+    setUsdRate(rate);
+    saveUsdRate(rate);
+    if (!usdCost && unitCost > 0) setUsdCost(uzsToUsd(unitCost, rate));
+    if (!usdWholesale && wholesalePrice > 0) setUsdWholesale(uzsToUsd(wholesalePrice, rate));
+    if (!usdRetail && unitPrice > 0) setUsdRetail(uzsToUsd(unitPrice, rate));
+  };
+
+  /** Tan, optom va chakana narx maydoni: tanlangan valyutada kiritiladi, so'mga o'girilib saqlanadi. */
+  const priceField = (kind: 'cost' | 'wholesale' | 'retail', inputClass: string) => {
+    const uzs = kind === 'cost' ? unitCost : kind === 'wholesale' ? wholesalePrice : unitPrice;
+    const setUzs = kind === 'cost' ? setUnitCost : kind === 'wholesale' ? setWholesalePrice : setUnitPrice;
+    const usd = kind === 'cost' ? usdCost : kind === 'wholesale' ? usdWholesale : usdRetail;
+    const setUsd = kind === 'cost' ? setUsdCost : kind === 'wholesale' ? setUsdWholesale : setUsdRetail;
+    const effective = kind === 'cost' ? effectiveUnitCost : kind === 'wholesale' ? effectiveWholesale : effectiveRetail;
+
+    if (priceCurrency === 'USD') {
+      return (
+        <div className="space-y-1">
+          <input
+            type="number"
+            min="0.01"
+            step="any"
+            required
+            placeholder="$"
+            value={usd || ''}
+            onChange={(e) => setUsd(Number(e.target.value))}
+            className={inputClass}
+          />
+          <div className={`text-[10px] font-bold ${usdRate > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+            {usdRate > 0 ? `= ${formatMoney(effective)}` : 'Kursni kiriting'}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <input
+        type="number"
+        min="1000"
+        step="1000"
+        required
+        value={uzs}
+        onChange={(e) => setUzs(Number(e.target.value))}
+        className={inputClass}
+      />
+    );
+  };
+
+  const currencyBar = () => (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-semibold text-stone-500">Narx valyutasi:</span>
       <div className="flex gap-1">
         {(['UZS', 'USD'] as const).map((currency) => (
           <button
             key={currency}
             type="button"
-            onClick={() => switchCostCurrency(currency)}
-            className={`flex-1 px-2 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
-              costCurrency === currency ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            onClick={() => switchPriceCurrency(currency)}
+            className={`px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
+              priceCurrency === currency ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
             {currency === 'UZS' ? "So'm" : '$ Dollar'}
           </button>
         ))}
       </div>
-      {costCurrency === 'USD' ? (
-        <>
+      {priceCurrency === 'USD' && (
+        <div className="flex items-center gap-1 text-[11px] font-semibold text-stone-600">
+          <span>1 $ =</span>
           <input
             type="number"
-            min="0.01"
-            step="0.01"
+            min="1"
+            step="any"
             required
-            placeholder="Dollarda"
-            value={usdCost || ''}
-            onChange={(e) => setUsdCost(Number(e.target.value))}
-            className={inputClass}
+            placeholder="kurs"
+            value={usdRate || ''}
+            onChange={(e) => handleRateChange(Number(e.target.value))}
+            className="w-20 px-1.5 py-0.5 bg-white border border-stone-300 rounded-lg text-[11px] font-bold"
           />
-          <div className="flex flex-wrap items-center gap-1 text-[10px] font-semibold text-stone-600">
-            <span>1 $ =</span>
-            <input
-              type="number"
-              min="1"
-              step="10"
-              required
-              placeholder="kurs"
-              value={usdRate || ''}
-              onChange={(e) => {
-                const rate = Number(e.target.value);
-                setUsdRate(rate);
-                saveUsdRate(rate);
-                if (!usdCost && unitCost > 0) setUsdCost(uzsToUsd(unitCost, rate));
-              }}
-              className="w-20 px-1.5 py-0.5 bg-white border border-stone-300 rounded-lg text-[11px] font-bold"
-            />
-            <span>so'm</span>
-          </div>
-          <div className={`text-[10px] font-bold ${usdRate > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-            {usdRate > 0 ? `= ${formatMoney(effectiveUnitCost)}` : 'Dollar kursini kiriting'}
-          </div>
-        </>
-      ) : (
-        <input
-          type="number"
-          min="1000"
-          step="1000"
-          required
-          value={unitCost}
-          onChange={(e) => setUnitCost(Number(e.target.value))}
-          className={inputClass}
-        />
+          <span>so'm</span>
+        </div>
       )}
     </div>
   );
-
   // When selected product changes
   const handleSelectProduct = (prodId: string) => {
     setSelectedProductId(prodId);
     const found = products.find((p) => p.id === prodId);
     if (found) {
       setUnitCost(found.purchasePrice);
-      if (costCurrency === 'USD') setUsdCost(uzsToUsd(found.purchasePrice, usdRate));
+      if (priceCurrency === 'USD') setUsdCost(uzsToUsd(found.purchasePrice, usdRate));
       setWholesalePrice(found.wholesalePrice || Math.round(found.sellingPrice * 0.8));
       setUnitPrice(found.sellingPrice);
+      if (priceCurrency === 'USD') {
+        setUsdWholesale(uzsToUsd(found.wholesalePrice || Math.round(found.sellingPrice * 0.8), usdRate));
+        setUsdRetail(uzsToUsd(found.sellingPrice, usdRate));
+      }
       // Tovar tanlangach darhol miqdorga o'tamiz: qidiruv -> Enter -> miqdor -> Enter
       window.setTimeout(() => {
         quantityInputRef.current?.focus();
@@ -279,7 +309,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     e.preventDefault();
     const found = products.find((p) => p.id === selectedProductId);
     if (!found) return;
-    if (costCurrency === 'USD' && usdRate <= 0) {
+    if (priceCurrency === 'USD' && usdRate <= 0) {
       alert('Dollar kursini kiriting (1 $ necha so\'m)!');
       return;
     }
@@ -289,8 +319,8 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     }
 
     if (
-      Number(unitPrice) < effectiveUnitCost &&
-      !window.confirm(`Chakana narx (${formatMoney(Number(unitPrice))}) tan narxdan (${formatMoney(effectiveUnitCost)}) past. Baribir qo'shilsinmi?`)
+      effectiveRetail < effectiveUnitCost &&
+      !window.confirm(`Chakana narx (${formatMoney(effectiveRetail)}) tan narxdan (${formatMoney(effectiveUnitCost)}) past. Baribir qo'shilsinmi?`)
     ) {
       return;
     }
@@ -300,9 +330,9 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
         product: found,
         quantity: Number(quantity),
         unitCost: effectiveUnitCost,
-        ...(costCurrency === 'USD' ? { usdCost: Number(usdCost), usdRate } : {}),
-        wholesalePrice: Number(wholesalePrice) || Math.round(Number(unitPrice) * 0.8),
-        unitPrice: Number(unitPrice)
+        ...(priceCurrency === 'USD' ? { usdCost: Number(usdCost), usdRate } : {}),
+        wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
+        unitPrice: effectiveRetail
       })
     );
 
@@ -383,12 +413,12 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
           product: found,
           quantity: Number(quantity),
           unitCost: effectiveUnitCost,
-          wholesalePrice: Number(wholesalePrice) || Math.round(Number(unitPrice) * 0.8),
-          unitPrice: Number(unitPrice)
+          wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
+          unitPrice: effectiveRetail
         }
       ],
       supplier.trim() || 'Ulgurji Ta\'minotchi',
-      costCurrency === 'USD' ? [notes.trim(), `Dollar kirim, kurs: 1$ = ${formatMoney(usdRate)}`].filter(Boolean).join(' | ') : notes.trim()
+      priceCurrency === 'USD' ? [notes.trim(), `Dollar kirim, kurs: 1$ = ${formatMoney(usdRate)}`].filter(Boolean).join(' | ') : notes.trim()
     );
 
     alert(`"${found.name}" dan ${quantity} dona omborga kiritildi!`);
@@ -398,7 +428,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   const handleCreateNewProduct = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName.trim()) return;
-    if (costCurrency === 'USD' && effectiveUnitCost <= 0) {
+    if (priceCurrency === 'USD' && (effectiveUnitCost <= 0 || effectiveRetail <= 0)) {
       alert('Dollar narxi va kursini kiriting!');
       return;
     }
@@ -410,8 +440,8 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
       brand: newProductBrand.trim() || 'Universal',
       barcode: `${Math.floor(100000 + Math.random() * 900000)}`,
       purchasePrice: effectiveUnitCost,
-      wholesalePrice: Number(wholesalePrice) || Math.round(Number(unitPrice) * 0.8),
-      sellingPrice: Number(unitPrice),
+      wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
+      sellingPrice: effectiveRetail,
       stock: 0,
       minStockAlert: 5
     };
@@ -636,40 +666,25 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                   />
                 </div>
 
+                {currencyBar()}
                 <div className="grid grid-cols-3 gap-2 pt-1">
                   <div>
                     <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
                       Tan narxi *
                     </label>
-                    {costField('w-full px-2 py-1.5 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
+                    {priceField('cost', 'w-full px-2 py-1.5 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
                   </div>
                   <div>
                     <label className="block font-semibold text-blue-700 mb-1 text-[11px]">
                       Optom narx *
                     </label>
-                    <input
-                      type="number"
-                      min="1000"
-                      step="1000"
-                      required
-                      value={wholesalePrice}
-                      onChange={(e) => setWholesalePrice(Number(e.target.value))}
-                      className="w-full px-2 py-1.5 bg-blue-50/60 border border-blue-300 rounded-xl font-bold text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
+                    {priceField('wholesale', 'w-full px-2 py-1.5 bg-blue-50/60 border border-blue-300 rounded-xl font-bold text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500')}
                   </div>
                   <div>
                     <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
                       Chakana narx *
                     </label>
-                    <input
-                      type="number"
-                      min="1000"
-                      step="1000"
-                      required
-                      value={unitPrice}
-                      onChange={(e) => setUnitPrice(Number(e.target.value))}
-                      className="w-full px-2 py-1.5 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    />
+                    {priceField('retail', 'w-full px-2 py-1.5 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
                   </div>
                 </div>
               </div>
@@ -726,6 +741,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                   )}
                 </div>
               )}
+              {currencyBar()}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
@@ -746,37 +762,21 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                   <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
                     Tan Narxi *
                   </label>
-                  {costField('w-full px-2 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
+                  {priceField('cost', 'w-full px-2 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
                 </div>
 
                 <div>
                   <label className="block font-semibold text-blue-700 mb-1 text-[11px]">
                     Optom Narx *
                   </label>
-                  <input
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    required
-                    value={wholesalePrice}
-                    onChange={(e) => setWholesalePrice(Number(e.target.value))}
-                    className="w-full px-2 py-2 bg-blue-50/60 border border-blue-300 rounded-xl font-bold text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
+                  {priceField('wholesale', 'w-full px-2 py-2 bg-blue-50/60 border border-blue-300 rounded-xl font-bold text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500')}
                 </div>
 
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
                     Chakana Narx *
                   </label>
-                  <input
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    required
-                    value={unitPrice}
-                    onChange={(e) => setUnitPrice(Number(e.target.value))}
-                    className="w-full px-2 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
+                  {priceField('retail', 'w-full px-2 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
                 </div>
               </div>
 
@@ -1068,7 +1068,8 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               {/* Debt Due Date if partial or full debt */}
               {paymentType !== 'paid' && (
                 <div className="pt-1 space-y-2 border-t border-stone-200/60">
-                  <div className="grid grid-cols-2 gap-2">
+                  {currencyBar()}
+              <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block font-semibold text-stone-700 text-[11px] mb-1">
                         Qarzni to'lash muddati:
