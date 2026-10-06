@@ -43,7 +43,7 @@ import { playCashRegisterChime } from './utils/audioAlert';
 import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
 import { 
   RotateCcw, Smartphone, ShieldCheck, HelpCircle, Monitor, Lock, ShieldAlert,
-  ShoppingBag, ArrowDownLeft, Package, BookOpen, SlidersHorizontal, X, Truck, BarChart3, Calculator, FileText, KeyRound, FileSpreadsheet, Camera, Code2, Sparkles
+  ShoppingBag, ArrowDownLeft, Package, BookOpen, SlidersHorizontal, X, Truck, BarChart3, Calculator, FileText, KeyRound, FileSpreadsheet, Camera, Code2, Sparkles, Users, LogOut
 } from 'lucide-react';
 
 const STORAGE_KEYS = {
@@ -1479,6 +1479,14 @@ export default function App() {
         collapsed={sidebarCollapsed}
         onCollapse={() => setSidebarCollapsedPersist(true)}
       />
+      {isMobileMenuOpen && (
+        <button
+          type="button"
+          aria-label="Menyuni yopish"
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="no-print lg:hidden fixed inset-0 z-40 bg-stone-950/55 backdrop-blur-[1px]"
+        />
+      )}
       {sidebarCollapsed && (
         <button
           type="button"
@@ -1842,14 +1850,17 @@ export default function App() {
         <div className="no-print lg:hidden fixed bottom-0 inset-x-0 z-40 bg-stone-950/95 backdrop-blur-md border-t border-stone-800 px-2 py-1 shadow-2xl safe-area-bottom">
           <div className="flex items-center justify-around">
             {([
-              { label: 'Kassa', active: activeTab === 'chiqim', onClick: () => setActiveTab('chiqim') },
-              { label: 'Mijozlar', active: activeTab === 'customers', onClick: () => setActiveTab('customers') },
-              { label: 'Nasiya', active: activeTab === 'debts', onClick: () => setActiveTab('debts') },
-              { label: 'Qaytarish', active: false, onClick: () => handleOpenVazvratModal() },
-              { label: 'Chiqish', active: false, onClick: () => handleAdminLock() }
+              { label: 'Kassa', Icon: ShoppingBag, active: activeTab === 'chiqim', onClick: () => setActiveTab('chiqim') },
+              { label: 'Mijozlar', Icon: Users, active: activeTab === 'customers', onClick: () => setActiveTab('customers') },
+              { label: 'Nasiya', Icon: BookOpen, active: activeTab === 'debts', onClick: () => setActiveTab('debts') },
+              { label: 'Qaytarish', Icon: RotateCcw, active: false, onClick: () => handleOpenVazvratModal() },
+              { label: 'Chiqish', Icon: LogOut, active: false, onClick: () => handleAdminLock() }
             ]).map(item => (
               <button key={item.label} type="button" onClick={() => { setIsMobileMenuOpen(false); item.onClick(); }}
-                className={`flex-1 py-3 text-[11px] font-black ${item.active ? 'text-amber-400' : 'text-stone-300'}`}>{item.label}</button>
+                className={`min-w-0 flex-1 py-1.5 flex flex-col items-center gap-0.5 text-[9px] font-black ${item.active ? 'text-amber-400' : 'text-stone-400'}`}>
+                <item.Icon className="w-5 h-5" />
+                <span className="truncate w-full">{item.label}</span>
+              </button>
             ))}
           </div>
         </div>
@@ -1911,24 +1922,6 @@ export default function App() {
             <span className="text-[9px] font-black mt-0.5 tracking-tight uppercase">Foto</span>
           </button>
 
-          {/* 4. Ombor */}
-          <button
-            onClick={() => {
-              setActiveTab('stock');
-              setIsMobileMenuOpen(false);
-            }}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
-              activeTab === 'stock' && !isMobileMenuOpen
-                ? 'text-amber-400 font-black'
-                : 'text-stone-400 hover:text-stone-200'
-            }`}
-          >
-            <div className={`p-1 rounded-lg ${activeTab === 'stock' && !isMobileMenuOpen ? 'bg-amber-400/20' : ''}`}>
-              <Package className="w-5 h-5 stroke-[2.2]" />
-            </div>
-            <span className="text-[10px] mt-0.5 tracking-tight">Ombor</span>
-          </button>
-
           {/* 4. Nasiya */}
           <button
             onClick={() => {
@@ -1952,11 +1945,11 @@ export default function App() {
             )}
           </button>
 
-          {/* 5. Boshqaruv (Foyda, Ta'minotchi, Jurnal, Hisobchi) */}
+          {/* 5. Barcha qolgan bo'limlar yon menyuda */}
           <button
             onClick={() => setIsMobileMenuOpen(true)}
             className={`relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
-              isMobileMenuOpen || ['report', 'supplier-debts', 'journal', 'hisobchi'].includes(activeTab)
+              isMobileMenuOpen || !['chiqim', 'kirim', 'debts'].includes(activeTab)
                 ? 'text-amber-400 font-black'
                 : 'text-stone-400 hover:text-stone-200'
             }`}
@@ -1964,7 +1957,7 @@ export default function App() {
             <div className={`p-1 rounded-lg ${isMobileMenuOpen ? 'bg-amber-400/20' : ''}`}>
               <SlidersHorizontal className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <span className="text-[10px] mt-0.5 tracking-tight">Boshqaruv</span>
+            <span className="text-[10px] mt-0.5 tracking-tight">Menyu</span>
             {!isAdminUnlocked && (
               <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-amber-400"></span>
             )}
@@ -1974,7 +1967,7 @@ export default function App() {
       )}
 
       {/* Mobile Management Sheet (Boshqaruv va Rahbar Menyu): faqat Rahbar */}
-      {isMobileMenuOpen && !isWorkerUser && (
+      {false && isMobileMenuOpen && !isWorkerUser && (
         <div className="no-print lg:hidden fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-xs flex flex-col justify-end transition-opacity">
           <div 
             className="flex-1"

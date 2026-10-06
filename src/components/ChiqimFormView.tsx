@@ -87,6 +87,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [cart, setCart] = useState<ChiqimCartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [visibleProductCount, setVisibleProductCount] = useState(60);
 
   // Optom vs Chakana mode
   const [priceMode, setPriceMode] = useState<'chakana' | 'optom'>('chakana');
@@ -111,6 +112,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   // Mobile view tab toggle: 'catalog' vs 'cart'
   const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
+
+  React.useEffect(() => {
+    setVisibleProductCount(60);
+  }, [searchQuery, selectedCategory]);
 
   // CRM autocomplete & dropdown state
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -190,6 +195,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     selectedCategory === 'all' ? products : products.filter(p => p.category === selectedCategory),
     searchQuery
   ), [products, selectedCategory, searchQuery]);
+  const displayedProducts = filteredProducts.slice(0, visibleProductCount);
 
   const categories = ['all', ...Array.from(new Set(products.map((p) => p.category)))];
 
@@ -481,7 +487,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
         {/* Left Side: Product Picker */}
         <div className={`${mobileTab === 'catalog' ? 'block' : 'hidden'} lg:block lg:col-span-7 xl:col-span-8 space-y-3`}>
-          {topSlot}
           {/* Price Mode Selector: Chakana vs Optom */}
           <div className="bg-stone-900 text-white rounded-2xl px-3 py-2 shadow-xs flex flex-wrap items-center justify-between gap-2.5 border border-stone-800">
             <div className="flex items-center gap-1.5">
@@ -541,7 +546,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
               <input
                 type="text"
-                autoFocus
+                autoFocus={typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches}
                 placeholder="Tovar nomi, brendi yoki shtrix-kodini yozing..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -574,7 +579,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           {/* Product Items Cards with both Retail & Wholesale prices */}
           <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5 max-h-[70vh] lg:max-h-[calc(100vh-17rem)] overflow-y-auto pr-1 content-start">
             {filteredProducts.length === 0 && <div className="sm:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">Hech narsa topilmadi. Tovar nomi yoki kodini tekshiring.</div>}
-            {filteredProducts.map((p) => {
+            {displayedProducts.map((p) => {
               const isLowStock = p.stock <= p.minStockAlert;
               const isOutOfStock = p.stock <= 0;
               const wholesalePrice = p.wholesalePrice || Math.round(p.sellingPrice * 0.8);
@@ -632,7 +637,19 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               );
             })}
+            {visibleProductCount < filteredProducts.length && (
+              <button
+                type="button"
+                onClick={() => setVisibleProductCount(count => count + 60)}
+                className="sm:col-span-2 2xl:col-span-3 rounded-xl border-2 border-dashed border-stone-300 bg-white py-3 text-sm font-black text-stone-700 active:bg-stone-100"
+              >
+                Yana tovarlarni ko‘rsatish ({filteredProducts.length - visibleProductCount} ta)
+              </button>
+            )}
           </div>
+
+          {/* Secondary cash tools stay below the everyday product flow on phones. */}
+          {topSlot}
         </div>
 
         {/* Floating Mobile Cart Bar when browsing Catalog on Phone */}
@@ -1361,7 +1378,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       </div>
 
       {/* Recent Sales History */}
-      <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs space-y-3">
+      <div className="hidden lg:block bg-white rounded-2xl border border-stone-200 p-5 shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-amber-600" />
