@@ -110,8 +110,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [receiptToPrint, setReceiptToPrint] = useState<SaleReceiptData | null>(null);
   const [showAdditional, setShowAdditional] = useState(false);
 
-  // Mobile view tab toggle: 'catalog' vs 'cart'
-  const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
+  // Phone sale flow: select products, review the cart, then take payment.
+  const [mobileTab, setMobileTab] = useState<'catalog' | 'cart' | 'payment'>('catalog');
 
   React.useEffect(() => {
     setVisibleProductCount(60);
@@ -388,6 +388,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     }
 
     setCart([]);
+    setMobileTab('catalog');
     setCashReceived(0);
     setDiscountValue(0);
     setNotes('');
@@ -452,7 +453,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         </div>
       </div>
 
-      {/* Mobile Segmented Switch (Telefonda Katalog vs Savat) */}
+      {/* Mobile three-step sale flow */}
       <div className="lg:hidden flex items-center bg-stone-900 p-1 rounded-2xl border border-stone-800 shadow-xs">
         <button
           type="button"
@@ -464,7 +465,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           }`}
         >
           <Package className="w-4 h-4" />
-          <span>Katalog (Tovarlar)</span>
+          <span>1. Tovarlar</span>
         </button>
         <button
           type="button"
@@ -476,10 +477,25 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           }`}
         >
           <ShoppingCart className="w-4 h-4" />
-          <span>Savat &amp; To'lov ({cart.reduce((s, i) => s + i.quantity, 0)})</span>
+          <span>2. Savat ({cart.reduce((s, i) => s + i.quantity, 0)})</span>
           {cart.length > 0 && (
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           )}
+        </button>
+        <button
+          type="button"
+          disabled={cart.length === 0}
+          onClick={() => setMobileTab('payment')}
+          className={`flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+            mobileTab === 'payment'
+              ? 'bg-amber-400 text-stone-950 shadow-xs'
+              : cart.length > 0
+              ? 'text-stone-300 active:text-white'
+              : 'text-stone-600 cursor-not-allowed'
+          }`}
+        >
+          <Wallet className="w-4 h-4" />
+          <span>3. To'lov</span>
         </button>
       </div>
 
@@ -670,7 +686,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-1.5 bg-stone-950 text-amber-400 px-3.5 py-2 rounded-xl text-xs font-black shadow-xs">
-                <span>Rasmiylashtirish</span>
+                <span>Savatni ko‘rish</span>
                 <ArrowUpRight className="w-4 h-4" />
               </div>
             </button>
@@ -678,22 +694,22 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         )}
 
         {/* Right Side: Sales Cart & Checkout (5 cols) */}
-        <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-7rem)] lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
+        <div className={`${mobileTab !== 'catalog' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-7rem)] lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
           {/* Mobile Back to Catalog Button */}
           <div className="lg:hidden flex items-center justify-between pb-2 border-b border-stone-100">
             <button
               type="button"
-              onClick={() => setMobileTab('catalog')}
+              onClick={() => setMobileTab(mobileTab === 'payment' ? 'cart' : 'catalog')}
               className="text-xs font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
             >
-              <span>← Katalogga qaytish</span>
+              <span>← {mobileTab === 'payment' ? 'Savatga qaytish' : 'Tovarlarga qaytish'}</span>
             </button>
             <span className="text-xs font-black text-amber-600">
               Jami: {formatMoney(grandTotalRevenue)}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between border-b border-stone-100 pb-3 gap-2">
+          <div className={`${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex flex-wrap items-center justify-between border-b border-stone-100 pb-3 gap-2`}>
             <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
               <ShoppingCart className="w-4 h-4 text-amber-500" />
               <span>Chiqim Savatchasi ({cart.length})</span>
@@ -731,7 +747,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Cart Items List with INLINE PRICE EDITING & QUICK OPTOM/CHAKANA BUTTONS */}
-          <div className="flex-1 lg:flex-none min-h-[120px] max-h-[300px] lg:max-h-[26vh] overflow-y-auto divide-y divide-stone-100">
+          <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:block flex-1 lg:flex-none min-h-[120px] max-h-[52vh] lg:max-h-[26vh] overflow-y-auto divide-y divide-stone-100`}>
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center p-6 text-center text-stone-400 space-y-1">
                 <ShoppingCart className="w-8 h-8 text-stone-300" />
@@ -835,8 +851,24 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
             )}
           </div>
 
+          {mobileTab === 'cart' && (
+            <button
+              type="button"
+              disabled={cart.length === 0}
+              onClick={() => setMobileTab('payment')}
+              className={`lg:hidden sticky bottom-16 z-20 w-full py-3.5 rounded-xl text-base font-black flex items-center justify-center gap-2 ${
+                cart.length > 0
+                  ? 'bg-amber-400 text-stone-950 shadow-lg active:bg-amber-300'
+                  : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+              }`}
+            >
+              <Wallet className="w-5 h-5" />
+              To‘lovga o‘tish · {formatMoney(grandTotalRevenue)}
+            </button>
+          )}
+
           {/* Checkout Form */}
-          <form onSubmit={handleFinalizeSale} className="border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0">
+          <form onSubmit={handleFinalizeSale} className={`${mobileTab === 'payment' ? 'block' : 'hidden'} lg:flex border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0`}>
             <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             {/* Payment Method Selector */}
             <div>
