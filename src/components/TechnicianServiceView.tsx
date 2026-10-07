@@ -3,6 +3,7 @@ import { Clock3, LogOut, Plus, Printer, Search, Smartphone, Wrench } from 'lucid
 import type { AuthUser } from '../types';
 
 type RepairStatus = 'received' | 'repairing' | 'ready' | 'delivered' | 'cancelled';
+type SearchDateFilter = 'today' | 'yesterday' | 'all';
 
 interface RepairOrder {
   id: string;
@@ -50,6 +51,16 @@ function tashkentDate(offsetDays = 0): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+function dateInTashkent(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
+  const get = (type: string) => parts.find(part => part.type === type)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
 function formatDate(value: string): string {
   const [year, month, day] = value.split('-');
   return year && month && day ? `${day}.${month}.${year}` : value;
@@ -68,6 +79,7 @@ export const TechnicianServiceView: React.FC<Props> = ({ user, onLogout }) => {
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(true);
   const [query, setQuery] = useState('');
+  const [dateFilter, setDateFilter] = useState<SearchDateFilter>('today');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [printOrder, setPrintOrder] = useState<RepairOrder | null>(null);
@@ -83,9 +95,17 @@ export const TechnicianServiceView: React.FC<Props> = ({ user, onLogout }) => {
 
   const visibleOrders = useMemo(() => {
     const value = query.trim().toLocaleLowerCase('uz');
-    if (!value) return orders;
-    return orders.filter(order => [String(order.orderNumber), order.customerName, order.customerPhone, order.deviceModel, order.deviceColor, order.complaint].some(field => field.toLocaleLowerCase('uz').includes(value)));
-  }, [orders, query]);
+    const digits = onlyDigits(query);
+    const targetDate = dateFilter === 'today' ? tashkentDate() : dateFilter === 'yesterday' ? tashkentDate(-1) : '';
+    return orders.filter(order => {
+      if (targetDate && dateInTashkent(order.createdAt) !== targetDate) return false;
+      if (!value) return true;
+      const textMatch = [String(order.orderNumber), order.customerName, order.deviceModel, order.deviceColor, order.complaint]
+        .some(field => field.toLocaleLowerCase('uz').includes(value));
+      const phoneMatch = digits.length >= 3 && onlyDigits(order.customerPhone).includes(digits);
+      return textMatch || phoneMatch;
+    });
+  }, [orders, query, dateFilter]);
 
   const counts = useMemo(() => ({
     active: orders.filter(order => order.status === 'received' || order.status === 'repairing').length,
@@ -181,13 +201,22 @@ export const TechnicianServiceView: React.FC<Props> = ({ user, onLogout }) => {
         {message && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">{message}</p>}
 
         <section className="rounded-3xl border border-stone-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center"><div className="flex-1"><h2 className="font-black">Telefonlar</h2><p className="text-xs text-stone-500">{orders.length} ta buyurtma</p></div><div className="relative sm:w-80"><Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Raqam, mijoz yoki model…" className="h-10 w-full rounded-xl border border-stone-200 pl-9 pr-3 text-sm outline-none focus:border-amber-400" /></div></div>
+          <div className="mb-3"><h2 className="font-black">Telefonlarni qidirish</h2><p className="text-xs text-stone-500">Mijoz telefon raqami, telefon modeli, buyurtma raqami yoki ism bo‘yicha.</p></div>
+          <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-stone-400" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Masalan: 90 123 45 67 yoki Samsung A52" className="h-11 w-full rounded-xl border border-stone-200 pl-9 pr-3 text-sm outline-none focus:border-amber-400" /></div>
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-stone-100 p-1">
+              {([{ value: 'today', label: 'Bugun' }, { value: 'yesterday', label: 'Kecha' }, { value: 'all', label: 'Barchasi' }] as Array<{ value: SearchDateFilter; label: string }>).map(option => (
+                <button key={option.value} type="button" onClick={() => setDateFilter(option.value)} className={`rounded-lg px-3 py-2 text-xs font-black ${dateFilter === option.value ? 'bg-stone-950 text-white shadow-sm' : 'text-stone-600'}`}>{option.label}</button>
+              ))}
+            </div>
+          </div>
+          <p className="mb-3 text-[11px] font-bold text-stone-500">{visibleOrders.length} ta natija • {dateFilter === 'today' ? 'bugungi' : dateFilter === 'yesterday' ? 'kechagi' : 'barcha'} ishlar</p>
           <div className="space-y-2">
             {visibleOrders.map(order => (
               <article key={order.id} className="rounded-2xl border border-stone-200 p-3">
                 <div className="flex items-start gap-3">
                   <div className="flex h-11 w-14 shrink-0 items-center justify-center rounded-xl bg-stone-950 text-sm font-black text-amber-300">#{String(order.orderNumber).padStart(4, '0')}</div>
-                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="truncate">{order.deviceModel}{order.deviceColor ? ` • ${order.deviceColor}` : ''}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${statusClasses[order.status]}`}>{statusLabels[order.status]}</span></div><p className="text-xs text-stone-600">{order.customerName} • {order.customerPhone}</p><p className="mt-1 text-sm">{order.complaint}</p><div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-stone-500"><span>{formatMoney(order.agreedPrice)}</span><span><Clock3 className="mr-1 inline h-3 w-3" />{formatDate(order.dueDate)} {order.dueTime || ''}</span></div></div>
+                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="truncate">{order.deviceModel}{order.deviceColor ? ` • ${order.deviceColor}` : ''}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${statusClasses[order.status]}`}>{statusLabels[order.status]}</span></div><p className="text-xs text-stone-600">{order.customerName} • {order.customerPhone}</p><p className="mt-1 text-sm"><b>Shikoyat:</b> {order.complaint}</p><div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-stone-500"><span><b>Qabul:</b> {formatDate(dateInTashkent(order.createdAt))}</span><span>{formatMoney(order.agreedPrice)}</span><span><Clock3 className="mr-1 inline h-3 w-3" />Tayyor: {formatDate(order.dueDate)} {order.dueTime || ''}</span></div></div>
                   <button type="button" onClick={() => printTicket(order)} title="Yorliqni qayta chiqarish" className="rounded-xl border border-stone-200 p-2 text-stone-600"><Printer className="h-4 w-4" /></button>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-1.5 sm:flex">
