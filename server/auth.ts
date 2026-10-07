@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import express, { NextFunction, Request, Response } from 'express';
 
-export type UserRole = 'owner' | 'worker';
+export type UserRole = 'owner' | 'worker' | 'technician';
 
 export interface AuthUser {
   id: string;
@@ -244,14 +244,15 @@ authRouter.get('/manage/users', requireOwner, (_req, res) => {
 authRouter.post('/manage/users', requireOwner, (req, res) => {
   const name = String(req.body?.name || '').trim();
   const pin = String(req.body?.pin || '').trim();
+  const role: UserRole = req.body?.role === 'technician' ? 'technician' : 'worker';
   if (name.length < 2 || !/^\d{4,8}$/.test(pin)) {
     return res.status(400).json({ success: false, error: 'Ism va 4–8 xonali PIN kiriting.' });
   }
   const now = new Date().toISOString();
   const user: StoredUser = {
-    id: `worker-${crypto.randomUUID()}`,
+    id: `${role}-${crypto.randomUUID()}`,
     name,
-    role: 'worker',
+    role,
     active: true,
     createdAt: now,
     pinHash: hashPin(pin)

@@ -8,6 +8,7 @@ import { buildReport, previousRange } from './reportLogic';
 import { summarizeReturns, RETURN_FLAG_DAILY_AMOUNT, RETURN_FLAG_DAILY_COUNT, WORKER_RETURN_WINDOW_DAYS } from './returnLogic';
 import { searchProducts } from '../src/utils/productSearch';
 import { debtPeriodReport } from '../src/utils/saleAccounting';
+import { repairStore } from './repairStore';
 import { 
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
@@ -285,6 +286,42 @@ apiV1Router.post('/sync', requireOwner, (req: Request, res: Response) => {
 // Authenticated Endpoints (Require API Key)
 // -----------------------------------------------------------------------------
 apiV1Router.use(requireApiKey);
+
+const requireRepairRole = (req: Request, res: Response, next: NextFunction) => {
+  const user = getRequestUser(req);
+  if (user?.role !== 'technician' && user?.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Telefon ta’miri bo‘limi faqat Usta va Boshqaruvchi uchun.' });
+  }
+  next();
+};
+
+apiV1Router.get('/repairs', requireSession, requireRepairRole, (_req, res) => {
+  res.json({ success: true, data: repairStore.list() });
+});
+
+apiV1Router.post('/repairs', requireSession, requireRepairRole, (req, res) => {
+  try {
+    res.status(201).json({ success: true, data: repairStore.create(req.body || {}) });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Telefon qabul qilinmadi.' });
+  }
+});
+
+apiV1Router.patch('/repairs/:id', requireSession, requireRepairRole, (req, res) => {
+  try {
+    res.json({ success: true, data: repairStore.update(req.params.id, req.body || {}) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Buyurtma yangilanmadi.';
+    res.status(message === 'Buyurtma topilmadi.' ? 404 : 400).json({ success: false, error: message });
+  }
+});
+
+// Usta faqat servis buyurtmalariga kira oladi. POS, ombor, hisobot va boshqa
+// endpointlar server darajasida yopiq qoladi.
+apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
+  if (getRequestUser(req)?.role !== 'technician') return next();
+  return res.status(403).json({ success: false, error: 'Usta uchun bu bo‘lim yopiq.' });
+});
 
 // Kassir faqat katalogni ko'rishi va savdo yozishi mumkin. Qolgan barcha
 // boshqaruv amallari serverning o'zida to'xtatiladi.

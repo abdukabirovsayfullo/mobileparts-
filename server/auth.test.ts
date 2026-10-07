@@ -54,6 +54,15 @@ test('PIN login, server lockout and owner-only user management', async (context)
   assert.equal(createWorker.status, 201);
   const created = await createWorker.json() as { user: { id: string } };
 
+  const createTechnician = await fetch(`${base}/manage/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: ownerCookie || '' },
+    body: JSON.stringify({ name: 'Test Usta', pin: '2468', role: 'technician' })
+  });
+  assert.equal(createTechnician.status, 201);
+  const technician = await createTechnician.json() as { user: { role: string } };
+  assert.equal(technician.user.role, 'technician');
+
   const workerLogin = await fetch(`${base}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

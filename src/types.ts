@@ -2,7 +2,7 @@ export type MovementType = 'kirim' | 'chiqim' | 'spisaniye' | 'vazvrat';
 
 export type PaymentMethod = 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
 
-export type UserRole = 'owner' | 'worker';
+export type UserRole = 'owner' | 'worker' | 'technician';
 
 export interface AuthUser {
   id: string;

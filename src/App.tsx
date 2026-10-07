@@ -38,6 +38,7 @@ import { CashExpensePanel } from './components/CashExpensePanel';
 import { CashShiftPanel } from './components/CashShiftPanel';
 import { CustomersPanel } from './components/CustomersPanel';
 import { ReportsDashboard } from './components/ReportsDashboard';
+import { TechnicianServiceView } from './components/TechnicianServiceView';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
 import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
@@ -1517,6 +1518,10 @@ export default function App() {
       setAuthUser(user);
       setActiveTab(user.role === 'owner' ? 'report' : 'chiqim');
     }} />;
+  }
+
+  if (authUser.role === 'technician') {
+    return <TechnicianServiceView user={authUser} onLogout={handleAdminLock} />;
   }
 
   return (
