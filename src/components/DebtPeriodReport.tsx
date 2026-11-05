@@ -3,9 +3,9 @@ import { Download, FileText, Printer } from 'lucide-react';
 import type { DebtRecord, StockMovement, StoreSettings } from '../types';
 import { customerDebtTotal, debtPeriodReport, PeriodCustomerReport } from '../utils/saleAccounting';
 import { downloadCSV, formatMoney } from '../utils/formatters';
-import { triggerPdfDownload } from '../utils/pdfGenerator';
-import { createDebtStatementPdf, debtStatementFileName } from '../utils/debtStatementPdf';
-import { DebtStatementParams, debtStatementReceiptHtml, formatDateTime, printThermalHtml } from '../utils/debtStatementReceipt';
+import { sumByCurrency } from '../utils/money';
+import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
+import { DebtStatementParams, formatDateTime } from '../utils/debtStatementReceipt';
 
 interface Props {
   debts: DebtRecord[];
@@ -56,8 +56,8 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
 
   const customers = loadReport ? remoteCustomers : localCustomers;
 
-  const totalSale = customers.reduce((s, c) => s + c.saleTotal, 0);
-  const totalRemaining = customers.reduce((s, c) => s + c.remaining, 0);
+  const saleByCurrency = sumByCurrency(customers, (c) => c.saleTotal);
+  const remainingByCurrency = sumByCurrency(customers, (c) => c.remaining);
   const rangeInvalid = from > to;
 
   const setRange = (fromDate: string, toDate: string) => {
@@ -72,22 +72,6 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
     to,
     totalDebt: c.key.startsWith('id:') ? c.remaining : customerDebtTotal(debts, c.name, c.phone)
   });
-
-  const downloadPdf = (c: PeriodCustomerReport) => {
-    const p = statementParams(c);
-    if (!triggerPdfDownload(createDebtStatementPdf(p), debtStatementFileName(c.name, from, to))) {
-      alert('PDF saqlanmadi. Brauzerda yuklab olishga ruxsat berilganini tekshiring.');
-    }
-  };
-
-  const printReceipt = async (c: PeriodCustomerReport) => {
-    try {
-      await printThermalHtml(debtStatementReceiptHtml(statementParams(c)));
-    } catch (error) {
-      console.error('[Print] Nasiya hisobi:', error);
-      alert("Printer oynasi ochilmadi. CRM-AvtoPrint yorlig'idan oching yoki PDF dan foydalaning.");
-    }
-  };
 
   const exportCSV = () => {
     const rows: string[][] = [['Mijoz', 'Telefon', 'Sana va soat', 'Olingan tovarlar', 'Sotuv summasi', 'To‘langan', 'Qaytarish', 'Nasiya qoldig‘i', 'Muddat']];
@@ -176,11 +160,11 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
         </div>
         <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-4 shadow-xs">
           <div className="text-[10px] sm:text-xs font-bold uppercase text-stone-500">Nasiyaga olingan</div>
-          <div className="text-sm sm:text-xl font-black text-stone-900 mt-1">{formatMoney(totalSale)}</div>
+          <div className="text-sm sm:text-xl font-black text-stone-900 mt-1">{formatMoney(saleByCurrency.UZS)}{saleByCurrency.USD > 0 && <span className="block text-sm sm:text-base">+ {formatMoney(saleByCurrency.USD, 'USD')}</span>}</div>
         </div>
         <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-4 shadow-xs">
           <div className="text-[10px] sm:text-xs font-bold uppercase text-stone-500">Nasiya qoldig‘i</div>
-          <div className="text-sm sm:text-xl font-black text-red-600 mt-1">{formatMoney(totalRemaining)}</div>
+          <div className="text-sm sm:text-xl font-black text-red-600 mt-1">{formatMoney(remainingByCurrency.UZS)}{remainingByCurrency.USD > 0 && <span className="block text-sm sm:text-base">+ {formatMoney(remainingByCurrency.USD, 'USD')}</span>}</div>
         </div>
       </div>
 
@@ -199,13 +183,13 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
               <div className="flex items-center gap-3">
                 <div className="text-right text-xs">
                   <div className="text-stone-500">Nasiya qoldig‘i</div>
-                  <div className="font-black text-red-600 text-sm">{formatMoney(c.remaining)}</div>
+                  <div className="font-black text-red-600 text-sm">{formatMoney(c.remaining, c.currency)}</div>
                 </div>
-                <button type="button" onClick={() => downloadPdf(c)} className={actionButton} title="Mijozga eslatish uchun PDF">
+                <button type="button" onClick={() => downloadDebtStatementPdf(statementParams(c))} className={actionButton} title="Mijozga eslatish uchun PDF">
                   <FileText className="w-3.5 h-3.5" />
                   Eslatma PDF
                 </button>
-                <button type="button" onClick={() => printReceipt(c)} className={actionButton} title="80 mm chek chiqarish">
+                <button type="button" onClick={() => printDebtStatement(statementParams(c))} className={actionButton} title="80 mm chek chiqarish">
                   <Printer className="w-3.5 h-3.5" />
                   Print 80 mm
                 </button>
@@ -223,10 +207,10 @@ export const DebtPeriodReport: React.FC<Props> = ({ debts, movements, store, que
                     )}
                   </div>
                   <div className="sm:text-right whitespace-nowrap space-y-0.5">
-                    <div className="text-stone-500">Sotuv: <span className="font-semibold text-stone-800">{formatMoney(r.debt.totalDebt)}</span></div>
-                    <div className="text-stone-500">To‘langan: <span className="font-semibold text-emerald-700">{formatMoney(r.paid)}</span></div>
-                    {r.returned > 0 && <div className="text-stone-500">Qaytarish: <span className="font-semibold text-amber-700">{formatMoney(r.returned)}</span></div>}
-                    <div className="font-black text-red-600">Nasiya: {formatMoney(r.debt.remainingAmount)}</div>
+                    <div className="text-stone-500">Sotuv: <span className="font-semibold text-stone-800">{formatMoney(r.debt.totalDebt, c.currency)}</span></div>
+                    <div className="text-stone-500">To‘langan: <span className="font-semibold text-emerald-700">{formatMoney(r.paid, c.currency)}</span></div>
+                    {r.returned > 0 && <div className="text-stone-500">Qaytarish: <span className="font-semibold text-amber-700">{formatMoney(r.returned, c.currency)}</span></div>}
+                    <div className="font-black text-red-600">Nasiya: {formatMoney(r.debt.remainingAmount, c.currency)}</div>
                   </div>
                 </li>
               ))}

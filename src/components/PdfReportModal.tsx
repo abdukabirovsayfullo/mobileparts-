@@ -1,6 +1,8 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Product, StockMovement, DebtRecord, SupplierDebtRecord, StoreSettings, OrderItem } from '../types';
 import { formatMoney } from '../utils/formatters';
+import { currencyOf } from '../utils/money';
+import type { Currency } from '../types';
 import { 
   createOrderPdf, 
   createSalesPdf, 
@@ -67,6 +69,8 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   isAdminUnlocked = true
 }) => {
   const [reportType, setReportType] = useState<PdfReportType>(initialReportType);
+  // So'm va dollar (telefonlar) hisobotlari alohida tuziladi; bir-biriga qo'shilmaydi.
+  const [pdfCurrency, setPdfCurrency] = useState<Currency>('UZS');
 
   // Date Range state
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -199,14 +203,17 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
     const q = searchQuery.toLowerCase().trim();
     return products
       .filter((p) => p.stock <= (p.minStockAlert || 5) && (lowIncludeZero || p.stock > 0))
+      .filter((p) => currencyOf(p) === pdfCurrency)
       .filter((p) => selectedCategoryFilter === 'all' || p.category === selectedCategoryFilter)
       .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q))
       .sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
-  }, [products, searchQuery, selectedCategoryFilter, lowIncludeZero]);
+  }, [products, searchQuery, selectedCategoryFilter, lowIncludeZero, pdfCurrency]);
 
   const totalEstimatedOrderCost = useMemo(() => {
-    return printableOrderItems.reduce((sum, item) => sum + (item.quantity * item.purchasePrice), 0);
-  }, [printableOrderItems]);
+    return printableOrderItems
+      .filter((item) => currencyOf({ category: item.category }) === pdfCurrency)
+      .reduce((sum, item) => sum + (item.quantity * item.purchasePrice), 0);
+  }, [printableOrderItems, pdfCurrency]);
 
   const totalOrderUnits = useMemo(() => {
     return printableOrderItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -216,6 +223,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   const filteredSalesMovements = useMemo(() => {
     return movements.filter((m) => {
       if (m.type !== 'chiqim') return false;
+      if (currencyOf(m) !== pdfCurrency) return false;
       const mDate = m.timestamp.slice(0, 10);
       const inDateRange = mDate >= startDate && mDate <= endDate;
       if (!inDateRange) return false;
@@ -228,7 +236,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
       return matchesCat && matchesSearch;
     });
-  }, [movements, startDate, endDate, selectedCategoryFilter, searchQuery]);
+  }, [movements, startDate, endDate, selectedCategoryFilter, searchQuery, pdfCurrency]);
 
   const salesStats = useMemo(() => {
     let totalRevenue = 0;
@@ -258,6 +266,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   // 3. Stock Inventory Data & Filtered List
   const filteredStockProducts = useMemo(() => {
     return products.filter((p) => {
+      if (currencyOf(p) !== pdfCurrency) return false;
       const matchesCat = selectedCategoryFilter === 'all' || p.category === selectedCategoryFilter;
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch = !q || 
@@ -317,8 +326,8 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
   // 4. Debts
   const activeCustomerDebts = useMemo(() => {
-    return debts.filter((d) => d.status !== 'yopildi');
-  }, [debts]);
+    return debts.filter((d) => d.status !== 'yopildi' && currencyOf(d) === pdfCurrency);
+  }, [debts, pdfCurrency]);
 
   const totalCustomerDebtSum = useMemo(() => {
     return activeCustomerDebts.reduce((sum, d) => sum + (d.remainingAmount || 0), 0);
@@ -326,8 +335,8 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
   // 5. Supplier Debts
   const activeSupplierDebts = useMemo(() => {
-    return supplierDebts.filter((d) => d.status !== 'yopildi');
-  }, [supplierDebts]);
+    return supplierDebts.filter((d) => d.status !== 'yopildi' && currencyOf(d) === pdfCurrency);
+  }, [supplierDebts, pdfCurrency]);
 
   const totalSupplierDebtSum = useMemo(() => {
     return activeSupplierDebts.reduce((sum, d) => sum + (d.remainingAmount || 0), 0);
@@ -415,7 +424,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   // Generate vector PDF document using jsPDF & autotable
   const generateCurrentPdfDoc = () => {
     if (reportType === 'low_stock') {
-      return createLowStockPdf({ storeInfo, products: lowStockProducts, dateStr: new Date().toLocaleDateString('uz-UZ') });
+      return createLowStockPdf({ currency: pdfCurrency, storeInfo, products: lowStockProducts, dateStr: new Date().toLocaleDateString('uz-UZ') });
     }
     if (reportType === 'out_of_stock') {
       return createOrderPdf({
@@ -426,6 +435,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       });
     } else if (reportType === 'daily_sales') {
       return createSalesPdf({
+        currency: pdfCurrency,
         storeInfo,
         startDate,
         endDate,
@@ -439,12 +449,14 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       });
     } else if (reportType === 'stock_inventory') {
       return createStockInventoryPdf({
+        currency: pdfCurrency,
         storeInfo,
         products: filteredStockProducts,
         categoryFilter: selectedCategoryFilter
       });
     } else if (reportType === 'customer_debts') {
       return createDebtsPdf({
+        currency: pdfCurrency,
         storeInfo,
         debts: activeCustomerDebts,
         type: 'customer',
@@ -452,6 +464,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       });
     } else {
       return createDebtsPdf({
+        currency: pdfCurrency,
         storeInfo,
         debts: activeSupplierDebts,
         type: 'supplier',
@@ -555,6 +568,18 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {[...products, ...movements, ...debts, ...supplierDebts].some((item) => currencyOf(item) === 'USD') && (
+          <div className="no-print px-3 sm:px-5 py-2 bg-stone-900 border-b border-stone-800 flex flex-wrap items-center gap-2 text-xs font-bold shrink-0">
+            <span className="text-stone-400">Valyuta:</span>
+            {(['UZS', 'USD'] as const).map((c) => (
+              <button key={c} type="button" onClick={() => setPdfCurrency(c)} className={`px-3 py-1 rounded-lg cursor-pointer ${pdfCurrency === c ? 'bg-amber-400 text-stone-950' : 'bg-stone-800 text-stone-300 hover:bg-stone-700'}`}>
+                {c === 'UZS' ? "So'm" : '$ Telefonlar'}
+              </button>
+            ))}
+            <span className="text-stone-500 font-normal">So'm va dollar hisobotlari alohida, bir-biriga qo'shilmaydi.</span>
+          </div>
+        )}
 
         {/* Tab Selection Bar (No-print) */}
         <div className="no-print px-3 sm:px-5 py-2 sm:py-2.5 bg-stone-950 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2 sm:gap-2.5 shrink-0">
@@ -1056,7 +1081,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                         {startDate === endDate ? `${startDate} Sanasi Uchun Kassa Tushumi` : `${startDate} dan ${endDate} gacha (${daysInRange} kunlik) Tushum`}
                       </div>
                       <div className="text-3xl font-black text-emerald-950 mt-1">
-                        {formatMoney(salesStats.totalRevenue)}
+                        {formatMoney(salesStats.totalRevenue, pdfCurrency)}
                       </div>
                     </div>
 
@@ -1066,7 +1091,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                           Sof Foyda (Marja)
                         </div>
                         <div className="text-2xl font-black text-emerald-900 mt-1">
-                          +{formatMoney(salesStats.totalProfit)}
+                          +{formatMoney(salesStats.totalProfit, pdfCurrency)}
                         </div>
                       </div>
                     )}
@@ -1087,7 +1112,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                             {salesStats.totalRevenue > 0 ? Math.round((salesStats.cash / salesStats.totalRevenue) * 100) : 0}%
                           </span>
                         </div>
-                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.cash)}</div>
+                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.cash, pdfCurrency)}</div>
                         <div className="w-full bg-stone-100 h-1.5 rounded-full mt-2 overflow-hidden">
                           <div className="bg-emerald-500 h-full" style={{ width: `${salesStats.totalRevenue > 0 ? (salesStats.cash / salesStats.totalRevenue) * 100 : 0}%` }} />
                         </div>
@@ -1101,7 +1126,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                             {salesStats.totalRevenue > 0 ? Math.round((salesStats.clickPayme / salesStats.totalRevenue) * 100) : 0}%
                           </span>
                         </div>
-                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.clickPayme)}</div>
+                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.clickPayme, pdfCurrency)}</div>
                         <div className="w-full bg-stone-100 h-1.5 rounded-full mt-2 overflow-hidden">
                           <div className="bg-sky-500 h-full" style={{ width: `${salesStats.totalRevenue > 0 ? (salesStats.clickPayme / salesStats.totalRevenue) * 100 : 0}%` }} />
                         </div>
@@ -1115,7 +1140,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                             {salesStats.totalRevenue > 0 ? Math.round((salesStats.uzum / salesStats.totalRevenue) * 100) : 0}%
                           </span>
                         </div>
-                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.uzum)}</div>
+                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.uzum, pdfCurrency)}</div>
                         <div className="w-full bg-stone-100 h-1.5 rounded-full mt-2 overflow-hidden">
                           <div className="bg-purple-500 h-full" style={{ width: `${salesStats.totalRevenue > 0 ? (salesStats.uzum / salesStats.totalRevenue) * 100 : 0}%` }} />
                         </div>
@@ -1129,7 +1154,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                             {salesStats.totalRevenue > 0 ? Math.round((salesStats.debt / salesStats.totalRevenue) * 100) : 0}%
                           </span>
                         </div>
-                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.debt)}</div>
+                        <div className="text-base font-black text-stone-900 mt-1">{formatMoney(salesStats.debt, pdfCurrency)}</div>
                         <div className="w-full bg-stone-100 h-1.5 rounded-full mt-2 overflow-hidden">
                           <div className="bg-amber-500 h-full" style={{ width: `${salesStats.totalRevenue > 0 ? (salesStats.debt / salesStats.totalRevenue) * 100 : 0}%` }} />
                         </div>
@@ -1195,11 +1220,11 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                                 </span>
                               </td>
                               <td className="py-1.5 px-2 text-center font-bold text-stone-900">{m.quantity}</td>
-                              <td className="py-1.5 px-3 text-right font-mono text-stone-700">{formatMoney(m.unitPrice)}</td>
-                              <td className="py-1.5 px-3 text-right font-bold font-mono text-stone-950">{formatMoney(m.totalRevenue)}</td>
+                              <td className="py-1.5 px-3 text-right font-mono text-stone-700">{formatMoney(m.unitPrice, pdfCurrency)}</td>
+                              <td className="py-1.5 px-3 text-right font-bold font-mono text-stone-950">{formatMoney(m.totalRevenue, pdfCurrency)}</td>
                               {includeProfitInPdf && (
                                 <td className="py-1.5 px-3 text-right font-bold font-mono text-emerald-700">
-                                  +{formatMoney(m.profit)}
+                                  +{formatMoney(m.profit, pdfCurrency)}
                                 </td>
                               )}
                             </tr>
@@ -1213,11 +1238,11 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                             <td className="py-2.5 px-2 text-center font-mono">{salesStats.totalQuantity} dona</td>
                             <td></td>
                             <td className="py-2.5 px-3 text-right font-mono text-base text-stone-950">
-                              {formatMoney(salesStats.totalRevenue)}
+                              {formatMoney(salesStats.totalRevenue, pdfCurrency)}
                             </td>
                             {includeProfitInPdf && (
                               <td className="py-2.5 px-3 text-right font-mono text-base text-emerald-800">
-                                +{formatMoney(salesStats.totalProfit)}
+                                +{formatMoney(salesStats.totalProfit, pdfCurrency)}
                               </td>
                             )}
                           </tr>
@@ -1241,19 +1266,19 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
                     <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
                       <div className="text-[11px] font-bold text-emerald-800">Tan Narx (Sarmoya)</div>
-                      <div className="text-lg font-black text-emerald-950">{formatMoney(inventoryStats.totalPurchaseValue)}</div>
+                      <div className="text-lg font-black text-emerald-950">{formatMoney(inventoryStats.totalPurchaseValue, pdfCurrency)}</div>
                       <div className="text-[10px] text-emerald-700 mt-0.5">Sof kapital qiymati</div>
                     </div>
 
                     <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl">
                       <div className="text-[11px] font-bold text-sky-800">Chakana Sotuv Qiymati</div>
-                      <div className="text-lg font-black text-sky-950">{formatMoney(inventoryStats.totalRetailValue)}</div>
+                      <div className="text-lg font-black text-sky-950">{formatMoney(inventoryStats.totalRetailValue, pdfCurrency)}</div>
                       <div className="text-[10px] text-sky-700 mt-0.5">Donalab sotilganda</div>
                     </div>
 
                     <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl">
                       <div className="text-[11px] font-bold text-purple-800">Optom Sotuv Qiymati</div>
-                      <div className="text-lg font-black text-purple-950">{formatMoney(inventoryStats.totalWholesaleValue)}</div>
+                      <div className="text-lg font-black text-purple-950">{formatMoney(inventoryStats.totalWholesaleValue, pdfCurrency)}</div>
                       <div className="text-[10px] text-purple-700 mt-0.5">Ulgurji partiyalarda</div>
                     </div>
                   </div>
@@ -1309,12 +1334,12 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                                     {p.stock} dona
                                   </span>
                                 </td>
-                                <td className="py-1.5 px-3 text-right font-mono text-stone-700">{formatMoney(p.purchasePrice)}</td>
-                                <td className="py-1.5 px-3 text-right font-mono font-bold text-emerald-800">{formatMoney(p.sellingPrice)}</td>
+                                <td className="py-1.5 px-3 text-right font-mono text-stone-700">{formatMoney(p.purchasePrice, pdfCurrency)}</td>
+                                <td className="py-1.5 px-3 text-right font-mono font-bold text-emerald-800">{formatMoney(p.sellingPrice, pdfCurrency)}</td>
                                 <td className="py-1.5 px-3 text-right font-mono text-purple-800">
-                                  {formatMoney(p.wholesalePrice || Math.round(p.sellingPrice * 0.85))}
+                                  {formatMoney(p.wholesalePrice || Math.round(p.sellingPrice * 0.85), pdfCurrency)}
                                 </td>
-                                <td className="py-1.5 px-3 text-right font-mono font-bold text-stone-900">{formatMoney(totalTan)}</td>
+                                <td className="py-1.5 px-3 text-right font-mono font-bold text-stone-900">{formatMoney(totalTan, pdfCurrency)}</td>
                               </tr>
                             );
                           })
@@ -1327,7 +1352,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                             <td className="py-2.5 px-2.5 text-center font-mono">{inventoryStats.totalUnits} dona</td>
                             <td colSpan={3}></td>
                             <td className="py-2.5 px-3 text-right font-mono text-base text-emerald-900">
-                              {formatMoney(inventoryStats.totalPurchaseValue)}
+                              {formatMoney(inventoryStats.totalPurchaseValue, pdfCurrency)}
                             </td>
                           </tr>
                         </tfoot>
@@ -1343,7 +1368,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between">
                     <div>
                       <div className="text-xs font-bold text-amber-800 uppercase">Jami Mijozlardan Qaytarilishi Kerak Bo'lgan Nasiya</div>
-                      <div className="text-2xl font-black text-amber-950 mt-0.5">{formatMoney(totalCustomerDebtSum)}</div>
+                      <div className="text-2xl font-black text-amber-950 mt-0.5">{formatMoney(totalCustomerDebtSum, pdfCurrency)}</div>
                     </div>
                     <div className="text-right text-xs text-amber-800">
                       <span className="font-bold text-base text-amber-950">{activeCustomerDebts.length} nafar</span> faol qarzdor
@@ -1376,10 +1401,10 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                               <td className="py-2 px-2.5 text-center font-mono text-stone-400 text-[11px]">{idx + 1}</td>
                               <td className="py-2 px-3 font-bold text-stone-900">{debt.customerName}</td>
                               <td className="py-2 px-3 font-mono text-stone-700">{debt.customerPhone || '—'}</td>
-                              <td className="py-2 px-3 text-right font-mono text-stone-600">{formatMoney(debt.totalDebt)}</td>
-                              <td className="py-2 px-3 text-right font-mono text-emerald-700">{formatMoney(debt.paidAmount)}</td>
+                              <td className="py-2 px-3 text-right font-mono text-stone-600">{formatMoney(debt.totalDebt, pdfCurrency)}</td>
+                              <td className="py-2 px-3 text-right font-mono text-emerald-700">{formatMoney(debt.paidAmount, pdfCurrency)}</td>
                               <td className="py-2 px-3 text-right font-black font-mono text-amber-900 text-sm">
-                                {formatMoney(debt.remainingAmount)}
+                                {formatMoney(debt.remainingAmount, pdfCurrency)}
                               </td>
                               <td className="py-2 px-2.5 text-center font-mono text-stone-700">{debt.dueDate || '—'}</td>
                               <td className="py-2 px-2 text-center">
@@ -1401,7 +1426,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                   <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between">
                     <div>
                       <div className="text-xs font-bold text-rose-800 uppercase">Do'konimizning Ta'minotchilardan Jami Qarzi</div>
-                      <div className="text-2xl font-black text-rose-950 mt-0.5">{formatMoney(totalSupplierDebtSum)}</div>
+                      <div className="text-2xl font-black text-rose-950 mt-0.5">{formatMoney(totalSupplierDebtSum, pdfCurrency)}</div>
                     </div>
                     <div className="text-right text-xs text-rose-800">
                       <span className="font-bold text-base text-rose-950">{activeSupplierDebts.length} ta</span> to'lanmagan partiya
@@ -1433,10 +1458,10 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                             <td className="py-2 px-2.5 text-center font-mono text-stone-400 text-[11px]">{idx + 1}</td>
                             <td className="py-2 px-3 font-bold text-stone-900">{item.supplierName}</td>
                             <td className="py-2 px-3 text-stone-700">{item.productSummary}</td>
-                            <td className="py-2 px-3 text-right font-mono text-stone-600">{formatMoney(item.totalDebt)}</td>
-                            <td className="py-2 px-3 text-right font-mono text-emerald-700">{formatMoney(item.paidAmount)}</td>
+                            <td className="py-2 px-3 text-right font-mono text-stone-600">{formatMoney(item.totalDebt, pdfCurrency)}</td>
+                            <td className="py-2 px-3 text-right font-mono text-emerald-700">{formatMoney(item.paidAmount, pdfCurrency)}</td>
                             <td className="py-2 px-3 text-right font-black font-mono text-rose-900 text-sm">
-                              {formatMoney(item.remainingAmount)}
+                              {formatMoney(item.remainingAmount, pdfCurrency)}
                             </td>
                             <td className="py-2 px-2.5 text-center font-mono text-stone-700">{item.dueDate || 'Kelishilmoqda'}</td>
                           </tr>

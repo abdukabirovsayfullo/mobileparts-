@@ -1,4 +1,5 @@
-import type { DebtRecord, StockMovement } from '../src/types';
+import type { Currency, DebtRecord, StockMovement } from '../src/types';
+import { currencyOf, roundMoney } from '../src/utils/money';
 import { tashkentDate } from './expenseLogic';
 
 export const WORKER_RETURN_WINDOW_DAYS = 7;
@@ -28,31 +29,32 @@ export const returnableQuantity = (original: StockMovement, movements: StockMove
 
 /** Qaytariladigan summa: sotuvdagi haqiqiy tushumning (chegirmadan keyingi) proporsional ulushi. */
 export const refundAmount = (original: StockMovement, quantity: number): number =>
-  Math.round((original.totalRevenue * quantity) / Math.max(1, original.quantity));
+  roundMoney((original.totalRevenue * quantity) / Math.max(1, original.quantity), currencyOf(original));
 
 /** Mijozning faol nasiyalaridan qaytarilgan summani FIFO tartibida ayiradi. O'zgargan nusxalarni qaytaradi. */
 export const applyRefundToDebts = (
   debts: DebtRecord[], customerName: string, customerPhone: string | undefined, amount: number, receiptNumber: string, nowIso: string,
-  actor: { id?: string; name?: string }
+  actor: { id?: string; name?: string }, currency: Currency = 'UZS'
 ): { debts: DebtRecord[]; applied: number } => {
-  let left = Math.max(0, Math.round(amount));
+  // Faqat o'sha valyutadagi nasiyalar kamayadi: dollarli qaytarish so'mli nasiyaga tegmaydi va aksincha.
+  let left = Math.max(0, roundMoney(amount, currency));
   let applied = 0;
   const candidates = debts
-    .filter(debt => debt.status !== 'yopildi' && debt.remainingAmount > 0 && sameCustomer(customerName, customerPhone, debt.customerName, debt.customerPhone))
+    .filter(debt => debt.status !== 'yopildi' && debt.remainingAmount > 0 && currencyOf(debt) === currency && sameCustomer(customerName, customerPhone, debt.customerName, debt.customerPhone))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const updated = new Map<string, DebtRecord>();
   for (const debt of candidates) {
     if (left <= 0) break;
     const deduction = Math.min(debt.remainingAmount, left);
-    left -= deduction;
-    applied += deduction;
-    const remaining = debt.remainingAmount - deduction;
+    left = roundMoney(left - deduction, currency);
+    applied = roundMoney(applied + deduction, currency);
+    const remaining = roundMoney(debt.remainingAmount - deduction, currency);
     updated.set(debt.id, {
       ...debt,
-      paidAmount: debt.paidAmount + deduction,
+      paidAmount: roundMoney(debt.paidAmount + deduction, currency),
       remainingAmount: remaining,
       status: remaining <= 0 ? 'yopildi' : 'qisman_tolandi',
-      notes: `${debt.notes ? `${debt.notes} | ` : ''}Qaytarish (${receiptNumber}) hisobiga ${deduction} so'm kamaytirildi`.trim(),
+      notes: `${debt.notes ? `${debt.notes} | ` : ''}Qaytarish (${receiptNumber}) hisobiga ${currency === 'USD' ? `$${deduction}` : `${deduction} so'm`} kamaytirildi`.trim(),
       paymentHistory: [...(debt.paymentHistory || []), { date: nowIso, amount: deduction, method: 'vazvrat', employeeId: actor.id, employeeName: actor.name }]
     });
   }
@@ -66,6 +68,9 @@ export interface ReturnActivity {
   todayAmount: number;
   weekCount: number;
   weekAmount: number;
+  /** Dollarli qaytarishlar summasi (so'm chegarasiga qo'shilmaydi). */
+  todayAmountUsd: number;
+  weekAmountUsd: number;
   flagged: boolean;
   reasons: string[];
 }
@@ -79,10 +84,11 @@ export const summarizeReturns = (
   for (const item of movements) {
     if (item.type !== 'vazvrat' || daysAgo(item.timestamp, today) > 6) continue;
     const id = item.employeeId || 'owner-or-legacy';
-    const row = map.get(id) || { employeeId: id, employeeName: item.employeeName || 'Rahbar / eski yozuv', todayCount: 0, todayAmount: 0, weekCount: 0, weekAmount: 0, flagged: false, reasons: [], todayBatches: new Set<string>(), weekBatches: new Set<string>() };
+    const row = map.get(id) || { employeeId: id, employeeName: item.employeeName || 'Rahbar / eski yozuv', todayCount: 0, todayAmount: 0, weekCount: 0, weekAmount: 0, todayAmountUsd: 0, weekAmountUsd: 0, flagged: false, reasons: [], todayBatches: new Set<string>(), weekBatches: new Set<string>() };
     const batch = item.batchSaleId || item.id;
-    row.weekBatches.add(batch); row.weekAmount += item.totalRevenue;
-    if (tashkentDate(item.timestamp) === today) { row.todayBatches.add(batch); row.todayAmount += item.totalRevenue; }
+    const usd = currencyOf(item) === 'USD';
+    row.weekBatches.add(batch); if (usd) row.weekAmountUsd = roundMoney(row.weekAmountUsd + item.totalRevenue, 'USD'); else row.weekAmount += item.totalRevenue;
+    if (tashkentDate(item.timestamp) === today) { row.todayBatches.add(batch); if (usd) row.todayAmountUsd = roundMoney(row.todayAmountUsd + item.totalRevenue, 'USD'); else row.todayAmount += item.totalRevenue; }
     map.set(id, row);
   }
   return [...map.values()].map(({ todayBatches, weekBatches, ...row }) => {

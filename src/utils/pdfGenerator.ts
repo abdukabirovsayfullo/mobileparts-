@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { StoreSettings, OrderItem, Product, DebtRecord, SupplierDebtRecord, StockMovement, SaleReceiptData } from '../types';
+import { Currency, StoreSettings, OrderItem, Product, DebtRecord, SupplierDebtRecord, StockMovement, SaleReceiptData } from '../types';
 import { formatMoney } from './formatters';
 
 // Clean text for jsPDF standard font (replace curly quotes with straight quotes)
@@ -330,6 +330,8 @@ export function createOrderPdf(params: GenerateOrderPdfParams): jsPDF {
 // 2. SAVDO HISOBOTI (DAILY SALES PDF)
 // ============================================================================
 export interface GenerateSalesPdfParams {
+  /** Hisobot valyutasi; so'm va dollar alohida hisobotda. */
+  currency?: Currency;
   storeInfo: StoreSettings;
   startDate: string;
   endDate: string;
@@ -343,6 +345,7 @@ export interface GenerateSalesPdfParams {
 }
 
 export function createSalesPdf(params: GenerateSalesPdfParams): jsPDF {
+  const money = (value: number) => formatMoney(value, params.currency);
   const {
     storeInfo,
     startDate,
@@ -399,7 +402,7 @@ export function createSalesPdf(params: GenerateSalesPdfParams): jsPDF {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(formatMoney(totalRevenue), 18, 56);
+  doc.text(money(totalRevenue), 18, 56);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -407,18 +410,18 @@ export function createSalesPdf(params: GenerateSalesPdfParams): jsPDF {
   doc.text("Naqd:", 75, 49);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(formatMoney(cashRevenue), 75, 56);
+  doc.text(money(cashRevenue), 75, 56);
 
   doc.setFont('helvetica', 'normal');
   doc.text("Plastik / Click:", 115, 49);
   doc.setFont('helvetica', 'bold');
-  doc.text(formatMoney(cardRevenue), 115, 56);
+  doc.text(money(cardRevenue), 115, 56);
 
   doc.setFont('helvetica', 'normal');
   doc.text("Nasiyaga:", 155, 49);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(180, 83, 9);
-  doc.text(formatMoney(debtRevenue), 155, 56);
+  doc.text(money(debtRevenue), 155, 56);
 
   // Profit row if enabled
   if (includeProfit) {
@@ -427,7 +430,7 @@ export function createSalesPdf(params: GenerateSalesPdfParams): jsPDF {
     doc.setFontSize(8.5);
     doc.setTextColor(22, 101, 52);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Sof Foyda (Marja): ${formatMoney(totalProfit)}`, 20, 68.5);
+    doc.text(`Sof Foyda (Marja): ${money(totalProfit)}`, 20, 68.5);
   }
 
   // Transactions Table
@@ -439,7 +442,7 @@ export function createSalesPdf(params: GenerateSalesPdfParams): jsPDF {
       sanitizeText(t.timestamp ? new Date(t.timestamp).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' }) : ''),
       sanitizeText(`${t.productName} (${t.quantity} dona)`),
       paymentLabel,
-      formatMoney(t.totalRevenue),
+      money(t.totalRevenue),
       sanitizeText(t.counterparty || 'Mijoz')
     ];
   });
@@ -491,6 +494,8 @@ export function createSalesPdf(params: GenerateSalesPdfParams): jsPDF {
 // 3. OMBOR INVENTARIZATSIYASI (STOCK INVENTORY PDF)
 // ============================================================================
 export interface GenerateStockPdfParams {
+  /** Hisobot valyutasi; so'm va dollar alohida hisobotda. */
+  currency?: Currency;
   storeInfo: StoreSettings;
   products: Product[];
   categoryFilter?: string;
@@ -498,6 +503,7 @@ export interface GenerateStockPdfParams {
 }
 
 export function createStockInventoryPdf(params: GenerateStockPdfParams): jsPDF {
+  const money = (value: number) => formatMoney(value, params.currency);
   const { storeInfo, products, categoryFilter, dateStr } = params;
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -552,13 +558,13 @@ export function createStockInventoryPdf(params: GenerateStockPdfParams): jsPDF {
   doc.setFont('helvetica', 'normal');
   doc.text("Tan narxi qiymati:", 115, 49);
   doc.setFont('helvetica', 'bold');
-  doc.text(formatMoney(totalPurchaseValue), 115, 55);
+  doc.text(money(totalPurchaseValue), 115, 55);
 
   doc.setFont('helvetica', 'normal');
   doc.text("Sotish qiymati:", 155, 49);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(22, 101, 52);
-  doc.text(formatMoney(totalRetailValue), 155, 55);
+  doc.text(money(totalRetailValue), 155, 55);
 
   const tableRows = products.map((p, idx) => {
     return [
@@ -566,9 +572,9 @@ export function createStockInventoryPdf(params: GenerateStockPdfParams): jsPDF {
       sanitizeText(p.name),
       sanitizeText(p.category || 'Boshqa'),
       String(p.stock),
-      formatMoney(p.purchasePrice),
-      formatMoney(p.sellingPrice),
-      formatMoney(p.stock * p.purchasePrice)
+      money(p.purchasePrice),
+      money(p.sellingPrice),
+      money(p.stock * p.purchasePrice)
     ];
   });
 
@@ -620,12 +626,15 @@ export function createStockInventoryPdf(params: GenerateStockPdfParams): jsPDF {
 // 3b. KAM QOLGAN TOVARLAR RO'YXATI (narxsiz; qo'lda zakaz soni yozish uchun bo'sh ustun)
 // ============================================================================
 export interface GenerateLowStockPdfParams {
+  /** Hisobot valyutasi; so'm va dollar alohida hisobotda. */
+  currency?: Currency;
   storeInfo: StoreSettings;
   products: Product[];
   dateStr?: string;
 }
 
 export function createLowStockPdf(params: GenerateLowStockPdfParams): jsPDF {
+  const money = (value: number) => formatMoney(value, params.currency);
   const { storeInfo, products, dateStr } = params;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const displayDate = dateStr || new Date().toLocaleDateString('uz-UZ');
@@ -704,6 +713,8 @@ export function createLowStockPdf(params: GenerateLowStockPdfParams): jsPDF {
 // 4. QARZDORLIKLAR (DEBTS PDF)
 // ============================================================================
 export interface GenerateDebtsPdfParams {
+  /** Hisobot valyutasi; so'm va dollar alohida hisobotda. */
+  currency?: Currency;
   storeInfo: StoreSettings;
   debts: DebtRecord[] | SupplierDebtRecord[];
   type: 'customer' | 'supplier';
@@ -712,6 +723,7 @@ export interface GenerateDebtsPdfParams {
 }
 
 export function createDebtsPdf(params: GenerateDebtsPdfParams): jsPDF {
+  const money = (value: number) => formatMoney(value, params.currency);
   const { storeInfo, debts, type, totalDebtSum, dateStr } = params;
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -755,15 +767,15 @@ export function createDebtsPdf(params: GenerateDebtsPdfParams): jsPDF {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
   doc.setTextColor(isSupplier ? 190 : 180, isSupplier ? 18 : 83, isSupplier ? 60 : 9);
-  doc.text(formatMoney(totalDebtSum), 20, 56);
+  doc.text(money(totalDebtSum), 20, 56);
 
   const tableRows = debts.map((d: any, idx) => {
     const name = isSupplier ? d.supplierName : d.customerName;
     const phone = d.phone || '—';
     const detail = isSupplier ? d.productSummary : d.itemsSummary || 'Aksessuarlar';
-    const total = formatMoney(d.totalDebt || 0);
-    const paid = formatMoney(d.paidAmount || 0);
-    const remaining = formatMoney(d.remainingAmount || 0);
+    const total = money(d.totalDebt || 0);
+    const paid = money(d.paidAmount || 0);
+    const remaining = money(d.remainingAmount || 0);
     const due = d.dueDate || 'Kelishilmoqda';
 
     return [
@@ -914,8 +926,8 @@ export function generateReceiptPdf(params: GenerateReceiptPdfParams): jsPDF {
       sanitizeText(it.name),
       sanitizeText(it.category || 'Aksessuar'),
       `${it.quantity} dona`,
-      formatMoney(it.unitPrice),
-      formatMoney(it.total)
+      formatMoney(it.unitPrice, receipt.currency),
+      formatMoney(it.total, receipt.currency)
     ]);
     columnStyles = {
       0: { halign: 'center', cellWidth: 8 },
@@ -976,7 +988,7 @@ export function generateReceiptPdf(params: GenerateReceiptPdfParams): jsPDF {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
-    doc.text(`Jami: ${formatMoney(receipt.total)}`, 124, finalY + 13);
+    doc.text(`Jami: ${formatMoney(receipt.total, receipt.currency)}`, 124, finalY + 13);
     doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`To'lov turi: ${sanitizeText(receipt.paymentMethod).toUpperCase()}`, 124, finalY + 18);
@@ -1045,21 +1057,21 @@ export function generateThermalReceiptPdf(params: GenerateReceiptPdfParams): jsP
     add(`${index + 1}. ${item.name}`);
     if (item.category) add('Toifa: ' + item.category);
     add(showPrices
-      ? `${item.quantity} dona x ${formatMoney(item.unitPrice)} = ${formatMoney(item.total)}`
+      ? `${item.quantity} dona x ${formatMoney(item.unitPrice, receipt.currency)} = ${formatMoney(item.total, receipt.currency)}`
       : `${item.quantity} dona`);
   });
   separator();
   if (showPrices) {
     if (receipt.subtotal && receipt.subtotal > receipt.total) {
-      add('Mahsulotlar: ' + formatMoney(receipt.subtotal));
-      add('Chegirma: ' + formatMoney(receipt.subtotal - receipt.total));
+      add('Mahsulotlar: ' + formatMoney(receipt.subtotal, receipt.currency));
+      add('Chegirma: ' + formatMoney(receipt.subtotal - receipt.total, receipt.currency));
     }
-    add((receipt.isReturn ? "MIJOZGA TO'LANDI: " : 'JAMI: ') + formatMoney(receipt.total));
+    add((receipt.isReturn ? "MIJOZGA TO'LANDI: " : 'JAMI: ') + formatMoney(receipt.total, receipt.currency));
     add("To'lov: " + receipt.paymentMethod);
-    if (receipt.paidAmount !== undefined) add('Berilgan pul: ' + formatMoney(receipt.paidAmount));
-    if (receipt.changeAmount) add('Qaytim: ' + formatMoney(receipt.changeAmount));
+    if (receipt.paidAmount !== undefined) add('Berilgan pul: ' + formatMoney(receipt.paidAmount, receipt.currency));
+    if (receipt.changeAmount) add('Qaytim: ' + formatMoney(receipt.changeAmount, receipt.currency));
     if (receipt.isDebt) {
-      add('Qarz: ' + formatMoney(receipt.debtRemaining || 0));
+      add('Qarz: ' + formatMoney(receipt.debtRemaining || 0, receipt.currency));
       add('Muddati: ' + (receipt.debtDueDate || '-'));
     }
   } else {

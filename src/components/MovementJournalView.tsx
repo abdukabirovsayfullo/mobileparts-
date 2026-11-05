@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { StockMovement } from '../types';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
+import { currencyOf, sumByCurrency } from '../utils/money';
 import { 
   FileText, 
   Search, 
@@ -73,13 +74,16 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
 
   // Totals for filtered records
   const totalKirimCount = filteredMovements.filter((m) => m.type === 'kirim').reduce((s, m) => s + m.quantity, 0);
-  const totalKirimSum = filteredMovements.filter((m) => m.type === 'kirim').reduce((s, m) => s + m.totalCost, 0);
+  const kirimByCurrency = sumByCurrency(filteredMovements.filter((m) => m.type === 'kirim'), (m) => m.totalCost);
+  const totalKirimSum = kirimByCurrency.UZS;
 
   const totalChiqimCount = filteredMovements.filter((m) => m.type === 'chiqim').reduce((s, m) => s + m.quantity, 0);
-  const totalChiqimRevenue = filteredMovements.filter((m) => m.type === 'chiqim').reduce((s, m) => s + m.totalRevenue, 0);
+  const chiqimByCurrency = sumByCurrency(filteredMovements.filter((m) => m.type === 'chiqim'), (m) => m.totalRevenue);
+  const totalChiqimRevenue = chiqimByCurrency.UZS;
 
   const totalVazvratCount = filteredMovements.filter((m) => m.type === 'vazvrat').reduce((s, m) => s + m.quantity, 0);
-  const totalVazvratSum = filteredMovements.filter((m) => m.type === 'vazvrat').reduce((s, m) => s + m.totalRevenue, 0);
+  const vazvratByCurrency = sumByCurrency(filteredMovements.filter((m) => m.type === 'vazvrat'), (m) => m.totalRevenue);
+  const totalVazvratSum = vazvratByCurrency.UZS;
 
   const handleExportCSV = () => {
     const headers = [
@@ -140,6 +144,7 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
           </div>
           <div className="text-xl sm:text-2xl font-black text-stone-900 mt-2 truncate">
             {formatMoney(totalKirimSum)}
+            {kirimByCurrency.USD > 0 && <span className="block text-sm sm:text-base font-black text-emerald-800">+ {formatMoney(kirimByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-[11px] text-stone-500 mt-0.5">
             {totalKirimCount} dona qabul qilingan
@@ -154,6 +159,7 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
           </div>
           <div className="text-xl sm:text-2xl font-black text-stone-900 mt-2 truncate">
             {formatMoney(totalChiqimRevenue)}
+            {chiqimByCurrency.USD > 0 && <span className="block text-sm sm:text-base font-black text-emerald-800">+ {formatMoney(chiqimByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-[11px] text-stone-500 mt-0.5">
             {totalChiqimCount} dona sotilgan
@@ -168,6 +174,7 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
           </div>
           <div className="text-xl sm:text-2xl font-black text-rose-600 mt-2 truncate">
             {formatMoney(totalVazvratSum)}
+            {vazvratByCurrency.USD > 0 && <span className="block text-sm sm:text-base font-black text-emerald-800">+ {formatMoney(vazvratByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-[11px] text-rose-700/80 mt-0.5">
             {totalVazvratCount} dona tovar qaytgan
@@ -327,10 +334,10 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
 
                   <div className="text-right">
                     <span className={`text-sm font-black ${isVazvrat ? 'text-rose-600' : 'text-stone-950'}`}>
-                      {isKirim ? formatMoney(m.totalCost) : isVazvrat ? `-${formatMoney(m.totalRevenue)}` : formatMoney(m.totalRevenue)}
+                      {isKirim ? formatMoney(m.totalCost, currencyOf(m)) : isVazvrat ? `-${formatMoney(m.totalRevenue, currencyOf(m))}` : formatMoney(m.totalRevenue, currencyOf(m))}
                     </span>
-                    {!isKirim && !isVazvrat && m.paidAmount !== undefined && <div className="text-[11px] text-emerald-700">To'langan: {formatMoney(m.paidAmount)}</div>}
-                    {!isKirim && !isVazvrat && m.debtRemaining !== undefined && <div className="text-[11px] text-red-700">Qarz: {formatMoney(m.debtRemaining)}</div>}
+                    {!isKirim && !isVazvrat && m.paidAmount !== undefined && <div className="text-[11px] text-emerald-700">To'langan: {formatMoney(m.paidAmount, currencyOf(m))}</div>}
+                    {!isKirim && !isVazvrat && m.debtRemaining !== undefined && <div className="text-[11px] text-red-700">Qarz: {formatMoney(m.debtRemaining, currencyOf(m))}</div>}
                   </div>
                 </div>
 
@@ -341,7 +348,7 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
                       {m.category} • <strong className="text-stone-900">{m.quantity} dona</strong>
                     </span>
                     <span className="font-semibold text-stone-700">
-                      {formatMoney(m.unitPrice)}/dona
+                      {formatMoney(m.unitPrice, currencyOf(m))}/dona
                     </span>
                   </div>
                 </div>
@@ -488,7 +495,7 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
 
                       <td className="py-3 px-4 text-right text-stone-600 whitespace-nowrap">
                         {isAdminUnlocked ? (
-                          formatMoney(m.unitCost)
+                          formatMoney(m.unitCost, currencyOf(m))
                         ) : (
                           <span
                             onClick={onRequireUnlock}
@@ -503,13 +510,13 @@ export const MovementJournalView: React.FC<MovementJournalViewProps> = ({
                       <td className="py-3 px-4 text-right font-black whitespace-nowrap">
                         <span className={isVazvrat ? 'text-rose-600' : 'text-stone-900'}>
                           {isVazvrat
-                            ? `-${formatMoney(m.totalRevenue)}`
+                            ? `-${formatMoney(m.totalRevenue, currencyOf(m))}`
                             : isKirim
-                            ? formatMoney(m.totalCost)
-                            : formatMoney(m.totalRevenue)}
+                            ? formatMoney(m.totalCost, currencyOf(m))
+                            : formatMoney(m.totalRevenue, currencyOf(m))}
                         </span>
-                        {!isKirim && !isVazvrat && m.paidAmount !== undefined && <div className="text-[11px] text-emerald-700">To'langan: {formatMoney(m.paidAmount)}</div>}
-                        {!isKirim && !isVazvrat && m.debtRemaining !== undefined && <div className="text-[11px] text-red-700">Qarz: {formatMoney(m.debtRemaining)}</div>}
+                        {!isKirim && !isVazvrat && m.paidAmount !== undefined && <div className="text-[11px] text-emerald-700">To'langan: {formatMoney(m.paidAmount, currencyOf(m))}</div>}
+                        {!isKirim && !isVazvrat && m.debtRemaining !== undefined && <div className="text-[11px] text-red-700">Qarz: {formatMoney(m.debtRemaining, currencyOf(m))}</div>}
                       </td>
 
                       <td className="py-3 px-4 text-stone-700 whitespace-nowrap">

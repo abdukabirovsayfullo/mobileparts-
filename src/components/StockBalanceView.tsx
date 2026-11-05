@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Product } from '../types';
 import { formatMoney, downloadCSV } from '../utils/formatters';
+import { currencyOf, sumByCurrency } from '../utils/money';
 import { CategoryManagerModal } from './CategoryManagerModal';
 import { searchProducts } from '../utils/productSearch';
 import { 
@@ -171,8 +172,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
 
   // Calculations
   const totalStockQuantity = products.reduce((sum, p) => sum + (Number(p?.stock) || 0), 0);
-  const totalCapitalAtCost = products.reduce((sum, p) => sum + ((Number(p?.purchasePrice) || 0) * (Number(p?.stock) || 0)), 0);
-  const totalExpectedRetail = products.reduce((sum, p) => sum + ((Number(p?.sellingPrice) || 0) * (Number(p?.stock) || 0)), 0);
+  // Ombor qiymati valyutaga bo'lib: so'mli tovarlar so'mda, telefonlar dollarda (qo'shilmaydi).
+  const capitalByCurrency = sumByCurrency(products, (p) => (Number(p?.purchasePrice) || 0) * (Number(p?.stock) || 0));
+  const retailByCurrency = sumByCurrency(products, (p) => (Number(p?.sellingPrice) || 0) * (Number(p?.stock) || 0));
+  const totalCapitalAtCost = capitalByCurrency.UZS;
+  const totalExpectedRetail = retailByCurrency.UZS;
   const criticalStockCount = products.filter((p) => (Number(p?.stock) || 0) <= 3 && (Number(p?.stock) || 0) > 0).length;
   const lowStockCount = products.filter((p) => (Number(p?.stock) || 0) <= (Number(p?.minStockAlert) || 5) && (Number(p?.stock) || 0) > 0).length;
   const zeroStockCount = products.filter((p) => (Number(p?.stock) || 0) <= 0).length;
@@ -305,6 +309,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
           {isAdminUnlocked ? (
             <div className="text-lg sm:text-2xl font-black text-stone-900 mt-2">
               {formatMoney(totalCapitalAtCost)}
+              {capitalByCurrency.USD > 0 && <span className="block text-sm sm:text-base font-black text-emerald-800">+ {formatMoney(capitalByCurrency.USD, 'USD')}</span>}
             </div>
           ) : (
             <div className="flex items-center justify-between mt-2">
@@ -331,6 +336,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
           </div>
           <div className="text-lg sm:text-2xl font-black text-amber-600 mt-2">
             {formatMoney(totalExpectedRetail)}
+            {retailByCurrency.USD > 0 && <span className="block text-sm sm:text-base font-black text-emerald-800">+ {formatMoney(retailByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-xs text-stone-500 mt-1">
             Barcha tovarlar sotilgandagi jami summa
@@ -715,20 +721,20 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <div className="bg-amber-50/70 border border-amber-200/60 p-2 rounded-xl text-center">
                     <div className="text-[9px] font-bold text-amber-800 uppercase tracking-tight">Chakana</div>
                     <div className="font-black text-stone-950 mt-0.5 text-xs truncate">
-                      {formatMoney(p.sellingPrice)}
+                      {formatMoney(p.sellingPrice, currencyOf(p))}
                     </div>
                   </div>
                   <div className="bg-blue-50/70 border border-blue-200/60 p-2 rounded-xl text-center">
                     <div className="text-[9px] font-bold text-blue-800 uppercase tracking-tight">Optom</div>
                     <div className="font-black text-blue-800 mt-0.5 text-xs truncate">
-                      {formatMoney(optomPrice)}
+                      {formatMoney(optomPrice, currencyOf(p))}
                     </div>
                   </div>
                   <div className="bg-stone-50 border border-stone-200 p-2 rounded-xl text-center">
                     <div className="text-[9px] font-bold text-stone-500 uppercase tracking-tight">Tan Narx</div>
                     <div className="font-black text-stone-700 mt-0.5 text-xs truncate">
                       {isAdminUnlocked ? (
-                        formatMoney(p.purchasePrice)
+                        formatMoney(p.purchasePrice, currencyOf(p))
                       ) : (
                         <span 
                           onClick={onRequireUnlock}
@@ -744,7 +750,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                 {/* Quick Actions Row */}
                 <div className="flex items-center justify-between pt-1 border-t border-stone-100 text-xs">
                   <span className="text-[11px] text-stone-400">
-                    Jami tan: {isAdminUnlocked ? formatMoney(p.stock * p.purchasePrice) : '••••••'}
+                    Jami tan: {isAdminUnlocked ? formatMoney(p.stock * p.purchasePrice, currencyOf(p)) : '••••••'}
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -899,7 +905,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
 
                       <td className="py-3 px-4 text-right text-stone-600 font-medium whitespace-nowrap">
                         {isAdminUnlocked ? (
-                          formatMoney(p.purchasePrice)
+                          formatMoney(p.purchasePrice, currencyOf(p))
                         ) : (
                           <span
                             onClick={onRequireUnlock}
@@ -912,11 +918,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                       </td>
 
                       <td className="py-3 px-4 text-right font-bold text-blue-700 bg-blue-50/30 whitespace-nowrap">
-                        {formatMoney(p.wholesalePrice || Math.round(p.sellingPrice * 0.8))}
+                        {formatMoney(p.wholesalePrice || Math.round(p.sellingPrice * 0.8), currencyOf(p))}
                       </td>
 
                       <td className="py-3 px-4 text-right font-black text-stone-900 bg-amber-50/20 whitespace-nowrap">
-                        {formatMoney(p.sellingPrice)}
+                        {formatMoney(p.sellingPrice, currencyOf(p))}
                       </td>
 
                       <td className="py-3 px-4 text-center whitespace-nowrap">
@@ -942,7 +948,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
 
                       <td className="py-3 px-4 text-right font-black text-stone-900 whitespace-nowrap">
                         {isAdminUnlocked ? (
-                          formatMoney(itemTotalCost)
+                          formatMoney(itemTotalCost, currencyOf(p))
                         ) : (
                           <span
                             onClick={onRequireUnlock}

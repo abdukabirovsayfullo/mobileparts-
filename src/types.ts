@@ -1,3 +1,6 @@
+/** Pul birligi. Maydon yo'q bo'lsa — so'm (eski ma'lumotlar). Dollar va so'm hech qachon o'girilmaydi va qo'shilmaydi. */
+export type Currency = 'UZS' | 'USD';
+
 export type MovementType = 'kirim' | 'chiqim' | 'spisaniye' | 'vazvrat';
 
 export type PaymentMethod = 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
@@ -55,6 +58,7 @@ export interface CashShift {
 }
 
 export interface Product {
+  currency?: Currency;
   id: string;
   name: string;
   category: string;
@@ -69,6 +73,7 @@ export interface Product {
 }
 
 export interface StockMovement {
+  currency?: Currency;
   id: string;
   type: MovementType;     // 'kirim' (tovar kirdi) yoki 'chiqim' (tovar chiqdi / sotildi)
   productId: string;
@@ -118,6 +123,7 @@ export interface StoreSettings {
 }
 
 export interface SaleReceiptData {
+  currency?: Currency;
   receiptNumber: string;
   date: string;
   customerName: string;
@@ -150,6 +156,7 @@ export interface SaleReceiptData {
 }
 
 export interface DebtRecord {
+  currency?: Currency;
   id: string;
   movementId?: string;
   customerName: string;
@@ -179,6 +186,7 @@ export interface SupplierPaymentEntry {
 }
 
 export interface SupplierDebtRecord {
+  currency?: Currency;
   id: string;
   supplierName: string;          // Ta'minotchi yoki diler nomi (masalan: Abu Saxiy Remax, Malika optom)
   supplierPhone?: string;        // Telefon raqami

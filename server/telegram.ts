@@ -1,4 +1,5 @@
-import { Product } from '../src/types';
+import { Currency, Product } from '../src/types';
+import { currencyOf } from '../src/utils/money';
 import { dataStore, TelegramConfig } from './dataStore';
 
 /**
@@ -57,7 +58,8 @@ export async function sendTelegramRawMessage(
 /**
  * Format Uzbek monetary amount.
  */
-function formatSum(amount: number): string {
+function formatSum(amount: number, currency: Currency = 'UZS'): string {
+  if (currency === 'USD') return '$' + Number(amount || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
   return Number(amount || 0).toLocaleString('uz-UZ') + " so'm";
 }
 
@@ -94,7 +96,7 @@ export function buildLowStockTelegramMessage(products: Product[], storeName: str
     text += `${icon} <b>${idx + 1}. ${escapeHtml(item.name)}</b>\n`;
     text += `   • Toifa: <i>${escapeHtml(item.category || 'Aksessuarlar')}</i>\n`;
     text += `   • Qoldiq: ${statusText} (Chegara: ${item.minStockAlert || 5} dona)\n`;
-    text += `   • Narxi: Tan ${formatSum(item.purchasePrice)} | Sotish ${formatSum(item.sellingPrice)}\n`;
+    text += `   • Narxi: Tan ${formatSum(item.purchasePrice, currencyOf(item))} | Sotish ${formatSum(item.sellingPrice, currencyOf(item))}\n`;
     text += `   • 💡 <b>Tavsiya etilgan zakaz:</b> <code>+${suggestedOrder} dona</code>\n\n`;
   });
 

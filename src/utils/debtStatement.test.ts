@@ -11,7 +11,7 @@ const debt = (id: string, createdAt: string, remaining: number): DebtRecord => (
 
 const params: DebtStatementParams = {
   customer: {
-    key: 'phone:900483113', name: 'Akmal <aka>', phone: '+998 90 048 31 13', saleTotal: 200000, paid: 50000, returned: 10000, remaining: 140000,
+    key: 'phone:900483113|UZS', currency: 'UZS' as const, name: 'Akmal <aka>', phone: '+998 90 048 31 13', saleTotal: 200000, paid: 50000, returned: 10000, remaining: 140000,
     rows: [
       { debt: debt('d1', '2026-10-02T09:15:00', 90000), itemLines: ['Kabel × 2', "Himoya oynasi × 1"], paid: 10000, returned: 0 },
       { debt: debt('d2', '2026-10-04T18:40:00', 50000), itemLines: [], paid: 40000, returned: 10000 }
@@ -42,4 +42,15 @@ test('debt statement PDF is generated for one customer and file names are safe',
   assert.ok(doc.output('arraybuffer').byteLength > 2000);
   assert.equal(debtStatementFileName('Akmal aka', '2026-10-01', '2026-10-05'), 'Nasiya_Akmal_aka_2026-10-01_2026-10-05.pdf');
   assert.equal(debtStatementFileName('Акмал', '2026-10-01', '2026-10-05'), 'Nasiya_mijoz_2026-10-01_2026-10-05.pdf');
+});
+
+test('dollar debt statements show $ amounts in the receipt and PDF', () => {
+  const usd = { ...params, customer: { ...params.customer, currency: 'USD' as const, saleTotal: 24.5, paid: 4.5, returned: 0, remaining: 20,
+    rows: [{ debt: { ...params.customer.rows[0].debt, totalDebt: 24.5, paidAmount: 4.5, remainingAmount: 20, currency: 'USD' as const }, itemLines: ['Airpods × 1'], paid: 4.5, returned: 0 }] }, totalDebt: 20 };
+  const html = debtStatementReceiptHtml(usd);
+  assert.ok(html.includes('$24.50') && html.includes('$20') && html.includes('$4.50'));
+  assert.ok(!html.includes("so&#39;m"));
+  assert.equal(formatSom(1234.5, 'USD'), '$1 234.50');
+  assert.equal(formatSom(15, 'USD'), '$15');
+  assert.equal(createDebtStatementPdf(usd).getNumberOfPages(), 1);
 });

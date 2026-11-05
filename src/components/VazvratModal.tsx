@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Product, StockMovement, PaymentMethod, DebtRecord } from '../types';
 import { formatMoney, formatDate } from '../utils/formatters';
+import { currencyOf } from '../utils/money';
 import {
   RotateCcw,
   X,
@@ -137,10 +138,11 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
     return debts.find(
       (d) =>
         d.status !== 'yopildi' &&
+        currencyOf(d) === currencyOf(selectedProduct) &&
         (d.customerName.toLowerCase().includes(qName) ||
           (customerPhone.length > 5 && d.customerPhone.includes(customerPhone.trim())))
     );
-  }, [debts, customerName, customerPhone]);
+  }, [debts, customerName, customerPhone, selectedProduct]);
 
   if (!isOpen) return null;
 
@@ -259,7 +261,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
                       {selectedProduct.category}
                     </span>
                     <span>•</span>
-                    <span>Sotish narxi: <strong>{formatMoney(selectedProduct.sellingPrice)}</strong></span>
+                    <span>Sotish narxi: <strong>{formatMoney(selectedProduct.sellingPrice, currencyOf(selectedProduct))}</strong></span>
                   </div>
                 </div>
 
@@ -309,7 +311,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-black text-amber-600 text-xs">{formatMoney(p.sellingPrice)}</div>
+                          <div className="font-black text-amber-600 text-xs">{formatMoney(p.sellingPrice, currencyOf(p))}</div>
                           <div className="text-[10px] text-stone-400">Qoldiq: {p.stock} ta</div>
                         </div>
                       </button>
@@ -387,11 +389,11 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
                 Mijozga Qaytariladigan Jami Summa:
               </div>
               <div className="text-xl sm:text-2xl font-black text-rose-700">
-                {formatMoney(totalRefund)} so'm
+                {formatMoney(totalRefund, currencyOf(selectedProduct))}
               </div>
             </div>
             <div className="text-right text-[11px] text-rose-900/80">
-              <div>Hisob: {quantity} dona × {formatMoney(unitPrice)}</div>
+              <div>Hisob: {quantity} dona × {formatMoney(unitPrice, currencyOf(selectedProduct))}</div>
               {restoreStock && (
                 <div className="text-emerald-700 font-bold flex items-center gap-1 justify-end mt-0.5">
                   <CheckCircle2 className="w-3 h-3" />
@@ -515,7 +517,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
                 <div className="flex items-center gap-2">
                   <BookOpen className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>
-                    Ushbu mijozda <strong>{formatMoney(matchingCustomerDebt.remainingAmount)} so'm</strong> nasiya bor!
+                    Ushbu mijozda <strong>{formatMoney(matchingCustomerDebt.remainingAmount, currencyOf(matchingCustomerDebt))}</strong> nasiya bor!
                   </span>
                 </div>
                 {paymentMethod !== 'nasiya' && (
@@ -572,7 +574,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
               className="px-6 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-98 disabled:opacity-50 text-white font-black shadow-lg shadow-rose-600/20 flex items-center gap-2 transition-all cursor-pointer text-xs"
             >
               <RotateCcw className="w-4 h-4 stroke-[2.5]" />
-              <span>Vazvratni Tasdiqlash ({formatMoney(totalRefund)} so'm)</span>
+              <span>Vazvratni Tasdiqlash ({formatMoney(totalRefund, currencyOf(selectedProduct))})</span>
             </button>
           </div>
         </form>

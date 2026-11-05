@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, CustomerProfile } from '../types';
+import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, CustomerProfile, Currency } from '../types';
+import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { PrintReceiptModal } from './PrintReceiptModal';
 import { customerDebtTotal } from '../utils/saleAccounting';
@@ -66,6 +67,8 @@ interface ChiqimFormViewProps {
   onQuickPayPastDebt?: (debtId: string, amount: number, method: 'naqd' | 'click_payme') => void;
 }
 
+const wholesaleOf = (p: Product): number => p.wholesalePrice || roundMoney(p.sellingPrice * 0.8, currencyOf(p));
+
 interface ChiqimCartItem {
   product: Product;
   quantity: number;
@@ -85,6 +88,13 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   onQuickPayPastDebt
 }) => {
   const [cart, setCart] = useState<ChiqimCartItem[]>([]);
+  // Bitta chekda bitta valyuta: savatning valyutasi birinchi tovardan olinadi.
+  const cartCurrency: Currency = cart.length > 0 ? currencyOf(cart[0].product) : 'UZS';
+  const [currencyFilter, setCurrencyFilter] = useState<'all' | Currency>('all');
+  const debtLabel = (list: DebtRecord[]) => {
+    const totals = sumByCurrency(list, (d) => d.remainingAmount);
+    return [totals.UZS > 0 ? formatMoney(totals.UZS) : '', totals.USD > 0 ? formatMoney(totals.USD, 'USD') : ''].filter(Boolean).join(' + ');
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [visibleProductCount, setVisibleProductCount] = useState(60);
@@ -150,7 +160,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         return sameCustomer && d.status !== 'yopildi';
       }
     );
-    const totalDebt = customerDebtTotal(debts, customerName, customerPhone);
+    const totalDebt = customerDebtTotal(debts, customerName, customerPhone, cartCurrency);
 
     // Find known customer profile
     const customerRecord = customers.find(
@@ -160,7 +170,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     );
 
     return { totalDebt, activeDebts, customerRecord };
-  }, [customerName, customerPhone, debts, customers]);
+  }, [customerName, customerPhone, debts, customers, cartCurrency]);
 
   // Autocomplete matching customers
   const matchingCustomers = useMemo(() => {
@@ -193,10 +203,13 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   };
 
   // Filter products for quick selection
+  const hasUsdProducts = products.some((p) => currencyOf(p) === 'USD');
+  // Savatda tovar bo'lsa faqat shu valyutadagi tovarlar ko'rsatiladi (aralashtirib bo'lmaydi).
+  const activeCurrencyFilter: 'all' | Currency = cart.length > 0 ? cartCurrency : currencyFilter;
   const filteredProducts = useMemo(() => searchProducts(
-    selectedCategory === 'all' ? products : products.filter(p => p.category === selectedCategory),
+    products.filter((p) => (selectedCategory === 'all' || p.category === selectedCategory) && (activeCurrencyFilter === 'all' || currencyOf(p) === activeCurrencyFilter)),
     searchQuery
-  ), [products, selectedCategory, searchQuery]);
+  ), [products, selectedCategory, searchQuery, activeCurrencyFilter]);
   const displayedProducts = filteredProducts.slice(0, visibleProductCount);
 
   const categories = ['all', ...Array.from(new Set(products.map((p) => p.category)))];
@@ -207,10 +220,14 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       alert('Ushbu mahsulot omborda qolmagan!');
       return;
     }
+    if (cart.length > 0 && currencyOf(product) !== cartCurrency) {
+      alert("Bitta chekda faqat bitta valyuta bo'lishi mumkin. So'mli va dollarli tovarlarni alohida savdo qiling.");
+      return;
+    }
 
     const defaultPrice = overridePrice !== undefined 
       ? overridePrice 
-      : (priceMode === 'optom' ? (product.wholesalePrice || Math.round(product.sellingPrice * 0.8)) : product.sellingPrice);
+      : (priceMode === 'optom' ? (wholesaleOf(product)) : product.sellingPrice);
 
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
@@ -245,7 +262,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         ...item,
         unitPrice:
           mode === 'optom'
-            ? item.product.wholesalePrice || Math.round(item.product.sellingPrice * 0.8)
+            ? wholesaleOf(item.product)
             : item.product.sellingPrice,
         priceType: mode
       }))
@@ -286,14 +303,14 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   };
 
   // Subtotal, Discount & Grand Total Calculations
-  const subtotalRevenue = cart.reduce(
+  const subtotalRevenue = roundMoney(cart.reduce(
     (sum, item) => sum + item.quantity * item.unitPrice,
     0
-  );
-  const subtotalCost = cart.reduce(
+  ), cartCurrency);
+  const subtotalCost = roundMoney(cart.reduce(
     (sum, item) => sum + item.quantity * item.product.purchasePrice,
     0
-  );
+  ), cartCurrency);
 
   const discountAmount = useMemo(() => {
     if (!discountValue || discountValue <= 0) return 0;
@@ -301,22 +318,22 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       return Math.min(subtotalRevenue, Math.max(0, discountValue));
     } else {
       const pct = Math.min(100, Math.max(0, discountValue));
-      return Math.min(subtotalRevenue, Math.round((subtotalRevenue * pct) / 100));
+      return Math.min(subtotalRevenue, roundMoney((subtotalRevenue * pct) / 100, cartCurrency));
     }
-  }, [subtotalRevenue, discountValue, discountType]);
+  }, [subtotalRevenue, discountValue, discountType, cartCurrency]);
 
-  const grandTotalRevenue = Math.max(0, subtotalRevenue - discountAmount);
-  const estimatedProfit = grandTotalRevenue - subtotalCost;
+  const grandTotalRevenue = roundMoney(Math.max(0, subtotalRevenue - discountAmount), cartCurrency);
+  const estimatedProfit = roundMoney(grandTotalRevenue - subtotalCost, cartCurrency);
 
   // Auto-debt calculation when customer pays less than bill
   const isUnderpaid = cashReceived > 0 && cashReceived < grandTotalRevenue;
   const unpaidRemaining = isUnderpaid
-    ? grandTotalRevenue - cashReceived
+    ? roundMoney(grandTotalRevenue - cashReceived, cartCurrency)
     : paymentMethod === 'nasiya'
-    ? Math.max(0, grandTotalRevenue - (cashReceived || 0))
+    ? roundMoney(Math.max(0, grandTotalRevenue - (cashReceived || 0)), cartCurrency)
     : 0;
 
-  const changeAmount = cashReceived > grandTotalRevenue ? cashReceived - grandTotalRevenue : 0;
+  const changeAmount = cashReceived > grandTotalRevenue ? roundMoney(cashReceived - grandTotalRevenue, cartCurrency) : 0;
 
   const handleFinalizeSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -334,7 +351,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const effectivePaid = paymentMethod === 'nasiya'
       ? Math.min(Math.max(0, cashReceived || 0), grandTotalRevenue)
       : (cashReceived > 0 ? Math.min(cashReceived, grandTotalRevenue) : grandTotalRevenue);
-    const effectiveRemainingDebt = Math.max(0, grandTotalRevenue - effectivePaid);
+    const effectiveRemainingDebt = roundMoney(Math.max(0, grandTotalRevenue - effectivePaid), cartCurrency);
 
     const willBeDebt = effectiveRemainingDebt > 0;
     const salePaymentMethod = willBeDebt ? 'nasiya' : paymentMethod === 'nasiya' ? 'naqd' : paymentMethod;
@@ -344,7 +361,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const receiptNum = `PB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
     const saleNotesWithDiscount = discountAmount > 0
-      ? `${currentNotes ? currentNotes + ' | ' : ''}Chegirma (Skitka): ${formatMoney(discountAmount)}`
+      ? `${currentNotes ? currentNotes + ' | ' : ''}Chegirma (Skitka): ${formatMoney(discountAmount, cartCurrency)}`
       : currentNotes;
 
     setIsSubmittingSale(true);
@@ -370,6 +387,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     if (autoPrintReceipt) {
       const generatedReceipt: SaleReceiptData = {
         receiptNumber: receiptNum,
+        currency: cartCurrency,
         date: new Date().toISOString(),
         customerName: currentCustomer,
         customerPhone: currentPhone,
@@ -416,6 +434,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
     const tempReceipt: SaleReceiptData = {
       receiptNumber: receiptNum,
+      currency: cartCurrency,
       date: new Date().toISOString(),
       customerName: currentCustomer,
       customerPhone: currentPhone,
@@ -462,7 +481,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         </div>
         <div className="text-right">
           <div className="text-[10px] text-stone-800 font-bold uppercase">Savdo summasi:</div>
-          <div className="text-sm font-black text-stone-950">{formatMoney(grandTotalRevenue)}</div>
+          <div className="text-sm font-black text-stone-950">{formatMoney(grandTotalRevenue, cartCurrency)}</div>
         </div>
       </div>
 
@@ -605,13 +624,31 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
             </div>
           </div>
 
+          {(hasUsdProducts || cart.length > 0) && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-semibold text-stone-500">Valyuta:</span>
+              {(['all', 'UZS', 'USD'] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  disabled={cart.length > 0}
+                  onClick={() => setCurrencyFilter(c)}
+                  className={`px-3 py-1 rounded-lg font-bold ${activeCurrencyFilter === c ? 'bg-stone-950 text-white' : 'bg-white border border-stone-200 text-stone-700'} ${cart.length > 0 ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  {c === 'all' ? 'Hammasi' : c === 'UZS' ? "So'm" : '$ Dollar'}
+                </button>
+              ))}
+              {cart.length > 0 && <span className="text-stone-500">Savat valyutasi: {cartCurrency === 'USD' ? '$ Dollar' : "So'm"}. Boshqa valyutadagi tovar uchun alohida savdo qiling.</span>}
+            </div>
+          )}
+
           {/* Product Items Cards with both Retail & Wholesale prices */}
           <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5 max-h-[70vh] lg:max-h-[calc(100vh-17rem)] overflow-y-auto pr-1 content-start">
             {filteredProducts.length === 0 && <div className="sm:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">Hech narsa topilmadi. Tovar nomi yoki kodini tekshiring.</div>}
             {displayedProducts.map((p) => {
               const isLowStock = p.stock <= p.minStockAlert;
               const isOutOfStock = p.stock <= 0;
-              const wholesalePrice = p.wholesalePrice || Math.round(p.sellingPrice * 0.8);
+              const wholesalePrice = wholesaleOf(p);
 
               const inCart = cart.find((i) => i.product.id === p.id)?.quantity || 0;
               const mainPrice = priceMode === 'optom' ? wholesalePrice : p.sellingPrice;
@@ -642,10 +679,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <div className="flex items-end justify-between gap-2">
                     <div>
                       <div className={`font-black text-xl leading-none ${priceMode === 'optom' ? 'text-blue-600' : 'text-amber-600'}`}>
-                        {formatMoney(mainPrice)}
+                        {formatMoney(mainPrice, currencyOf(p))}
                       </div>
                       <div className="text-xs text-stone-500 font-semibold mt-1">
-                        {priceMode === 'optom' ? 'Chakana' : 'Optom'}: {formatMoney(otherPrice)}
+                        {priceMode === 'optom' ? 'Chakana' : 'Optom'}: {formatMoney(otherPrice, currencyOf(p))}
                       </div>
                     </div>
                     <div className="text-right">
@@ -695,7 +732,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
                 <div className="text-left leading-tight">
                   <div className="text-xs font-black">{cart.reduce((s, i) => s + i.quantity, 0)} ta tovar savatda</div>
-                  <div className="text-[11px] text-stone-800 font-bold">{formatMoney(grandTotalRevenue)}</div>
+                  <div className="text-[11px] text-stone-800 font-bold">{formatMoney(grandTotalRevenue, cartCurrency)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 bg-stone-950 text-amber-400 px-3.5 py-2 rounded-xl text-xs font-black shadow-xs">
@@ -718,7 +755,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               <span>← {mobileTab === 'payment' ? 'Savatga qaytish' : 'Tovarlarga qaytish'}</span>
             </button>
             <span className="text-xs font-black text-amber-600">
-              Jami: {formatMoney(grandTotalRevenue)}
+              Jami: {formatMoney(grandTotalRevenue, cartCurrency)}
             </span>
           </div>
 
@@ -771,7 +808,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
             ) : (
               cart.map((item) => {
-                const optomPrice = item.product.wholesalePrice || Math.round(item.product.sellingPrice * 0.8);
+                const optomPrice = wholesaleOf(item.product);
                 const chakanaPrice = item.product.sellingPrice;
 
                 return (
@@ -815,19 +852,19 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         <Edit3 className="w-3 h-3 text-stone-400 shrink-0" />
                         <input
                           type="number"
-                          step="500"
+                          step={cartCurrency === 'USD' ? 'any' : '500'}
                           value={item.unitPrice}
                           onChange={(e) => handleUpdatePrice(item.product.id, Number(e.target.value))}
                           className="w-24 px-1.5 py-1.5 bg-white border border-stone-300 rounded-md text-right font-black text-sm text-stone-950 focus:ring-1 focus:ring-amber-400"
                           title="Narxni o'sha joyning o'zida tahrirlash"
                         />
-                        <span className="text-[10px] text-stone-500 font-bold">so'm</span>
+                        <span className="text-[10px] text-stone-500 font-bold">{cartCurrency === 'USD' ? '$' : "so'm"}</span>
                       </div>
 
                       {/* Total line item revenue */}
                       <div className="text-right shrink-0">
                         <div className="font-black text-stone-900 text-sm">
-                          {formatMoney(item.quantity * item.unitPrice)}
+                          {formatMoney(roundMoney(item.quantity * item.unitPrice, cartCurrency), cartCurrency)}
                         </div>
                       </div>
                     </div>
@@ -844,7 +881,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                             : 'bg-stone-100 hover:bg-stone-200 border-stone-200 text-stone-700'
                         }`}
                       >
-                        Optom: {formatMoney(optomPrice)}
+                        Optom: {formatMoney(optomPrice, cartCurrency)}
                       </button>
                       <button
                         type="button"
@@ -855,7 +892,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                             : 'bg-stone-100 hover:bg-stone-200 border-stone-200 text-stone-700'
                         }`}
                       >
-                        Chakana: {formatMoney(chakanaPrice)}
+                        Chakana: {formatMoney(chakanaPrice, cartCurrency)}
                       </button>
                     </div>
                   </div>
@@ -876,7 +913,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               }`}
             >
               <Wallet className="w-5 h-5" />
-              To‘lovga o‘tish · {formatMoney(grandTotalRevenue)}
+              To‘lovga o‘tish · {formatMoney(grandTotalRevenue, cartCurrency)}
             </button>
           )}
 
@@ -924,7 +961,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
-                    step="1000"
+                    step={cartCurrency === 'USD' ? 'any' : '1000'}
                     placeholder={`To'liq: ${grandTotalRevenue}`}
                     value={cashReceived || ''}
                     min="0"
@@ -934,20 +971,20 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     }}
                     className="w-32 px-2 py-1 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
-                  <span className="text-[10px] text-stone-500 font-bold">so'm</span>
+                  <span className="text-[10px] text-stone-500 font-bold">{cartCurrency === 'USD' ? '$' : "so'm"}</span>
                 </div>
               </div>
 
               {/* Exact Change Calculation */}
               <div className="space-y-1 text-xs font-bold border-t border-stone-200 pt-2">
-                <div className="flex justify-between"><span>Avvalgi qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt)}</span></div>
-                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining)}</span></div>
-                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(customerDebtInfo.totalDebt + unpaidRemaining)}</span></div>
+                <div className="flex justify-between"><span>Avvalgi qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt, cartCurrency)}</span></div>
+                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining, cartCurrency)}</span></div>
+                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(roundMoney(customerDebtInfo.totalDebt + unpaidRemaining, cartCurrency), cartCurrency)}</span></div>
               </div>
               {changeAmount > 0 && (
                 <div className="flex justify-between font-black text-amber-700 pt-1.5 border-t border-stone-200">
                   <span>Qaytim (sdacha):</span>
-                  <span className="text-sm">{formatMoney(changeAmount)}</span>
+                  <span className="text-sm">{formatMoney(changeAmount, cartCurrency)}</span>
                 </div>
               )}
 
@@ -959,9 +996,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <span>BERILGAN PUL KAM: QOLGAN SUMMA QARZGA O'TADI!</span>
                   </div>
                   <div className="text-[11px] text-stone-700">
-                    Mijoz to'lagan: <strong className="text-emerald-700">{formatMoney(cashReceived)}</strong>.
+                    Mijoz to'lagan: <strong className="text-emerald-700">{formatMoney(cashReceived, cartCurrency)}</strong>.
                     <br />
-                    Qolgan qarz: <strong className="text-red-700 text-xs font-black">{formatMoney(unpaidRemaining)}</strong> avtomatik ravishda Nasiya (Qarz) ro'yxatiga yoziladi.
+                    Qolgan qarz: <strong className="text-red-700 text-xs font-black">{formatMoney(unpaidRemaining, cartCurrency)}</strong> avtomatik ravishda Nasiya (Qarz) ro'yxatiga yoziladi.
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-red-800 block mb-1">
@@ -1035,7 +1072,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           <span>{c.name}</span>
                           {cDebtTotal > 0 ? (
                             <span className="px-1.5 py-0.2 bg-red-200 text-red-900 text-[10px] rounded font-black">
-                              ⚠️ {formatMoney(cDebtTotal)} qarz
+                              ⚠️ {debtLabel(cDebts)} qarz
                             </span>
                           ) : (
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -1125,7 +1162,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           </div>
                           {cDebtTotal > 0 ? (
                             <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-black rounded-md shrink-0">
-                              ⚠️ {formatMoney(cDebtTotal)} qarz
+                              ⚠️ {debtLabel(cDebts)} qarz
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-md shrink-0">
@@ -1175,7 +1212,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
 
               {/* AUTOMATIC DEBT DETECTION BANNER */}
-              {customerDebtInfo.totalDebt > 0 ? (
+              {customerDebtInfo.activeDebts.length > 0 ? (
                 <div className="p-3 bg-red-50 border-2 border-red-500 rounded-xl space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-red-800 font-black text-xs">
@@ -1183,7 +1220,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       <span>OGOHLANTIRISH: Ushbu mijozda avvaldan to'lanmagan qarz bor!</span>
                     </div>
                     <span className="px-2.5 py-0.5 bg-red-600 text-white rounded-full font-black text-xs whitespace-nowrap shadow-xs">
-                      {formatMoney(customerDebtInfo.totalDebt)}
+                      {debtLabel(customerDebtInfo.activeDebts)}
                     </span>
                   </div>
 
@@ -1198,7 +1235,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           </span>
                         </div>
                         <span className="font-black text-red-600">
-                          {formatMoney(d.remainingAmount)}
+                          {formatMoney(d.remainingAmount, currencyOf(d))}
                         </span>
                       </div>
                     ))}
@@ -1271,7 +1308,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       discountType === 'som' ? 'bg-white text-stone-950 shadow-xs' : 'text-stone-600'
                     }`}
                   >
-                    So'mda
+                    {cartCurrency === 'USD' ? 'Dollarda' : "So'mda"}
                   </button>
                   <button
                     type="button"
@@ -1290,18 +1327,19 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    placeholder={discountType === 'som' ? "Chegirma so'mda (masalan: 15 000)" : "Chegirma foizda (masalan: 5)"}
+                    step="any"
+                    placeholder={discountType === 'som' ? (cartCurrency === 'USD' ? 'Chegirma dollarda (masalan: 2.5)' : "Chegirma so'mda (masalan: 15 000)") : "Chegirma foizda (masalan: 5)"}
                     value={discountValue || ''}
                     onChange={(e) => setDiscountValue(Math.max(0, Number(e.target.value)))}
                     className="w-full px-2.5 py-1.5 bg-white border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                   <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-stone-400">
-                    {discountType === 'som' ? "so'm" : "%"}
+                    {discountType === 'som' ? (cartCurrency === 'USD' ? '$' : "so'm") : '%'}
                   </span>
                 </div>
                 {discountAmount > 0 && (
                   <div className="px-2 py-1 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded-lg font-black text-xs shrink-0">
-                    -{formatMoney(discountAmount)}
+                    -{formatMoney(discountAmount, cartCurrency)}
                   </div>
                 )}
               </div>
@@ -1402,11 +1440,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <div className="text-[10px] uppercase tracking-wider text-stone-400 font-bold">
                     {cart.length} xil / {cart.reduce((s, i) => s + i.quantity, 0)} dona
                   </div>
-                  <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue)}</div>
+                  <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue, cartCurrency)}</div>
                 </div>
                 {unpaidRemaining > 0 && (
                   <div className="text-right text-[10px] text-red-300 font-bold">
-                    Qarzga: {formatMoney(unpaidRemaining)}
+                    Qarzga: {formatMoney(unpaidRemaining, cartCurrency)}
                   </div>
                 )}
               </div>
@@ -1466,10 +1504,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     {m.quantity} ta
                   </td>
                   <td className="py-2.5 px-3 text-right font-medium text-stone-800">
-                    {formatMoney(m.unitPrice)}
+                    {formatMoney(m.unitPrice, currencyOf(m))}
                   </td>
                   <td className="py-2.5 px-3 text-right font-black text-stone-900">
-                    {formatMoney(m.totalRevenue)}
+                    {formatMoney(m.totalRevenue, currencyOf(m))}
                   </td>
                   <td className="py-2.5 px-3 whitespace-nowrap font-bold text-[10px]">
                     <span className={`px-2 py-0.5 rounded ${
@@ -1498,6 +1536,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         if (onPrintReceipt) { onPrintReceipt(m); return; }
                         const rec: SaleReceiptData = {
                           receiptNumber: m.receiptNumber || `PB-${m.id.slice(-6)}`,
+                          currency: currencyOf(m),
                           date: m.timestamp,
                           customerName: m.counterparty || 'Do\'kon mijozi',
                           customerPhone: m.customerPhone,
@@ -1575,20 +1614,20 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
               <div className="flex justify-between text-stone-600">
                 <span>Qolgan jami qarz:</span>
-                <span className="font-black text-red-600 text-sm">{formatMoney(selectedDebtToPay.remainingAmount)}</span>
+                <span className="font-black text-red-600 text-sm">{formatMoney(selectedDebtToPay.remainingAmount, currencyOf(selectedDebtToPay))}</span>
               </div>
             </div>
 
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">
-                  Qabul qilinayotgan summa (so'm) *
+                  Qabul qilinayotgan summa ({currencyOf(selectedDebtToPay) === 'USD' ? '$' : "so'm"}) *
                 </label>
                 <input
                   type="number"
-                  min="1000"
+                  min={currencyOf(selectedDebtToPay) === 'USD' ? '0.01' : '1000'}
                   max={selectedDebtToPay.remainingAmount}
-                  step="1000"
+                  step={currencyOf(selectedDebtToPay) === 'USD' ? 'any' : '1000'}
                   value={quickPayAmount || ''}
                   onChange={(e) => setQuickPayAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-black text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-400"
@@ -1599,12 +1638,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     onClick={() => setQuickPayAmount(selectedDebtToPay.remainingAmount)}
                     className="px-2 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded text-[11px] font-bold cursor-pointer"
                   >
-                    Barchasini yopish ({formatMoney(selectedDebtToPay.remainingAmount)})
+                    Barchasini yopish ({formatMoney(selectedDebtToPay.remainingAmount, currencyOf(selectedDebtToPay))})
                   </button>
-                  {selectedDebtToPay.remainingAmount > 50000 && (
+                  {selectedDebtToPay.remainingAmount > (currencyOf(selectedDebtToPay) === 'USD' ? 10 : 50000) && (
                     <button
                       type="button"
-                      onClick={() => setQuickPayAmount(Math.round(selectedDebtToPay.remainingAmount / 2))}
+                      onClick={() => setQuickPayAmount(roundMoney(selectedDebtToPay.remainingAmount / 2, currencyOf(selectedDebtToPay)))}
                       className="px-2 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded text-[11px] font-bold cursor-pointer"
                     >
                       Yarmini to'lash

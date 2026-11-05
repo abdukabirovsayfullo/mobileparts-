@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Product, StockMovement, DebtRecord, SupplierDebtRecord, StoreSettings } from '../types';
+import { currencyOf, sumByCurrency } from '../utils/money';
 import { formatMoney } from '../utils/formatters';
 import { 
   Building2, 
@@ -79,16 +80,21 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
 
   // Financial totals
   const totalStockQuantity = products.reduce((sum, p) => sum + p.stock, 0);
-  const totalCostValue = products.reduce((sum, p) => sum + (p.purchasePrice || p.costPrice || 0) * p.stock, 0);
-  const totalWholesaleValue = products.reduce((sum, p) => sum + (p.wholesalePrice || p.sellingPrice) * p.stock, 0);
-  const totalRetailValue = products.reduce((sum, p) => sum + p.sellingPrice * p.stock, 0);
+  // Qiymatlar so'mda; dollarli telefonlar alohida (so'mga qo'shilmaydi).
+  const costByCurrency = sumByCurrency(products, (p) => (p.purchasePrice || p.costPrice || 0) * p.stock);
+  const wholesaleByCurrency = sumByCurrency(products, (p) => (p.wholesalePrice || p.sellingPrice) * p.stock);
+  const retailByCurrency = sumByCurrency(products, (p) => p.sellingPrice * p.stock);
+  const totalCostValue = costByCurrency.UZS;
+  const totalWholesaleValue = wholesaleByCurrency.UZS;
+  const totalRetailValue = retailByCurrency.UZS;
   
+  const customerDebtByCurrency = sumByCurrency(debts.filter((d) => d.status !== 'yopildi'), (d) => d.remainingAmount);
   const totalCustomerDebt = debts
-    .filter((d) => d.status !== 'yopildi')
+    .filter((d) => d.status !== 'yopildi' && currencyOf(d) === 'UZS')
     .reduce((sum, d) => sum + d.remainingAmount, 0);
 
   const totalSupplierDebt = supplierDebts
-    .filter((d) => d.status !== 'yopildi')
+    .filter((d) => d.status !== 'yopildi' && currencyOf(d) === 'UZS')
     .reduce((sum, d) => sum + d.remainingAmount, 0);
 
   const netEnterpriseBalance = totalCostValue + totalCustomerDebt - totalSupplierDebt;
@@ -177,7 +183,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
             <span>Tan narxidagi ombor</span>
             <Package className="w-4 h-4 text-stone-400" />
           </div>
-          <div className="text-lg font-black text-stone-900">{formatMoney(totalCostValue)}</div>
+          <div className="text-lg font-black text-stone-900">{formatMoney(totalCostValue)}{costByCurrency.USD > 0 && <span className="block text-sm font-black text-emerald-800">+ {formatMoney(costByCurrency.USD, 'USD')}</span>}</div>
           <div className="text-[11px] text-stone-500 mt-1">{totalStockQuantity} dona tovar mavjud</div>
         </div>
 
@@ -186,7 +192,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
             <span>Optom (Ulgurji) qiymati</span>
             <TrendingUp className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="text-lg font-black text-amber-600">{formatMoney(totalWholesaleValue)}</div>
+          <div className="text-lg font-black text-amber-600">{formatMoney(totalWholesaleValue)}{wholesaleByCurrency.USD > 0 && <span className="block text-sm font-black text-emerald-800">+ {formatMoney(wholesaleByCurrency.USD, 'USD')}</span>}</div>
           <div className="text-[11px] text-stone-500 mt-1">Ulgurji narxdagi tushum</div>
         </div>
 
@@ -195,7 +201,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
             <span>Chakana qiymati</span>
             <DollarSign className="w-4 h-4 text-emerald-500" />
           </div>
-          <div className="text-lg font-black text-emerald-600">{formatMoney(totalRetailValue)}</div>
+          <div className="text-lg font-black text-emerald-600">{formatMoney(totalRetailValue)}{retailByCurrency.USD > 0 && <span className="block text-sm font-black text-emerald-800">+ {formatMoney(retailByCurrency.USD, 'USD')}</span>}</div>
           <div className="text-[11px] text-stone-500 mt-1">Kutilayotgan tushum</div>
         </div>
 
@@ -204,7 +210,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
             <span>Mijozlar Nasiyasi</span>
             <AlertCircle className="w-4 h-4 text-rose-500" />
           </div>
-          <div className="text-lg font-black text-rose-600">{formatMoney(totalCustomerDebt)}</div>
+          <div className="text-lg font-black text-rose-600">{formatMoney(totalCustomerDebt)}{customerDebtByCurrency.USD > 0 && <span className="block text-sm font-black text-emerald-800">+ {formatMoney(customerDebtByCurrency.USD, 'USD')}</span>}</div>
           <div className="text-[11px] text-stone-500 mt-1">Mijozlarimizdan kelishi kerak</div>
         </div>
       </div>
@@ -501,7 +507,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
                               className="w-24 px-2 py-1 border border-stone-300 rounded text-right font-bold text-stone-950"
                             />
                           ) : (
-                            <span className="text-stone-600 font-semibold">{formatMoney(cost)}</span>
+                            <span className="text-stone-600 font-semibold">{formatMoney(cost, currencyOf(p))}</span>
                           )}
                         </td>
 
@@ -516,7 +522,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
                               className="w-24 px-2 py-1 border border-amber-300 bg-amber-50 rounded text-right font-black text-amber-900"
                             />
                           ) : (
-                            <span className="font-bold text-amber-700">{formatMoney(wholesale)}</span>
+                            <span className="font-bold text-amber-700">{formatMoney(wholesale, currencyOf(p))}</span>
                           )}
                         </td>
 
@@ -531,7 +537,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
                               className="w-24 px-2 py-1 border border-emerald-300 bg-emerald-50 rounded text-right font-black text-emerald-900"
                             />
                           ) : (
-                            <span className="font-bold text-emerald-700">{formatMoney(retail)}</span>
+                            <span className="font-bold text-emerald-700">{formatMoney(retail, currencyOf(p))}</span>
                           )}
                         </td>
 

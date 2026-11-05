@@ -1,4 +1,5 @@
-import type { CashExpense, CashShift, DebtRecord, Product, StockMovement } from '../src/types';
+import type { CashExpense, CashShift, Currency, DebtRecord, Product, StockMovement } from '../src/types';
+import { currencyOf, roundMoney } from '../src/utils/money';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 
 export interface ReportInput { products: Product[]; movements: StockMovement[]; debts: DebtRecord[]; expenses: CashExpense[]; cashShifts: CashShift[]; }
@@ -7,7 +8,24 @@ const inRange = (iso: string, from: string, to: string) => { const day = tashken
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
 const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
-export const buildReport = (state: ReportInput, from: string, to: string) => {
+const roundNumbers = <T,>(value: T, currency: Currency): T => {
+  if (currency === 'UZS') return value;
+  if (typeof value === 'number') return roundMoney(value, currency) as unknown as T;
+  if (Array.isArray(value)) return value.map(item => roundNumbers(item, currency)) as unknown as T;
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, roundNumbers(item, currency)])) as T;
+  return value;
+};
+
+/** Bitta valyuta bo'yicha hisobot. So'm va dollar hech qachon qo'shilmaydi; xarajat va kassa smenalari faqat so'mda. */
+const buildCurrencyReport = (input: ReportInput, from: string, to: string, currency: Currency) => {
+  const only = <T extends { currency?: Currency }>(list: T[]) => list.filter(item => currencyOf(item) === currency);
+  const state: ReportInput = {
+    products: only(input.products),
+    movements: only(input.movements),
+    debts: only(input.debts),
+    expenses: currency === 'UZS' ? input.expenses : [],
+    cashShifts: currency === 'UZS' ? input.cashShifts : []
+  };
   const allOutgoing = state.movements.filter(m => m.type === 'chiqim' && inRange(m.timestamp, from, to));
   const historicalOutgoing = allOutgoing.filter(m => m.isHistoricalAggregate);
   // Eski ombor hisobotida chiqim tannarxda berilgan, sotuv narxi va chek soni yo'q.
@@ -37,9 +55,9 @@ export const buildReport = (state: ReportInput, from: string, to: string) => {
   sales.forEach(m => { const day = tashkentDate(m.timestamp); const label = monthly ? day.slice(0, 7) : day; const row = timelineMap.get(label) || { label, revenue: 0, profit: 0 }; row.revenue += m.totalRevenue; row.profit += m.profit; timelineMap.set(label, row); });
   const debtsCreated = state.debts.filter(d => inRange(d.createdAt, from, to));
   const debtPaid = state.debts.flatMap(d => d.paymentHistory || []).filter(p => p.method !== 'vazvrat' && inRange(p.date, from, to)).reduce((sum, p) => sum + p.amount, 0);
-  return {
+  return roundNumbers({
     range: { from, to, days: span, grouping: monthly ? 'month' : 'day' },
-    sales: { revenue, cost, grossProfit, expenses: expensesTotal, netProfit: grossProfit - expensesTotal, count: saleIds.size, items: sales.reduce((sum, m) => sum + m.quantity, 0), averageCheck: saleIds.size ? Math.round(revenue / saleIds.size) : 0, payments: { cash: payment('naqd'), click: payment('click_payme'), uzum: payment('uzum'), debt: payment('nasiya') } },
+    sales: { revenue, cost, grossProfit, expenses: expensesTotal, netProfit: grossProfit - expensesTotal, count: saleIds.size, items: sales.reduce((sum, m) => sum + m.quantity, 0), averageCheck: saleIds.size ? roundMoney(revenue / saleIds.size, currency) : 0, payments: { cash: payment('naqd'), click: payment('click_payme'), uzum: payment('uzum'), debt: payment('nasiya') } },
     inventory: { kirimQuantity: kirim.reduce((s, m) => s + m.quantity, 0), kirimCost: kirim.reduce((s, m) => s + m.totalCost, 0), historicalOutgoingQuantity: historicalOutgoing.reduce((s, m) => s + m.quantity, 0), historicalOutgoingCost: historicalOutgoing.reduce((s, m) => s + m.totalCost, 0), historicalTop: [...historicalProductMap.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 10), currentCostValue: state.products.reduce((s, p) => s + p.stock * (p.purchasePrice || 0), 0), currentRetailValue: state.products.reduce((s, p) => s + p.stock * p.sellingPrice, 0), top: products.slice(0, 10), low: products.slice().sort((a, b) => a.quantity - b.quantity).slice(0, 10), unsoldCount: state.products.filter(p => !productMap.has(p.id)).length },
     debts: { issued: debtsCreated.reduce((s, d) => s + d.totalDebt, 0), paid: debtPaid, remaining: state.debts.reduce((s, d) => s + d.remainingAmount, 0) },
     expenses: { total: expensesTotal, count: expenses.length, byCategory: [...categoryMap].map(([category, total]) => ({ category, total })) },
@@ -47,7 +65,13 @@ export const buildReport = (state: ReportInput, from: string, to: string) => {
     shifts: { count: shifts.length, shortage: shifts.filter(s => s.difference < 0).reduce((sum, s) => sum + Math.abs(s.difference), 0), surplus: shifts.filter(s => s.difference > 0).reduce((sum, s) => sum + s.difference, 0) },
     employees: [...employeeMap.values()].map(row => ({ name: row.name, revenue: row.revenue, sales: row.sales.size })).sort((a, b) => b.revenue - a.revenue),
     timeline: [...timelineMap.values()].sort((a, b) => a.label.localeCompare(b.label))
-  };
+  }, currency);
+};
+
+export const buildReport = (state: ReportInput, from: string, to: string) => {
+  const base = buildCurrencyReport(state, from, to, 'UZS');
+  const hasUsd = [...state.products, ...state.movements, ...state.debts].some(item => currencyOf(item) === 'USD');
+  return hasUsd ? { ...base, usd: buildCurrencyReport(state, from, to, 'USD') } : base;
 };
 
 export const previousRange = (from: string, to: string) => { const days = daysBetween(from, to); return { from: addDays(from, -days), to: addDays(from, -1) }; };

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { BookOpen, CalendarDays, CheckCircle2, Search } from 'lucide-react';
 import { formatMoney } from '../utils/formatters';
-import type { StoreSettings } from '../types';
+import type { Currency, StoreSettings } from '../types';
 import type { PeriodCustomerReport } from '../utils/saleAccounting';
 import { DebtPeriodReport } from './DebtPeriodReport';
 
@@ -9,6 +9,7 @@ interface DebtLookup {
   id: string;
   customerName: string;
   phoneTail: string;
+  currency?: Currency;
   remainingAmount: number;
   totalDebt: number;
   dueDate: string;
@@ -67,7 +68,7 @@ export const WorkerDebtPanel: React.FC<{ onChanged?: () => void; storeInfo: Stor
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "To'lov saqlanmadi.");
-      setMessage(`${debt.customerName}: ${formatMoney(amount)} qabul qilindi. Qoldiq: ${formatMoney(body.data?.remainingAmount ?? 0)}`);
+      setMessage(`${debt.customerName}: ${formatMoney(amount, debt.currency)} qabul qilindi. Qoldiq: ${formatMoney(body.data?.remainingAmount ?? 0, debt.currency)}`);
       setAmounts(prev => { const next = { ...prev }; delete next[debt.id]; return next; });
       await search(query);
       onChanged?.();
@@ -107,16 +108,16 @@ export const WorkerDebtPanel: React.FC<{ onChanged?: () => void; storeInfo: Stor
           <article key={debt.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div><h3 className="text-sm font-black">{debt.customerName}</h3><p className="text-[11px] text-stone-500">{debt.phoneTail ? `Telefon …${debt.phoneTail} • ` : ''}muddat {debt.dueDate}</p></div>
-              <div className="text-right"><div className="text-[10px] text-stone-500">Qarz qoldig‘i</div><div className="text-lg font-black text-rose-600">{formatMoney(debt.remainingAmount)}</div></div>
+              <div className="text-right"><div className="text-[10px] text-stone-500">Qarz qoldig‘i</div><div className="text-lg font-black text-rose-600">{formatMoney(debt.remainingAmount, debt.currency)}</div></div>
             </div>
             {debt.recentPayments.length > 0 && (
               <ul className="mt-2 space-y-0.5 text-[11px] text-stone-500">
-                {debt.recentPayments.map((payment, index) => <li key={index}>{dateLabel(payment.date)} • {formatMoney(payment.amount)} ({methodLabel(payment.method)})</li>)}
+                {debt.recentPayments.map((payment, index) => <li key={index}>{dateLabel(payment.date)} • {formatMoney(payment.amount, debt.currency)} ({methodLabel(payment.method)})</li>)}
               </ul>
             )}
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <label className="text-[11px] font-bold">To‘lov summasi
-                <input type="number" min={1} max={debt.remainingAmount} value={amounts[debt.id] ?? debt.remainingAmount}
+                <input type="number" min={debt.currency === 'USD' ? 0.01 : 1} step="any" max={debt.remainingAmount} value={amounts[debt.id] ?? debt.remainingAmount}
                   onChange={event => setAmounts(prev => ({ ...prev, [debt.id]: event.target.value }))} className="mt-0.5 block w-36 rounded-lg border border-stone-300 px-2 py-2 text-sm" />
               </label>
               <label className="text-[11px] font-bold">Usul

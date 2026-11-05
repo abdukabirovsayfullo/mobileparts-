@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { currencyOf, roundMoney } from '../src/utils/money';
 import crypto from 'node:crypto';
 import { dataStore, OwnerApprovalRequiredError } from './dataStore';
 import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession, verifyOwnerApproval } from './auth';
@@ -725,6 +726,7 @@ apiV1Router.get('/debts/period', (req: Request, res: Response) => {
           remainingAmount: row.debt.remainingAmount,
           dueDate: row.debt.dueDate,
           createdAt: row.debt.createdAt,
+          currency: row.debt.currency,
           status: row.debt.status
         }
       }))
@@ -854,7 +856,7 @@ apiV1Router.get('/returns', (req: Request, res: Response) => {
   if (user.role !== 'owner') return res.status(403).json({ success: false, error: 'Faqat Rahbar uchun.' });
   const movements = dataStore.getState().movements;
   const recent = movements.filter(m => m.type === 'vazvrat').slice(0, 60).map(m => ({
-    id: m.id, timestamp: m.timestamp, receiptNumber: m.receiptNumber, productName: m.productName, quantity: m.quantity, amount: m.totalRevenue,
+    id: m.id, timestamp: m.timestamp, receiptNumber: m.receiptNumber, productName: m.productName, quantity: m.quantity, amount: m.totalRevenue, currency: m.currency,
     method: m.paymentMethod, reason: m.returnReason, customerName: m.counterparty, employeeName: m.employeeName || '', approvedByName: m.approvedByName || '', originalMovementId: m.originalMovementId
   }));
   res.json({ success: true, limits: { dailyCount: RETURN_FLAG_DAILY_COUNT, dailyAmount: RETURN_FLAG_DAILY_AMOUNT }, employees: summarizeReturns(movements), recent });
@@ -865,8 +867,15 @@ apiV1Router.get('/summary/daily', (_req: Request, res: Response) => {
   const state = dataStore.getState();
   const todayStr = tashkentDate();
 
-  const todayChiqim = state.movements.filter(m => m.type === 'chiqim' && tashkentDate(m.timestamp) === todayStr);
-  const todayKirim = state.movements.filter(m => m.type === 'kirim' && tashkentDate(m.timestamp) === todayStr);
+  // Asosiy hisob so'mda; dollarli yozuvlar alohida `usd` blokida (hech qachon qo'shilmaydi).
+  const todayChiqim = state.movements.filter(m => m.type === 'chiqim' && currencyOf(m) === 'UZS' && tashkentDate(m.timestamp) === todayStr);
+  const todayKirim = state.movements.filter(m => m.type === 'kirim' && currencyOf(m) === 'UZS' && tashkentDate(m.timestamp) === todayStr);
+  const uzsProducts = state.products.filter(p => currencyOf(p) === 'UZS');
+  const uzsDebts = state.debts.filter(d => currencyOf(d) === 'UZS');
+  const usdSales = state.movements.filter(m => m.type === 'chiqim' && currencyOf(m) === 'USD' && tashkentDate(m.timestamp) === todayStr);
+  const usdProducts = state.products.filter(p => currencyOf(p) === 'USD');
+  const usdDebts = state.debts.filter(d => currencyOf(d) === 'USD' && (d.status === 'faol' || d.status === 'qisman_tolandi'));
+  const hasUsd = usdSales.length > 0 || usdProducts.length > 0 || usdDebts.length > 0;
   const todayExpenses = activeExpensesForDate(state.expenses || [], todayStr);
   const todayExpenseTotal = expenseTotal(todayExpenses);
 
@@ -884,9 +893,9 @@ apiV1Router.get('/summary/daily', (_req: Request, res: Response) => {
     else if (m.paymentMethod === 'nasiya') debtRevenue += m.totalRevenue;
   });
 
-  const totalWarehouseCost = state.products.reduce((acc, p) => acc + (p.purchasePrice || p.costPrice || 0) * Math.max(0, p.stock), 0);
-  const totalWarehouseRetail = state.products.reduce((acc, p) => acc + (p.sellingPrice || 0) * Math.max(0, p.stock), 0);
-  const activeDebtsTotal = state.debts.filter(d => d.status === 'faol' || d.status === 'qisman_tolandi').reduce((acc, d) => acc + d.remainingAmount, 0);
+  const totalWarehouseCost = uzsProducts.reduce((acc, p) => acc + (p.purchasePrice || p.costPrice || 0) * Math.max(0, p.stock), 0);
+  const totalWarehouseRetail = uzsProducts.reduce((acc, p) => acc + (p.sellingPrice || 0) * Math.max(0, p.stock), 0);
+  const activeDebtsTotal = uzsDebts.filter(d => d.status === 'faol' || d.status === 'qisman_tolandi').reduce((acc, d) => acc + d.remainingAmount, 0);
   const lowStockCount = state.products.filter(p => p.stock <= p.minStockAlert).length;
 
   res.json({
@@ -919,9 +928,26 @@ apiV1Router.get('/summary/daily', (_req: Request, res: Response) => {
       expectedProfit: totalWarehouseRetail - totalWarehouseCost
     },
     debts: {
-      activeDebtsCount: state.debts.filter(d => d.status === 'faol' || d.status === 'qisman_tolandi').length,
+      activeDebtsCount: uzsDebts.filter(d => d.status === 'faol' || d.status === 'qisman_tolandi').length,
       totalDebtReceivable: activeDebtsTotal
-    }
+    },
+    ...(hasUsd ? {
+      usd: {
+        todaySales: {
+          itemsSold: usdSales.reduce((acc, m) => acc + m.quantity, 0),
+          totalRevenue: roundMoney(usdSales.reduce((acc, m) => acc + m.totalRevenue, 0), 'USD'),
+          totalProfit: roundMoney(usdSales.reduce((acc, m) => acc + m.profit, 0), 'USD')
+        },
+        warehouse: {
+          totalInventoryCostValue: roundMoney(usdProducts.reduce((acc, p) => acc + (p.purchasePrice || p.costPrice || 0) * Math.max(0, p.stock), 0), 'USD'),
+          totalInventoryRetailValue: roundMoney(usdProducts.reduce((acc, p) => acc + (p.sellingPrice || 0) * Math.max(0, p.stock), 0), 'USD')
+        },
+        debts: {
+          activeDebtsCount: usdDebts.length,
+          totalDebtReceivable: roundMoney(usdDebts.reduce((acc, d) => acc + d.remainingAmount, 0), 'USD')
+        }
+      }
+    } : {})
   });
 });
 
@@ -1140,7 +1166,8 @@ apiV1Router.get('/telegram/miniapp/products', (req: Request, res: Response) => {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : (typeof req.query.q === 'string' ? req.query.q.trim() : undefined);
   const inStockOnly = req.query.in_stock === 'true';
 
-  let products = dataStore.getProducts();
+  // Telegram do'koni faqat so'mda: dollarli tovarlar katalogda ko'rsatilmaydi.
+  let products = dataStore.getProducts().filter(p => currencyOf(p) === 'UZS');
 
   if (category && category !== 'Barchasi') {
     products = products.filter(p => p.category.toLowerCase() === category.toLowerCase());

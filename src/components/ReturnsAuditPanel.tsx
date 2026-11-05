@@ -9,6 +9,8 @@ interface EmployeeRow {
   todayAmount: number;
   weekCount: number;
   weekAmount: number;
+  todayAmountUsd?: number;
+  weekAmountUsd?: number;
   flagged: boolean;
   reasons: string[];
 }
@@ -20,6 +22,7 @@ interface RecentRow {
   productName: string;
   quantity: number;
   amount: number;
+  currency?: 'UZS' | 'USD';
   method?: string;
   reason?: string;
   customerName: string;
@@ -66,8 +69,8 @@ export const ReturnsAuditPanel: React.FC = () => {
             <div className="space-y-1.5">
               {employees.map(row => (
                 <div key={row.employeeId} className={`rounded-xl border px-3 py-2 text-xs ${row.flagged ? 'border-rose-300 bg-rose-50' : 'border-stone-200'}`}>
-                  <div className="flex justify-between gap-2"><strong>{row.employeeName}</strong><span>7 kun: {row.weekCount} ta • {formatMoney(row.weekAmount)}</span></div>
-                  <div className="text-stone-500">Bugun: {row.todayCount} ta • {formatMoney(row.todayAmount)}</div>
+                  <div className="flex justify-between gap-2"><strong>{row.employeeName}</strong><span>7 kun: {row.weekCount} ta • {formatMoney(row.weekAmount)}{row.weekAmountUsd ? ` + ${formatMoney(row.weekAmountUsd, 'USD')}` : ''}</span></div>
+                  <div className="text-stone-500">Bugun: {row.todayCount} ta • {formatMoney(row.todayAmount)}{row.todayAmountUsd ? ` + ${formatMoney(row.todayAmountUsd, 'USD')}` : ''}</div>
                   {row.flagged && <div className="mt-1 font-bold text-rose-700">{row.reasons.join(' • ')}</div>}
                 </div>
               ))}
@@ -79,7 +82,7 @@ export const ReturnsAuditPanel: React.FC = () => {
               <div className="max-h-72 space-y-1 overflow-y-auto">
                 {recent.map(row => (
                   <div key={row.id} className="rounded-lg bg-stone-50 px-3 py-2 text-[11px]">
-                    <div className="flex justify-between gap-2"><strong className="truncate">{row.productName} ×{row.quantity}</strong><span className="font-black">{formatMoney(row.amount)}</span></div>
+                    <div className="flex justify-between gap-2"><strong className="truncate">{row.productName} ×{row.quantity}</strong><span className="font-black">{formatMoney(row.amount, row.currency)}</span></div>
                     <div className="text-stone-500">{dateLabel(row.timestamp)} • {row.employeeName || 'Rahbar'} • {methodLabel(row.method)} • {row.customerName}</div>
                     <div className="text-stone-600">Sabab: {row.reason || '—'}{row.approvedByName ? ` • Tasdiqladi: ${row.approvedByName}` : ''}</div>
                   </div>

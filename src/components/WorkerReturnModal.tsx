@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RotateCcw, Search, X } from 'lucide-react';
-import type { PaymentMethod, SaleReceiptData } from '../types';
+import type { Currency, PaymentMethod, SaleReceiptData } from '../types';
 import { formatMoney } from '../utils/formatters';
 
 interface ReturnableLine {
@@ -15,6 +15,7 @@ interface ReturnableLine {
 
 interface ReturnableSale {
   key: string;
+  currency?: Currency;
   receiptNumber: string;
   timestamp: string;
   customerName: string;
@@ -24,6 +25,7 @@ interface ReturnableSale {
 }
 
 interface ReturnResult {
+  currency?: Currency;
   receiptNumber: string;
   totalRefund: number;
   customerName: string;
@@ -163,8 +165,8 @@ export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierNam
             <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
             <h3 className="text-lg font-black">Qaytarish qayd etildi</h3>
             <p className="text-sm text-stone-600">Chek: <strong>{success.receiptNumber}</strong> • Mijoz: {success.customerName}</p>
-            <p className="text-2xl font-black">{formatMoney(success.totalRefund)}</p>
-            {success.debtReduced > 0 && <p className="text-xs text-stone-500">Nasiya qarzi {formatMoney(success.debtReduced)} ga kamaytirildi.</p>}
+            <p className="text-2xl font-black">{formatMoney(success.totalRefund, success.currency)}</p>
+            {success.debtReduced > 0 && <p className="text-xs text-stone-500">Nasiya qarzi {formatMoney(success.debtReduced, success.currency)} ga kamaytirildi.</p>}
             <button type="button" onClick={onClose} className="w-full rounded-xl bg-amber-400 py-3 text-sm font-black text-stone-950">Yopish</button>
           </div>
         ) : !selected ? (
@@ -194,7 +196,7 @@ export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierNam
                 <div key={line.movementId} className="flex items-center gap-3 rounded-xl border border-stone-200 p-3">
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-bold">{line.productName}</div>
-                    <div className="text-[11px] text-stone-500">Sotilgan {line.soldQuantity} • qaytarilgan {line.returnedQuantity} • bir donasi {formatMoney(line.unitRefund)}</div>
+                    <div className="text-[11px] text-stone-500">Sotilgan {line.soldQuantity} • qaytarilgan {line.returnedQuantity} • bir donasi {formatMoney(line.unitRefund, selected?.currency)}</div>
                   </div>
                   {line.returnableQuantity > 0 ? (
                     <label className="text-[11px] font-bold text-stone-600">Soni
@@ -230,7 +232,7 @@ export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierNam
               </div>
             )}
             {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
-            <div className="flex items-center justify-between rounded-xl bg-stone-900 px-4 py-3 text-white"><span className="text-xs">Qaytariladigan summa</span><strong className="text-lg text-amber-300">{formatMoney(total)}</strong></div>
+            <div className="flex items-center justify-between rounded-xl bg-stone-900 px-4 py-3 text-white"><span className="text-xs">Qaytariladigan summa</span><strong className="text-lg text-amber-300">{formatMoney(total, selected?.currency)}</strong></div>
             <button type="button" disabled={!canSubmit} onClick={submit} className="w-full rounded-xl bg-amber-400 py-3 text-sm font-black text-stone-950 disabled:opacity-40">{saving ? 'Saqlanmoqda…' : 'Qaytarishni tasdiqlash'}</button>
           </div>
         )}

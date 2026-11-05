@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings, AuthUser } from './types';
+import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings, AuthUser, Currency } from './types';
+import { currencyOf, roundMoney, sumByCurrency } from './utils/money';
+import { formatMoney } from './utils/formatters';
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_MOVEMENTS, 
@@ -453,11 +455,12 @@ export default function App() {
   // Today's Key Metrics for Header
   const { todayRevenue, todayProfit } = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
+    // Yuqoridagi "Bugungi tushum" so'mda; dollarli telefon savdosi unga qo'shilmaydi.
     const todayChiqim = movements.filter(
-      (m) => m.type === 'chiqim' && m.timestamp.slice(0, 10) === todayStr
+      (m) => m.type === 'chiqim' && currencyOf(m) === 'UZS' && m.timestamp.slice(0, 10) === todayStr
     );
     const todayVazvrat = movements.filter(
-      (m) => m.type === 'vazvrat' && m.timestamp.slice(0, 10) === todayStr
+      (m) => m.type === 'vazvrat' && currencyOf(m) === 'UZS' && m.timestamp.slice(0, 10) === todayStr
     );
 
     const grossRevenue = todayChiqim.reduce((sum, m) => sum + m.totalRevenue, 0);
@@ -641,6 +644,7 @@ export default function App() {
       product: Product;
       quantity: number;
       unitCost: number;
+      currency?: Currency;
       wholesalePrice?: number;
       unitPrice: number;
     }[],
@@ -656,6 +660,16 @@ export default function App() {
   ) => {
     const nowISO = new Date().toISOString();
     const newMovements: StockMovement[] = [];
+
+    // Tovar valyutasi birinchi kirimda belgilanadi: boshqa valyutada kirim qabul qilinmaydi.
+    const currencyMismatch = items.find((item) => {
+      const existing = products.find((p) => p.id === item.product.id);
+      return existing && currencyOf(existing) !== currencyOf({ currency: item.currency });
+    });
+    if (currencyMismatch) {
+      window.alert(`"${currencyMismatch.product.name}" boshqa valyutadagi tovar. Valyuta o'zgarmaydi: yangi tovar yarating.`);
+      return;
+    }
 
     setProducts((prevProducts) => {
       let updated = [...prevProducts];
@@ -694,13 +708,14 @@ export default function App() {
           quantity: item.quantity,
           unitCost: item.unitCost,
           unitPrice: item.unitPrice,
-          totalCost: item.unitCost * item.quantity,
-          totalRevenue: item.unitCost * item.quantity,
+          ...(item.currency === 'USD' ? { currency: 'USD' as const } : {}),
+          totalCost: roundMoney(item.unitCost * item.quantity, currencyOf({ currency: item.currency })),
+          totalRevenue: roundMoney(item.unitCost * item.quantity, currencyOf({ currency: item.currency })),
           profit: 0,
           timestamp: nowISO,
           counterparty: supplier,
           notes: supplierDebtInfo?.isDebt 
-            ? `${notes ? notes + ' | ' : ''}Qarzga olindi (Qoldiq: ${supplierDebtInfo.remainingAmount.toLocaleString('uz-UZ')} so'm)` 
+            ? `${notes ? notes + ' | ' : ''}Qarzga olindi (Qoldiq: ${formatMoney(supplierDebtInfo.remainingAmount, currencyOf({ currency: item.currency }))})` 
             : notes
         });
       });
@@ -713,13 +728,15 @@ export default function App() {
     // Automatically record into Supplier Debts if purchased on credit / partial credit
     if (supplierDebtInfo && supplierDebtInfo.isDebt && supplierDebtInfo.remainingAmount > 0) {
       const prodSummary = items.map((i) => `${i.product.name} (${i.quantity} ta)`).join(', ');
-      const totalBatchCost = items.reduce((s, i) => s + i.quantity * i.unitCost, 0);
+      const batchCurrency = currencyOf({ currency: items[0]?.currency });
+      const totalBatchCost = roundMoney(items.reduce((s, i) => s + i.quantity * i.unitCost, 0), batchCurrency);
 
       const newSuppDebt: SupplierDebtRecord = {
         id: `supp-debt-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         supplierName: supplier.trim() || 'Ulgurji Ta\'minotchi',
         supplierPhone: supplierDebtInfo.supplierPhone,
         productSummary: prodSummary,
+        ...(batchCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         totalDebt: totalBatchCost,
         paidAmount: supplierDebtInfo.paidAmount,
         remainingAmount: supplierDebtInfo.remainingAmount,
@@ -757,6 +774,7 @@ export default function App() {
       customerName: m.counterparty || (isReturn ? 'Mijoz (Vazvrat)' : 'Do\'kon mijozi'),
       customerPhone: m.customerPhone,
       customerAddress: m.customerAddress || 'Do\'kondan (Paxtaobod)',
+      currency: currencyOf(m),
       paymentMethod: m.paymentMethod || 'naqd',
       items: relatedMovements.map((item) => ({
         id: item.productId,
@@ -850,10 +868,16 @@ export default function App() {
   ) => {
     const nowISO = new Date().toISOString();
     const newMovements: StockMovement[] = [];
-    const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    const accounting = saleAccounting(items.map(item => item.quantity * item.unitPrice), debtDetails?.paidNow ?? (paymentMethod === 'nasiya' ? 0 : subtotal), debtDetails?.discountAmount);
+    // Bitta chekda bitta valyuta: tovarlarning valyutasi bir xil bo'lishi shart.
+    const saleCurrency = currencyOf(items[0]?.product);
+    if (items.some((item) => currencyOf(item.product) !== saleCurrency)) {
+      window.alert("Bitta chekda faqat bitta valyuta bo'lishi mumkin. So'mli va dollarli tovarlarni alohida savdo qiling.");
+      return;
+    }
+    const subtotal = roundMoney(items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0), saleCurrency);
+    const accounting = saleAccounting(items.map(item => item.quantity * item.unitPrice), debtDetails?.paidNow ?? (paymentMethod === 'nasiya' ? 0 : subtotal), debtDetails?.discountAmount, saleCurrency);
     const saleTotalRevenue = accounting.total;
-    const previousCustomerDebt = customerDebtTotal(debts, customerName, customerPhone);
+    const previousCustomerDebt = customerDebtTotal(debts, customerName, customerPhone, saleCurrency);
     const batchId = `batch-${Date.now()}`;
     const receiptNum = debtDetails?.receiptNumber || `PB-${nowISO.slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -896,12 +920,13 @@ export default function App() {
     items.forEach((item, index) => {
       const line = accounting.lines[index];
       const totalRev = line.revenue;
-      const totalCost = item.quantity * item.product.purchasePrice;
-      const profit = totalRev - totalCost;
+      const totalCost = roundMoney(item.quantity * item.product.purchasePrice, saleCurrency);
+      const profit = roundMoney(totalRev - totalCost, saleCurrency);
 
       newMovements.push({
         id: `mov-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         type: 'chiqim',
+        ...(saleCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         productId: item.product.id,
         productName: item.product.name,
         category: item.product.category,
@@ -914,7 +939,7 @@ export default function App() {
         paidAmount: line.paid,
         debtRemaining: line.debt,
         previousCustomerDebt,
-        customerTotalDebt: previousCustomerDebt + accounting.remaining,
+        customerTotalDebt: roundMoney(previousCustomerDebt + accounting.remaining, saleCurrency),
         debtDueDate: accounting.remaining > 0 ? debtDetails?.dueDate : undefined,
         profit,
         timestamp: nowISO,
@@ -971,6 +996,7 @@ export default function App() {
           movementId: newMovements[0]?.id,
           customerName,
           customerPhone: customerPhone || '+998',
+          ...(saleCurrency === 'USD' ? { currency: 'USD' as const } : {}),
           totalDebt: saleTotalRevenue,
           paidAmount: accounting.paid,
           remainingAmount: remaining,
@@ -1041,8 +1067,9 @@ export default function App() {
     }
 
     // 2. Create StockMovement entry with type: 'vazvrat'
-    const totalCost = data.unitCost * data.quantity;
-    const profit = data.totalRefund - totalCost;
+    const returnCurrency = currencyOf(products.find((p) => p.id === data.productId) ?? { category: data.category });
+    const totalCost = roundMoney(data.unitCost * data.quantity, returnCurrency);
+    const profit = roundMoney(data.totalRefund - totalCost, returnCurrency);
 
     const newMovement: StockMovement = {
       id: `vazvrat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -1050,6 +1077,7 @@ export default function App() {
       productName: data.productName,
       category: data.category,
       type: 'vazvrat',
+      ...(returnCurrency === 'USD' ? { currency: 'USD' as const } : {}),
       quantity: data.quantity,
       unitCost: data.unitCost,
       unitPrice: data.unitPrice,
@@ -1082,17 +1110,18 @@ export default function App() {
             (debt.customerName.toLowerCase().trim() === data.customerName.toLowerCase().trim()) ||
             (data.customerPhone && debt.customerPhone === data.customerPhone);
           
-          if (isSameCustomer && debt.status !== 'yopildi' && debt.remainingAmount > 0) {
+          // Faqat shu valyutadagi nasiya kamayadi (dollarli qaytarish so'mli qarzga tegmaydi).
+          if (isSameCustomer && currencyOf(debt) === returnCurrency && debt.status !== 'yopildi' && debt.remainingAmount > 0) {
             const deduction = Math.min(debt.remainingAmount, remainingRefundToDeduct);
-            remainingRefundToDeduct -= deduction;
-            const newRemaining = debt.remainingAmount - deduction;
-            const newPaid = debt.paidAmount + deduction;
+            remainingRefundToDeduct = roundMoney(remainingRefundToDeduct - deduction, returnCurrency);
+            const newRemaining = roundMoney(debt.remainingAmount - deduction, returnCurrency);
+            const newPaid = roundMoney(debt.paidAmount + deduction, returnCurrency);
             return {
               ...debt,
               paidAmount: newPaid,
               remainingAmount: newRemaining,
               status: newRemaining <= 0 ? 'yopildi' : 'qisman_tolandi',
-              notes: `${debt.notes ? debt.notes + ' | ' : ''}Vazvrat hisobiga ${deduction.toLocaleString('uz-UZ')} so'm kamaytirildi`,
+              notes: `${debt.notes ? debt.notes + ' | ' : ''}Vazvrat hisobiga ${formatMoney(deduction, returnCurrency)} kamaytirildi`,
               paymentHistory: [
                 ...debt.paymentHistory,
                 {
@@ -1112,6 +1141,7 @@ export default function App() {
     if (data.printReceipt) {
       const returnReceipt: SaleReceiptData = {
         receiptNumber: receiptNum,
+        currency: returnCurrency,
         date: nowISO,
         customerName: data.customerName.trim() || 'Mijoz',
         customerPhone: data.customerPhone.trim() || undefined,

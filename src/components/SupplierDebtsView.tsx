@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { SupplierDebtRecord, SupplierPaymentEntry } from '../types';
+import { currencyOf, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
 import { 
   Building2, 
@@ -68,19 +69,16 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
   });
 
   // Calculate high-level summary metrics
-  const totalRemainingDebt = useMemo(() => {
-    return supplierDebts
-      .filter((d) => d.status !== 'yopildi')
-      .reduce((sum, d) => sum + d.remainingAmount, 0);
-  }, [supplierDebts]);
+  // So'm va dollar alohida; dollarli partiyalar (telefonlar) so'mga qo'shilmaydi.
+  const remainingByCurrency = useMemo(() => sumByCurrency(supplierDebts.filter((d) => d.status !== 'yopildi'), (d) => d.remainingAmount), [supplierDebts]);
+  const totalRemainingDebt = remainingByCurrency.UZS;
 
   const activeDebtsCount = useMemo(() => {
     return supplierDebts.filter((d) => d.status !== 'yopildi').length;
   }, [supplierDebts]);
 
-  const totalPaidToSuppliers = useMemo(() => {
-    return supplierDebts.reduce((sum, d) => sum + d.paidAmount, 0);
-  }, [supplierDebts]);
+  const paidByCurrency = useMemo(() => sumByCurrency(supplierDebts, (d) => d.paidAmount), [supplierDebts]);
+  const totalPaidToSuppliers = paidByCurrency.UZS;
 
   const overdueCount = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -127,7 +125,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
     }
 
     if (paymentAmount > payingDebt.remainingAmount) {
-      alert(`To'lov summasi qarzdan (${formatMoney(payingDebt.remainingAmount)}) oshmasligi kerak!`);
+      alert(`To'lov summasi qarzdan (${formatMoney(payingDebt.remainingAmount, currencyOf(payingDebt))}) oshmasligi kerak!`);
       return;
     }
 
@@ -311,6 +309,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
           </div>
           <div className="text-xl sm:text-2xl font-black text-red-600 mt-2 truncate">
             {formatMoney(totalRemainingDebt)}
+            {remainingByCurrency.USD > 0 && <span className="block text-sm font-black text-emerald-800">+ {formatMoney(remainingByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-[11px] text-stone-400 mt-1">
             Dilerlarga to'lanishi kerak bo'lgan jami summa
@@ -339,6 +338,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
           </div>
           <div className="text-xl sm:text-2xl font-black text-emerald-700 mt-2 truncate">
             {formatMoney(totalPaidToSuppliers)}
+            {paidByCurrency.USD > 0 && <span className="block text-sm font-black text-emerald-800">+ {formatMoney(paidByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-[11px] text-stone-400 mt-1">
             Olingan partiyalar uchun to'langan qismi
@@ -514,12 +514,12 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
 
                       {/* Total Partiya */}
                       <td className="py-3 px-4 text-right font-medium text-stone-700 whitespace-nowrap">
-                        {formatMoney(d.totalDebt)}
+                        {formatMoney(d.totalDebt, currencyOf(d))}
                       </td>
 
                       {/* Paid Amount */}
                       <td className="py-3 px-4 text-right font-bold text-emerald-700 whitespace-nowrap">
-                        {formatMoney(d.paidAmount)}
+                        {formatMoney(d.paidAmount, currencyOf(d))}
                       </td>
 
                       {/* Remaining Debt */}
@@ -530,7 +530,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                           </span>
                         ) : (
                           <span className="inline-block px-2.5 py-1 rounded-lg font-black text-xs bg-red-100 text-red-700 border border-red-200">
-                            {formatMoney(d.remainingAmount)}
+                            {formatMoney(d.remainingAmount, currencyOf(d))}
                           </span>
                         )}
                       </td>
@@ -652,20 +652,20 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                 <div className="text-[11px] text-stone-500 pt-1 flex justify-between border-t border-stone-200/60 mt-1">
                   <span>Qolgan qarzimiz:</span>
                   <strong className="text-red-600 text-xs font-black">
-                    {formatMoney(payingDebt.remainingAmount)}
+                    {formatMoney(payingDebt.remainingAmount, currencyOf(payingDebt))}
                   </strong>
                 </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-stone-700 mb-1">
-                  Bugungi to'lanayotgan summa (so'm) *
+                  Bugungi to'lanayotgan summa ({currencyOf(payingDebt) === 'USD' ? '$' : "so'm"}) *
                 </label>
                 <input
                   type="number"
-                  min="1000"
+                  min={currencyOf(payingDebt) === 'USD' ? '0.01' : '1000'}
                   max={payingDebt.remainingAmount}
-                  step="1000"
+                  step={currencyOf(payingDebt) === 'USD' ? 'any' : '1000'}
                   required
                   value={paymentAmount || ''}
                   onChange={(e) => setPaymentAmount(Number(e.target.value))}
@@ -679,7 +679,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                     onClick={() => setPaymentAmount(payingDebt.remainingAmount)}
                     className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-lg cursor-pointer"
                   >
-                    To'liq to'lash ({formatMoney(payingDebt.remainingAmount)})
+                    To'liq to'lash ({formatMoney(payingDebt.remainingAmount, currencyOf(payingDebt))})
                   </button>
                   {payingDebt.remainingAmount > 100000 && (
                     <button
@@ -794,8 +794,8 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                 <div className="font-bold text-stone-900">{viewHistoryDebt.supplierName}</div>
                 <div className="text-[11px] text-stone-500 mt-0.5">{viewHistoryDebt.productSummary}</div>
                 <div className="flex items-center justify-between pt-2 mt-2 border-t border-stone-200 text-xs font-bold">
-                  <span>Jami partiya: {formatMoney(viewHistoryDebt.totalDebt)}</span>
-                  <span className="text-emerald-700">To'langan: {formatMoney(viewHistoryDebt.paidAmount)}</span>
+                  <span>Jami partiya: {formatMoney(viewHistoryDebt.totalDebt, currencyOf(viewHistoryDebt))}</span>
+                  <span className="text-emerald-700">To'langan: {formatMoney(viewHistoryDebt.paidAmount, currencyOf(viewHistoryDebt))}</span>
                 </div>
               </div>
 
@@ -808,7 +808,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                     >
                       <div>
                         <div className="font-bold text-stone-900">
-                          {formatMoney(entry.amount)}
+                          {formatMoney(entry.amount, currencyOf(viewHistoryDebt))}
                         </div>
                         <div className="text-[10px] text-stone-400 flex items-center gap-1 mt-0.5">
                           <span>{formatDate(entry.date)}</span>

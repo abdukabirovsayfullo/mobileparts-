@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { StockMovement, Product } from '../types';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
+import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
 import { 
   TrendingUp, 
   ArrowDownLeft, 
@@ -93,19 +94,30 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
   const chiqimList = filteredMovements.filter((m) => m.type === 'chiqim');
   const vazvratList = filteredMovements.filter((m) => m.type === 'vazvrat');
 
+  // Pul ko'rsatkichlari faqat so'mli yozuvlardan; dollarli (telefon) yozuvlar alohida blokda.
+  const uzs = (list: StockMovement[]) => list.filter((m) => currencyOf(m) === 'UZS');
+  const usdSales = chiqimList.filter((m) => currencyOf(m) === 'USD');
+  const usdReturns = vazvratList.filter((m) => currencyOf(m) === 'USD');
+  const usdKirim = kirimList.filter((m) => currencyOf(m) === 'USD');
+  const usdRevenue = roundMoney(usdSales.reduce((s, m) => s + m.totalRevenue, 0) - usdReturns.reduce((s, m) => s + m.totalRevenue, 0), 'USD');
+  const usdProfit = roundMoney(usdSales.reduce((s, m) => s + m.profit, 0) - usdReturns.reduce((s, m) => s + m.profit, 0), 'USD');
+  const usdKirimSum = roundMoney(usdKirim.reduce((s, m) => s + m.totalCost, 0), 'USD');
+  const usdWarehouse = sumByCurrency(products, (p) => p.purchasePrice * p.stock).USD;
+  const hasUsd = usdSales.length > 0 || usdReturns.length > 0 || usdKirim.length > 0 || usdWarehouse > 0;
+
   // Key Financial Metrics
   // 1. Kirim totals
-  const totalKirimSum = kirimList.reduce((sum, m) => sum + m.totalCost, 0);
+  const totalKirimSum = uzs(kirimList).reduce((sum, m) => sum + m.totalCost, 0);
   const totalKirimQty = kirimList.reduce((sum, m) => sum + m.quantity, 0);
 
   // 2. Chiqim (Sotuv) totals
-  const grossChiqimRevenue = chiqimList.reduce((sum, m) => sum + m.totalRevenue, 0);
-  const grossChiqimCost = chiqimList.reduce((sum, m) => sum + m.totalCost, 0);
+  const grossChiqimRevenue = uzs(chiqimList).reduce((sum, m) => sum + m.totalRevenue, 0);
+  const grossChiqimCost = uzs(chiqimList).reduce((sum, m) => sum + m.totalCost, 0);
   const totalChiqimQty = chiqimList.reduce((sum, m) => sum + m.quantity, 0);
 
   // 3. Vazvrat (Qaytarilgan tovarlar) totals
-  const totalVazvratRevenue = vazvratList.reduce((sum, m) => sum + m.totalRevenue, 0);
-  const totalVazvratCost = vazvratList.reduce((sum, m) => sum + m.totalCost, 0);
+  const totalVazvratRevenue = uzs(vazvratList).reduce((sum, m) => sum + m.totalRevenue, 0);
+  const totalVazvratCost = uzs(vazvratList).reduce((sum, m) => sum + m.totalCost, 0);
   const totalVazvratQty = vazvratList.reduce((sum, m) => sum + m.quantity, 0);
   const totalVazvratProfit = totalVazvratRevenue - totalVazvratCost;
 
@@ -116,35 +128,35 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
   const profitMargin = totalChiqimRevenue > 0 ? ((totalProfit / totalChiqimRevenue) * 100).toFixed(1) : '0';
 
   // 5. Payment breakdown (deducting refunded cash/card)
-  const cashRefund = vazvratList
+  const cashRefund = uzs(vazvratList)
     .filter((m) => m.paymentMethod === 'naqd')
     .reduce((sum, m) => sum + m.totalRevenue, 0);
 
-  const clickRefund = vazvratList
+  const clickRefund = uzs(vazvratList)
     .filter((m) => m.paymentMethod === 'click_payme' || m.paymentMethod === 'uzum')
     .reduce((sum, m) => sum + m.totalRevenue, 0);
 
-  const cashRevenue = Math.max(0, chiqimList
+  const cashRevenue = Math.max(0, uzs(chiqimList)
     .filter((m) => m.paymentMethod === 'naqd')
     .reduce((sum, m) => sum + m.totalRevenue, 0) - cashRefund);
 
-  const clickRevenue = Math.max(0, chiqimList
+  const clickRevenue = Math.max(0, uzs(chiqimList)
     .filter((m) => m.paymentMethod === 'click_payme' || m.paymentMethod === 'uzum')
     .reduce((sum, m) => sum + m.totalRevenue, 0) - clickRefund);
 
-  const debtRevenue = chiqimList
+  const debtRevenue = uzs(chiqimList)
     .filter((m) => m.paymentMethod === 'nasiya')
     .reduce((sum, m) => sum + m.totalRevenue, 0);
 
   // Warehouse current total valuation
-  const warehouseTotalStockValue = products.reduce((sum, p) => sum + (p.purchasePrice * p.stock), 0);
-  const warehouseTotalRetailValue = products.reduce((sum, p) => sum + (p.sellingPrice * p.stock), 0);
+  const warehouseTotalStockValue = sumByCurrency(products, (p) => p.purchasePrice * p.stock).UZS;
+  const warehouseTotalRetailValue = sumByCurrency(products, (p) => p.sellingPrice * p.stock).UZS;
   const warehouseExpectedProfit = warehouseTotalRetailValue - warehouseTotalStockValue;
 
   // Most profitable products in selected period
   const topProfitProducts = useMemo(() => {
     const map: { [name: string]: { qty: number; profit: number; revenue: number } } = {};
-    chiqimList.forEach((m) => {
+    uzs(chiqimList).forEach((m) => {
       if (!map[m.productName]) {
         map[m.productName] = { qty: 0, profit: 0, revenue: 0 };
       }
@@ -356,6 +368,17 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
       </div>
 
       {/* KPI Highlight Grid */}
+      {hasUsd && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <span className="font-black text-emerald-900">Telefonlar ($):</span>
+          <span>Sotuv: <strong>{formatMoney(usdRevenue, 'USD')}</strong></span>
+          <span>Foyda: <strong>{isProfitMasked ? '••••••' : formatMoney(usdProfit, 'USD')}</strong></span>
+          <span>Kirim: <strong>{formatMoney(usdKirimSum, 'USD')}</strong></span>
+          <span>Ombor (tan narxda): <strong>{formatMoney(usdWarehouse, 'USD')}</strong></span>
+          <span className="text-xs text-emerald-800">Quyidagi so'mli ko'rsatkichlarga qo'shilmagan.</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* 1. SOF FOYDA (The most important KPI) */}
         <div className="bg-white rounded-2xl border-2 border-emerald-500/40 p-5 shadow-xs relative overflow-hidden">
@@ -534,9 +557,9 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between text-stone-500 text-[11px]">
-                    <span>Tan narxi: {formatMoney(item.unitCost)} / dona</span>
+                    <span>Tan narxi: {formatMoney(item.unitCost, currencyOf(item))} / dona</span>
                     <span className="font-bold text-stone-900">
-                      Jami: {formatMoney(item.totalCost)}
+                      Jami: {formatMoney(item.totalCost, currencyOf(item))}
                     </span>
                   </div>
 
@@ -582,12 +605,12 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                       {item.productName}
                     </span>
                     <span className="font-black text-stone-900 whitespace-nowrap">
-                      {item.quantity} dona × {formatMoney(item.unitPrice)}
+                      {item.quantity} dona × {formatMoney(item.unitPrice, currencyOf(item))}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between text-stone-500 text-[11px]">
-                    <span>Tan narx: {formatMoney(item.unitCost)}</span>
+                    <span>Tan narx: {formatMoney(item.unitCost, currencyOf(item))}</span>
                     <span className="font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
                       Foyda: {renderProfit(item.profit)}
                     </span>
@@ -653,7 +676,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                     {item.productName}
                   </span>
                   <span className="font-black text-rose-700 whitespace-nowrap">
-                    {item.quantity} dona × {formatMoney(item.unitPrice)} = -{formatMoney(item.totalRevenue)}
+                    {item.quantity} dona × {formatMoney(item.unitPrice, currencyOf(item))} = -{formatMoney(item.totalRevenue, currencyOf(item))}
                   </span>
                 </div>
 
