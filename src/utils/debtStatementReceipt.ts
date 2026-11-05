@@ -1,4 +1,4 @@
-import type { StoreSettings } from '../types';
+import type { Currency, StoreSettings } from '../types';
 import type { PeriodCustomerReport } from './saleAccounting';
 
 export interface DebtStatementParams {
@@ -25,9 +25,15 @@ export function displayDay(day: string): string {
   return y && m && d ? `${d}.${m}.${y}` : day;
 }
 
-/** Ming ajratgichli summa (oddiy bo'sh joy bilan: PDF standart shrifti uchun ham xavfsiz). */
-export function formatSom(value: number): string {
-  return `${Math.round(value || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} so'm`;
+/** Ming ajratgichli summa (oddiy bo'sh joy bilan: PDF standart shrifti uchun ham xavfsiz). Dollar sent bilan: $4.50. */
+export function formatSom(value: number, currency: Currency = 'UZS'): string {
+  const group = (n: string) => n.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  if (currency === 'USD') {
+    const cents = Math.round((value || 0) * 100) / 100;
+    const [whole, fraction] = Math.abs(cents).toFixed(2).split('.');
+    return `$${group(whole)}${fraction === '00' ? '' : '.' + fraction}`;
+  }
+  return `${group(Math.round(value || 0).toString())} so'm`;
 }
 
 const escapeHtml = (value: unknown) =>
@@ -35,6 +41,7 @@ const escapeHtml = (value: unknown) =>
 
 /** Bitta mijozning nasiya hisoboti uchun 80 mm termal chek. */
 export function debtStatementReceiptHtml({ customer, store, from, to, totalDebt }: DebtStatementParams): string {
+  const som = (value: number) => formatSom(value, customer.currency);
   const row = (label: string, value: string, strong = false) =>
     `<div class="summary${strong ? ' total' : ''}"><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`;
 
@@ -43,10 +50,10 @@ export function debtStatementReceiptHtml({ customer, store, from, to, totalDebt 
       (r) => `<div class="debt">
         <div class="when">${escapeHtml(formatDateTime(r.debt.createdAt))}</div>
         ${r.itemLines.map((line) => `<div class="item">${escapeHtml(line)}</div>`).join('')}
-        ${row('Sotuv', formatSom(r.debt.totalDebt))}
-        ${row("To'langan", formatSom(r.paid))}
-        ${r.returned > 0 ? row('Qaytarish', formatSom(r.returned)) : ''}
-        ${row('Nasiya', formatSom(r.debt.remainingAmount), true)}
+        ${row('Sotuv', som(r.debt.totalDebt))}
+        ${row("To'langan", som(r.paid))}
+        ${r.returned > 0 ? row('Qaytarish', som(r.returned)) : ''}
+        ${row('Nasiya', som(r.debt.remainingAmount), true)}
         ${r.debt.dueDate ? `<div class="item">Muddat: ${escapeHtml(r.debt.dueDate)}</div>` : ''}
       </div>`
     )
@@ -83,9 +90,9 @@ export function debtStatementReceiptHtml({ customer, store, from, to, totalDebt 
       <div class="detail"><strong>Davr:</strong> ${escapeHtml(displayDay(from))} - ${escapeHtml(displayDay(to))}</div>
       ${debts}
       <div class="grand">
-        ${row('Davr nasiyasi', formatSom(customer.remaining), true)}
-        ${customer.returned > 0 ? row('Qaytarishlar', formatSom(customer.returned), true) : ''}
-        ${row('Umumiy qarz', formatSom(totalDebt), true)}
+        ${row('Davr nasiyasi', som(customer.remaining), true)}
+        ${customer.returned > 0 ? row('Qaytarishlar', som(customer.returned), true) : ''}
+        ${row('Umumiy qarz', som(totalDebt), true)}
       </div>
       <div class="footer">Iltimos, nasiyani muddatida to'lang. Rahmat!</div>
     </div></body></html>`;

@@ -4,7 +4,14 @@ export function thermalReceiptHtml(receipt: SaleReceiptData, store: StoreSetting
   const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[char]!));
-  const money = (value: number) => escape(Number(value || 0).toLocaleString('ru-RU'));
+  const usd = receipt.currency === 'USD';
+  const unitLabel = usd ? '$' : "so'm";
+  const usdText = (v: number) => {
+    const cents = Math.round((v || 0) * 100) / 100;
+    const [whole, fraction] = Math.abs(cents).toFixed(2).split('.');
+    return `${cents < 0 ? '-' : ''}$${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${fraction === '00' ? '' : '.' + fraction}`;
+  };
+  const money = (value: number) => escape(usd ? usdText(value) : Number(value || 0).toLocaleString('ru-RU'));
   const line = (label: string, value: unknown) => `<div class="detail"><strong>${escape(label)}</strong> ${escape(value)}</div>`;
   const summary = (label: string, value: number, total = false) => `<div class="summary${total ? ' total' : ''}"><strong>${escape(label)}</strong><span>${money(value)}</span></div>`;
   const date = new Date(receipt.date);
@@ -62,7 +69,7 @@ export function thermalReceiptHtml(receipt: SaleReceiptData, store: StoreSetting
       </table>
       <div class="summaries">
         ${showPrices ? `
-          ${summary(receipt.isReturn ? "Qaytarildi (so'm)" : "Jami (so'm)", receipt.total, true)}
+          ${summary(receipt.isReturn ? `Qaytarildi (${unitLabel})` : `Jami (${unitLabel})`, receipt.total, true)}
           ${receipt.subtotal && receipt.subtotal > receipt.total ? summary('Chegirma', receipt.subtotal - receipt.total) : ''}
           ${!receipt.isReturn ? summary("Hozir to'langan", receipt.paidAmount ?? (receipt.isDebt ? receipt.total - (receipt.debtRemaining || 0) : receipt.total)) : ''}
           ${receipt.changeAmount && !receipt.isReturn ? summary('Qaytim', receipt.changeAmount) : ''}

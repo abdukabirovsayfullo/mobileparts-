@@ -223,16 +223,16 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
       isReturn ? `QAYTARILGAN TOVARLAR:` : `TOVARLAR:`,
       ...receipt.items.map(
         (it, idx) =>
-          `${idx + 1}. ${it.name}${it.category ? ` [${it.category}]` : ''} - ${it.quantity} dona x ${formatMoney(it.unitPrice)} = ${formatMoney(it.total)}`
+          `${idx + 1}. ${it.name}${it.category ? ` [${it.category}]` : ''} - ${it.quantity} dona x ${formatMoney(it.unitPrice, receipt.currency)} = ${formatMoney(it.total, receipt.currency)}`
       ),
       `---------------------------------`,
-      isReturn ? `💰 MIJOZGA TO'LANDI: ${formatMoney(receipt.total)}` : `💰 JAMI: ${formatMoney(receipt.total)}`,
+      isReturn ? `💰 MIJOZGA TO'LANDI: ${formatMoney(receipt.total, receipt.currency)}` : `💰 JAMI: ${formatMoney(receipt.total, receipt.currency)}`,
       `To'lov turi: ${receipt.paymentMethod.toUpperCase()}`,
-      !isReturn && receipt.paidAmount !== undefined ? `Hozir to'langan: ${formatMoney(receipt.paidAmount)}` : '',
-      !isReturn && receipt.previousCustomerDebt !== undefined ? `Eski qarz: ${formatMoney(receipt.previousCustomerDebt)}` : '',
-      !isReturn && receipt.customerTotalDebt !== undefined ? `Umumiy qarzdorlik: ${formatMoney(receipt.customerTotalDebt)}` : '', 
+      !isReturn && receipt.paidAmount !== undefined ? `Hozir to'langan: ${formatMoney(receipt.paidAmount, receipt.currency)}` : '',
+      !isReturn && receipt.previousCustomerDebt !== undefined ? `Eski qarz: ${formatMoney(receipt.previousCustomerDebt, receipt.currency)}` : '',
+      !isReturn && receipt.customerTotalDebt !== undefined ? `Umumiy qarzdorlik: ${formatMoney(receipt.customerTotalDebt, receipt.currency)}` : '', 
       receipt.isDebt
-        ? `⚠️ Nasiya qoldig'i: ${formatMoney(receipt.debtRemaining || 0)} (Muddati: ${receipt.debtDueDate || '-'})`
+        ? `⚠️ Nasiya qoldig'i: ${formatMoney(receipt.debtRemaining || 0, receipt.currency)} (Muddati: ${receipt.debtDueDate || '-'})`
         : '',
       `---------------------------------`,
       isReturn ? `Tovar muvaffaqiyatli qabul qilindi.` : `Xaridingiz uchun rahmat!`
@@ -516,10 +516,10 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                     {showPrices && (
                       <div className="flex justify-between text-stone-600 text-[10px]">
                         <span>
-                          {item.quantity} dona x {formatMoney(item.unitPrice)}
+                          {item.quantity} dona x {formatMoney(item.unitPrice, receipt.currency)}
                         </span>
                         <span className="font-black text-stone-950">
-                          {formatMoney(item.total)}
+                          {formatMoney(item.total, receipt.currency)}
                         </span>
                       </div>
                     )}
@@ -534,18 +534,18 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                     <>
                       <div className="flex justify-between text-stone-600 text-[11px]">
                         <span>Mahsulotlar qiymati:</span>
-                        <span>{formatMoney(receipt.subtotal)}</span>
+                        <span>{formatMoney(receipt.subtotal, receipt.currency)}</span>
                       </div>
                       <div className="flex justify-between font-bold text-amber-700 text-[11px]">
                         <span>Chegirma (Skitka):</span>
-                        <span>-{formatMoney(receipt.subtotal - receipt.total)}</span>
+                        <span>-{formatMoney(receipt.subtotal - receipt.total, receipt.currency)}</span>
                       </div>
                     </>
                   )}
 
                   <div className="flex justify-between font-black text-sm text-stone-950 pt-1">
                     <span>{receipt.isReturn ? "MIJOZGA TO'LANDI:" : "JAMI TO'LOV:"}</span>
-                    <span className={receipt.isReturn ? 'text-rose-600' : ''}>{formatMoney(receipt.total)}</span>
+                    <span className={receipt.isReturn ? 'text-rose-600' : ''}>{formatMoney(receipt.total, receipt.currency)}</span>
                   </div>
 
                   <div className="flex justify-between text-stone-700 font-bold text-[11px]">
@@ -556,28 +556,28 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                   {receipt.paidAmount !== undefined && !receipt.isReturn && (
                     <div className="flex justify-between text-stone-600 text-[11px]">
                       <span>Hozir to'langan:</span>
-                      <span>{formatMoney(receipt.paidAmount)}</span>
+                      <span>{formatMoney(receipt.paidAmount, receipt.currency)}</span>
                     </div>
                   )}
 
                   {receipt.changeAmount !== undefined && receipt.changeAmount > 0 && !receipt.isReturn && (
                     <div className="flex justify-between font-bold text-stone-900 text-[11px]">
                       <span>Qaytim (sdacha):</span>
-                      <span>{formatMoney(receipt.changeAmount)}</span>
+                      <span>{formatMoney(receipt.changeAmount, receipt.currency)}</span>
                     </div>
                   )}
 
                   {!receipt.isReturn && receipt.customerTotalDebt !== undefined && (
                     <div className="space-y-1 text-[11px] border-t border-stone-300 pt-2">
-                      {receipt.previousCustomerDebt !== undefined && <div className="flex justify-between"><span>Eski qarz:</span><span>{formatMoney(receipt.previousCustomerDebt)}</span></div>}
-                      <div className="flex justify-between font-black"><span>Umumiy qarzdorlik:</span><span>{formatMoney(receipt.customerTotalDebt)}</span></div>
+                      {receipt.previousCustomerDebt !== undefined && <div className="flex justify-between"><span>Eski qarz:</span><span>{formatMoney(receipt.previousCustomerDebt, receipt.currency)}</span></div>}
+                      <div className="flex justify-between font-black"><span>Umumiy qarzdorlik:</span><span>{formatMoney(receipt.customerTotalDebt, receipt.currency)}</span></div>
                     </div>
                   )}
                   {receipt.isDebt && (
                     <div className="pt-2 mt-1 border-t border-red-200 bg-red-50 p-2 rounded text-red-900 space-y-0.5 text-[11px]">
                       <div className="flex justify-between font-bold">
                         <span>Bu savdodan qarz:</span>
-                        <span className="font-black text-red-700">{formatMoney(receipt.debtRemaining || 0)}</span>
+                        <span className="font-black text-red-700">{formatMoney(receipt.debtRemaining || 0, receipt.currency)}</span>
                       </div>
                       <div className="flex justify-between text-[10px] text-red-800">
                         <span>Qaytarish muddati:</span>
@@ -744,10 +744,10 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                         {showPrices ? (
                           <>
                             <td className="py-2.5 px-2 text-right text-stone-700">
-                              {formatMoney(it.unitPrice)}
+                              {formatMoney(it.unitPrice, receipt.currency)}
                             </td>
                             <td className="py-2.5 px-2 text-right font-black text-stone-950">
-                              {formatMoney(it.total)}
+                              {formatMoney(it.total, receipt.currency)}
                             </td>
                           </>
                         ) : (
@@ -771,7 +771,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                         <>
                           <td className="py-2.5 px-2 text-right text-stone-500">Jami:</td>
                           <td className="py-2.5 px-2 text-right font-black text-stone-950 text-sm">
-                            {formatMoney(receipt.total)}
+                            {formatMoney(receipt.total, receipt.currency)}
                           </td>
                         </>
                       ) : (
@@ -792,12 +792,12 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                       To'lov usuli:{' '}
                       <strong className="text-stone-950 uppercase">{paymentMethodLabel}</strong>
                     </div>
-                    {!receipt.isReturn && receipt.paidAmount !== undefined && <div className="text-xs font-bold">Hozir to'langan: {formatMoney(receipt.paidAmount)}</div>}
-                    {!receipt.isReturn && receipt.previousCustomerDebt !== undefined && <div className="text-xs">Eski qarz: {formatMoney(receipt.previousCustomerDebt)}</div>}
-                    {!receipt.isReturn && receipt.customerTotalDebt !== undefined && <div className="text-xs font-black">Umumiy qarzdorlik: {formatMoney(receipt.customerTotalDebt)}</div>}
+                    {!receipt.isReturn && receipt.paidAmount !== undefined && <div className="text-xs font-bold">Hozir to'langan: {formatMoney(receipt.paidAmount, receipt.currency)}</div>}
+                    {!receipt.isReturn && receipt.previousCustomerDebt !== undefined && <div className="text-xs">Eski qarz: {formatMoney(receipt.previousCustomerDebt, receipt.currency)}</div>}
+                    {!receipt.isReturn && receipt.customerTotalDebt !== undefined && <div className="text-xs font-black">Umumiy qarzdorlik: {formatMoney(receipt.customerTotalDebt, receipt.currency)}</div>}
                     {receipt.isDebt && (
                       <div className="text-xs font-bold text-red-600">
-                        Nasiya qoldig'i: {formatMoney(receipt.debtRemaining || 0)} (Muddati: {receipt.debtDueDate || '-'})
+                        Nasiya qoldig'i: {formatMoney(receipt.debtRemaining || 0, receipt.currency)} (Muddati: {receipt.debtDueDate || '-'})
                       </div>
                     )}
                     {receipt.notes && (
@@ -810,7 +810,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                   <div className="text-right">
                     <div className="text-xs text-stone-500 font-semibold">Umumiy Tushum / Qiymat:</div>
                     <div className="text-xl font-black text-stone-950">
-                      {formatMoney(receipt.total)}
+                      {formatMoney(receipt.total, receipt.currency)}
                     </div>
                   </div>
                 </div>

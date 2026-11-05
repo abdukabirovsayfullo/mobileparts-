@@ -5,6 +5,7 @@ import { DebtStatementParams, displayDay, formatDateTime, formatSom } from './de
 
 /** Mijozga eslatish uchun A4 nasiya hisobi. */
 export function createDebtStatementPdf({ customer, store, from, to, totalDebt }: DebtStatementParams): jsPDF {
+  const som = (value: number) => formatSom(value, customer.currency);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   doc.setFillColor(24, 24, 27);
@@ -48,12 +49,12 @@ export function createDebtStatementPdf({ customer, store, from, to, totalDebt }:
       String(i + 1),
       formatDateTime(r.debt.createdAt),
       sanitizeText(r.itemLines.join('\n')) || '-',
-      formatSom(r.debt.totalDebt),
-      r.returned > 0 ? `${formatSom(r.paid)}\nQayt: ${formatSom(r.returned)}` : formatSom(r.paid),
-      formatSom(r.debt.remainingAmount),
+      som(r.debt.totalDebt),
+      r.returned > 0 ? `${som(r.paid)}\nQayt: ${som(r.returned)}` : som(r.paid),
+      som(r.debt.remainingAmount),
       r.debt.dueDate || '-'
     ]),
-    foot: [['', '', 'Davr bo\'yicha jami', formatSom(customer.saleTotal), customer.returned > 0 ? `${formatSom(customer.paid)}\nQayt: ${formatSom(customer.returned)}` : formatSom(customer.paid), formatSom(customer.remaining), '']],
+    foot: [['', '', 'Davr bo\'yicha jami', som(customer.saleTotal), customer.returned > 0 ? `${som(customer.paid)}\nQayt: ${som(customer.returned)}` : som(customer.paid), som(customer.remaining), '']],
     margin: { left: 14, right: 14 },
     styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, valign: 'top' },
     headStyles: { fillColor: [24, 24, 27], textColor: 255 },
@@ -80,7 +81,7 @@ export function createDebtStatementPdf({ customer, store, from, to, totalDebt }:
   doc.setTextColor(153, 27, 27);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(`Umumiy qarzdorlik: ${formatSom(totalDebt)}`, 20, y + 10);
+  doc.text(`Umumiy qarzdorlik: ${som(totalDebt)}`, 20, y + 10);
 
   doc.setTextColor(71, 85, 105);
   doc.setFont('helvetica', 'normal');

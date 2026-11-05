@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Product, StockMovement } from '../types';
+import { Currency, Product, StockMovement } from '../types';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { CategoryManagerModal } from './CategoryManagerModal';
 import { KirimProductPicker } from './KirimProductPicker';
 import { displayDay, toLocalDay } from '../utils/debtStatementReceipt';
 import { addDraftItem, costChangePercent, lastKirimByProduct, marginInfo, recentKirimProductIds } from '../utils/kirimHelpers';
-import { loadUsdRate, saveUsdRate, usdToUzs, uzsToUsd } from '../utils/currency';
+import { currencyOf, roundMoney } from '../utils/money';
 import { 
   ArrowDownLeft, 
   Plus, 
@@ -36,6 +36,7 @@ interface KirimFormViewProps {
       product: Product;
       quantity: number;
       unitCost: number;
+      currency?: Currency;
       wholesalePrice?: number;
       unitPrice: number;
     }[],
@@ -62,9 +63,8 @@ interface KirimDraftItem {
   product: Product;
   quantity: number;
   unitCost: number;
-  /** Dollarda kiritilgan bo'lsa: asl narx ($) va o'girishda ishlatilgan kurs. */
-  usdCost?: number;
-  usdRate?: number;
+  /** Barcha narxlar shu valyutada (so'm va dollar hech qachon o'girilmaydi). */
+  currency: Currency;
   wholesalePrice?: number;
   unitPrice: number;
 }
@@ -98,11 +98,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   const [unitCost, setUnitCost] = useState<number>(
     products[0]?.purchasePrice || 45000
   );
-  const [priceCurrency, setPriceCurrency] = useState<'UZS' | 'USD'>('UZS');
-  const [usdCost, setUsdCost] = useState<number>(0);
-  const [usdWholesale, setUsdWholesale] = useState<number>(0);
-  const [usdRetail, setUsdRetail] = useState<number>(0);
-  const [usdRate, setUsdRate] = useState<number>(() => loadUsdRate());
+  const [priceCurrency, setPriceCurrency] = useState<Currency>('UZS');
   const [wholesalePrice, setWholesalePrice] = useState<number>(
     products[0]?.wholesalePrice || Math.round((products[0]?.sellingPrice || 85000) * 0.8)
   );
@@ -160,73 +156,38 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     }
   };
 
-  // Tan narx so'mda: dollarda kiritilsa kurs bo'yicha o'giriladi
-  const effectiveUnitCost = priceCurrency === 'USD' ? usdToUzs(usdCost, usdRate) : Number(unitCost);
-  const effectiveWholesale = priceCurrency === 'USD' ? usdToUzs(usdWholesale, usdRate) : Number(wholesalePrice);
-  const effectiveRetail = priceCurrency === 'USD' ? usdToUzs(usdRetail, usdRate) : Number(unitPrice);
+  const effectiveUnitCost = Number(unitCost);
+  const effectiveWholesale = Number(wholesalePrice);
+  const effectiveRetail = Number(unitPrice);
 
   const selectedProduct = products.find((p) => p.id === selectedProductId);
   const selectedLast = selectedProduct ? lastKirim.get(selectedProduct.id) : undefined;
   const costChange = costChangePercent(selectedLast?.movement.unitCost, effectiveUnitCost);
   const margin = marginInfo(effectiveUnitCost, effectiveRetail);
 
-  const switchPriceCurrency = (currency: 'UZS' | 'USD') => {
+  const chooseNewProductCurrency = (currency: Currency) => {
     if (currency === priceCurrency) return;
-    if (currency === 'USD') {
-      setUsdCost(uzsToUsd(unitCost, usdRate));
-      setUsdWholesale(uzsToUsd(wholesalePrice, usdRate));
-      setUsdRetail(uzsToUsd(unitPrice, usdRate));
-    } else {
-      if (effectiveUnitCost > 0) setUnitCost(effectiveUnitCost);
-      if (effectiveWholesale > 0) setWholesalePrice(effectiveWholesale);
-      if (effectiveRetail > 0) setUnitPrice(effectiveRetail);
-    }
+    // Boshqa valyutaga o'tganda eski raqamlar ma'nosini yo'qotadi: narxlarni qaytadan kiritiladi.
+    setUnitCost(0);
+    setWholesalePrice(0);
+    setUnitPrice(0);
     setPriceCurrency(currency);
   };
 
-  const handleRateChange = (rate: number) => {
-    setUsdRate(rate);
-    saveUsdRate(rate);
-    if (!usdCost && unitCost > 0) setUsdCost(uzsToUsd(unitCost, rate));
-    if (!usdWholesale && wholesalePrice > 0) setUsdWholesale(uzsToUsd(wholesalePrice, rate));
-    if (!usdRetail && unitPrice > 0) setUsdRetail(uzsToUsd(unitPrice, rate));
-  };
-
-  /** Tan, optom va chakana narx maydoni: tanlangan valyutada kiritiladi, so'mga o'girilib saqlanadi. */
+  /** Tan, optom va chakana narx maydoni. Narx tovarning o'z valyutasida kiritiladi va saqlanadi. */
   const priceField = (kind: 'cost' | 'wholesale' | 'retail', inputClass: string) => {
-    const uzs = kind === 'cost' ? unitCost : kind === 'wholesale' ? wholesalePrice : unitPrice;
-    const setUzs = kind === 'cost' ? setUnitCost : kind === 'wholesale' ? setWholesalePrice : setUnitPrice;
-    const usd = kind === 'cost' ? usdCost : kind === 'wholesale' ? usdWholesale : usdRetail;
-    const setUsd = kind === 'cost' ? setUsdCost : kind === 'wholesale' ? setUsdWholesale : setUsdRetail;
-    const effective = kind === 'cost' ? effectiveUnitCost : kind === 'wholesale' ? effectiveWholesale : effectiveRetail;
-
-    if (priceCurrency === 'USD') {
-      return (
-        <div className="space-y-1">
-          <input
-            type="number"
-            min="0.01"
-            step="any"
-            required
-            placeholder="$"
-            value={usd || ''}
-            onChange={(e) => setUsd(Number(e.target.value))}
-            className={inputClass}
-          />
-          <div className={`text-[10px] font-bold ${usdRate > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-            {usdRate > 0 ? `= ${formatMoney(effective)}` : 'Kursni kiriting'}
-          </div>
-        </div>
-      );
-    }
+    const value = kind === 'cost' ? unitCost : kind === 'wholesale' ? wholesalePrice : unitPrice;
+    const setValue = kind === 'cost' ? setUnitCost : kind === 'wholesale' ? setWholesalePrice : setUnitPrice;
+    const usd = priceCurrency === 'USD';
     return (
       <input
         type="number"
-        min="1000"
-        step="1000"
+        min={usd ? '0.01' : '1000'}
+        step={usd ? 'any' : '1000'}
         required
-        value={uzs}
-        onChange={(e) => setUzs(Number(e.target.value))}
+        placeholder={usd ? '$' : ''}
+        value={value || ''}
+        onChange={(e) => setValue(Number(e.target.value))}
         className={inputClass}
       />
     );
@@ -235,51 +196,39 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   const currencyBar = () => (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-[11px] font-semibold text-stone-500">Narx valyutasi:</span>
-      <div className="flex gap-1">
-        {(['UZS', 'USD'] as const).map((currency) => (
-          <button
-            key={currency}
-            type="button"
-            onClick={() => switchPriceCurrency(currency)}
-            className={`px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
-              priceCurrency === currency ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-            }`}
-          >
-            {currency === 'UZS' ? "So'm" : '$ Dollar'}
-          </button>
-        ))}
-      </div>
-      {priceCurrency === 'USD' && (
-        <div className="flex items-center gap-1 text-[11px] font-semibold text-stone-600">
-          <span>1 $ =</span>
-          <input
-            type="number"
-            min="1"
-            step="any"
-            required
-            placeholder="kurs"
-            value={usdRate || ''}
-            onChange={(e) => handleRateChange(Number(e.target.value))}
-            className="w-20 px-1.5 py-0.5 bg-white border border-stone-300 rounded-lg text-[11px] font-bold"
-          />
-          <span>so'm</span>
+      {isCreatingNew ? (
+        <div className="flex gap-1">
+          {(['UZS', 'USD'] as const).map((currency) => (
+            <button
+              key={currency}
+              type="button"
+              onClick={() => chooseNewProductCurrency(currency)}
+              className={`px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
+                priceCurrency === currency ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+              }`}
+            >
+              {currency === 'UZS' ? "So'm" : '$ Dollar'}
+            </button>
+          ))}
         </div>
+      ) : (
+        <>
+          <span className="px-3 py-1 rounded-lg bg-stone-900 text-white text-[11px] font-black">{priceCurrency === 'USD' ? '$ Dollar' : "So'm"}</span>
+          <span className="text-[10px] text-stone-500">Tovar valyutasi birinchi kirimda belgilanadi va o'zgarmaydi</span>
+        </>
       )}
     </div>
   );
+
   // When selected product changes
   const handleSelectProduct = (prodId: string) => {
     setSelectedProductId(prodId);
     const found = products.find((p) => p.id === prodId);
     if (found) {
+      setPriceCurrency(currencyOf(found));
       setUnitCost(found.purchasePrice);
-      if (priceCurrency === 'USD') setUsdCost(uzsToUsd(found.purchasePrice, usdRate));
       setWholesalePrice(found.wholesalePrice || Math.round(found.sellingPrice * 0.8));
       setUnitPrice(found.sellingPrice);
-      if (priceCurrency === 'USD') {
-        setUsdWholesale(uzsToUsd(found.wholesalePrice || Math.round(found.sellingPrice * 0.8), usdRate));
-        setUsdRetail(uzsToUsd(found.sellingPrice, usdRate));
-      }
       // Tovar tanlangach darhol miqdorga o'tamiz: qidiruv -> Enter -> miqdor -> Enter
       window.setTimeout(() => {
         quantityInputRef.current?.focus();
@@ -309,8 +258,8 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     e.preventDefault();
     const found = products.find((p) => p.id === selectedProductId);
     if (!found) return;
-    if (priceCurrency === 'USD' && usdRate <= 0) {
-      alert('Dollar kursini kiriting (1 $ necha so\'m)!');
+    if (draftItems.length > 0 && draftItems[0].currency !== priceCurrency) {
+      alert("Bitta nakladnoyda faqat bitta valyuta bo'lishi mumkin. So'mli va dollarli tovarlar uchun alohida nakladnoy tuzing.");
       return;
     }
     if (quantity <= 0 || effectiveUnitCost <= 0) {
@@ -320,7 +269,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
     if (
       effectiveRetail < effectiveUnitCost &&
-      !window.confirm(`Chakana narx (${formatMoney(effectiveRetail)}) tan narxdan (${formatMoney(effectiveUnitCost)}) past. Baribir qo'shilsinmi?`)
+      !window.confirm(`Chakana narx (${formatMoney(effectiveRetail, priceCurrency)}) tan narxdan (${formatMoney(effectiveUnitCost, priceCurrency)}) past. Baribir qo'shilsinmi?`)
     ) {
       return;
     }
@@ -330,7 +279,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
         product: found,
         quantity: Number(quantity),
         unitCost: effectiveUnitCost,
-        ...(priceCurrency === 'USD' ? { usdCost: Number(usdCost), usdRate } : {}),
+        currency: priceCurrency,
         wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
         unitPrice: effectiveRetail
       })
@@ -346,10 +295,12 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     setDraftItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  const grandTotalCost = draftItems.reduce(
-    (sum, item) => sum + item.quantity * item.unitCost,
-    0
+  const invoiceCurrency: Currency = draftItems[0]?.currency ?? priceCurrency;
+  const grandTotalCost = roundMoney(
+    draftItems.reduce((sum, item) => sum + item.quantity * item.unitCost, 0),
+    invoiceCurrency
   );
+  const halfOfTotal = () => (invoiceCurrency === 'USD' ? roundMoney(grandTotalCost / 2, 'USD') : Math.round(grandTotalCost / 2 / 1000) * 1000);
   const totalItemsCount = draftItems.reduce((sum, item) => sum + item.quantity, 0);
 
   const effectivePaidAmount = useMemo(() => {
@@ -369,15 +320,11 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     }
 
     const isDebtCase = paymentType !== 'paid' && effectiveDebtRemaining > 0;
-    const usdRates = Array.from(new Set(draftItems.filter((i) => i.usdCost).map((i) => i.usdRate)));
-    const invoiceNotes = [notes.trim(), ...usdRates.map((r) => `Dollar kirim, kurs: 1$ = ${formatMoney(r)}`)]
-      .filter(Boolean)
-      .join(' | ');
 
     onConfirmKirim(
       draftItems, 
       supplier.trim() || 'Ulgurji Ta\'minotchi', 
-      invoiceNotes,
+      notes.trim(),
       isDebtCase
         ? {
             isDebt: true,
@@ -395,7 +342,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
     if (isDebtCase) {
       alert(
-        `Tovar kirimi omborga qabul qilindi! Ta'minotchidan ${formatMoney(effectiveDebtRemaining)} so'm qarzga olingani Ta'minotchi Qarz Daftariga kiritildi.`
+        `Tovar kirimi omborga qabul qilindi! Ta'minotchidan ${formatMoney(effectiveDebtRemaining, invoiceCurrency)} qarzga olingani Ta'minotchi Qarz Daftariga kiritildi.`
       );
     } else {
       alert('Tovar kirimi muvaffaqiyatli qabul qilindi va omborga qo\'shildi!');
@@ -413,12 +360,13 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
           product: found,
           quantity: Number(quantity),
           unitCost: effectiveUnitCost,
+          currency: priceCurrency,
           wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
           unitPrice: effectiveRetail
         }
       ],
       supplier.trim() || 'Ulgurji Ta\'minotchi',
-      priceCurrency === 'USD' ? [notes.trim(), `Dollar kirim, kurs: 1$ = ${formatMoney(usdRate)}`].filter(Boolean).join(' | ') : notes.trim()
+      notes.trim()
     );
 
     alert(`"${found.name}" dan ${quantity} dona omborga kiritildi!`);
@@ -428,8 +376,8 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   const handleCreateNewProduct = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName.trim()) return;
-    if (priceCurrency === 'USD' && (effectiveUnitCost <= 0 || effectiveRetail <= 0)) {
-      alert('Dollar narxi va kursini kiriting!');
+    if (effectiveUnitCost <= 0 || effectiveRetail <= 0) {
+      alert('Tan narxi va chakana narxni kiriting!');
       return;
     }
 
@@ -439,6 +387,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
       category: newProductCategory,
       brand: newProductBrand.trim() || 'Universal',
       barcode: `${Math.floor(100000 + Math.random() * 900000)}`,
+      currency: priceCurrency,
       purchasePrice: effectiveUnitCost,
       wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
       sellingPrice: effectiveRetail,
@@ -519,7 +468,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
             Joriy Nakladnoy Summasi:
           </div>
           <div className="text-2xl font-black text-emerald-400 mt-1">
-            {formatMoney(grandTotalCost)}
+            {formatMoney(grandTotalCost, invoiceCurrency)}
           </div>
           <div className="text-[11px] text-emerald-300/80 mt-0.5">
             {totalItemsCount} dona aksessuar
@@ -722,7 +671,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     <div className="text-stone-600 flex flex-wrap items-center gap-x-1.5">
                       <span>
                         Oxirgi kirim: {displayDay(toLocalDay(selectedLast.movement.timestamp))} · {selectedLast.movement.quantity} dona · tan{' '}
-                        <strong>{formatMoney(selectedLast.movement.unitCost)}</strong> · {selectedLast.movement.counterparty}
+                        <strong>{formatMoney(selectedLast.movement.unitCost, currencyOf(selectedLast.movement))}</strong> · {selectedLast.movement.counterparty}
                       </span>
                       {costChange !== undefined && costChange !== 0 && (
                         <span className={`px-1.5 py-0.5 rounded font-black ${costChange > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -735,7 +684,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                   )}
                   {effectiveUnitCost > 0 && (
                     <div className={margin.profit < 0 ? 'text-rose-700 font-bold' : 'text-stone-600'}>
-                      Chakana foyda: <strong>{formatMoney(margin.profit)}</strong> ({margin.percent}%)
+                      Chakana foyda: <strong>{formatMoney(margin.profit, priceCurrency)}</strong> ({margin.percent}%)
                       {margin.profit < 0 ? ' — chakana narx tan narxdan past!' : ''}
                     </div>
                   )}
@@ -905,11 +854,11 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                       {item.product.name}
                     </div>
                     <div className="text-[11px] text-stone-500 flex flex-wrap items-center gap-1.5 mt-0.5">
-                      <span>{item.quantity} dona × Tan: <strong className="text-stone-700">{formatMoney(item.unitCost)}</strong>{item.usdCost ? <span className="text-emerald-700 font-semibold"> (${item.usdCost} × {formatMoney(item.usdRate)})</span> : null}</span>
+                      <span>{item.quantity} dona × Tan: <strong className="text-stone-700">{formatMoney(item.unitCost, item.currency)}</strong></span>
                       <span>•</span>
-                      <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Optom: {formatMoney(item.wholesalePrice || Math.round(item.unitPrice * 0.8))}</span>
+                      <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Optom: {formatMoney(item.wholesalePrice || Math.round(item.unitPrice * 0.8), item.currency)}</span>
                       <span>•</span>
-                      <span className="text-stone-700 font-bold bg-stone-100 px-1.5 py-0.5 rounded">Chakana: {formatMoney(item.unitPrice)}</span>
+                      <span className="text-stone-700 font-bold bg-stone-100 px-1.5 py-0.5 rounded">Chakana: {formatMoney(item.unitPrice, item.currency)}</span>
                     </div>
                   </div>
 
@@ -942,7 +891,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
                   <div className="text-right shrink-0">
                     <div className="font-black text-stone-900">
-                      {formatMoney(item.quantity * item.unitCost)}
+                      {formatMoney(roundMoney(item.quantity * item.unitCost, item.currency), item.currency)}
                     </div>
                     <button
                       onClick={() => handleRemoveDraftItem(index)}
@@ -962,7 +911,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               <div>
                 <span className="text-xs text-stone-500 font-medium">Jami Kirim Qiymati:</span>
                 <div className="text-xl font-black text-stone-900">
-                  {formatMoney(grandTotalCost)}
+                  {formatMoney(grandTotalCost, invoiceCurrency)}
                 </div>
               </div>
               <div className="text-right">
@@ -1007,7 +956,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                   onClick={() => {
                     setPaymentType('partial');
                     if (paidAmount === 0 && grandTotalCost > 0) {
-                      setPaidAmount(Math.round(grandTotalCost / 2 / 1000) * 1000);
+                      setPaidAmount(halfOfTotal());
                     }
                   }}
                   className={`py-2 px-1.5 rounded-xl border text-center cursor-pointer transition-all ${
@@ -1042,11 +991,11 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                 <div className="pt-1">
                   <div className="flex justify-between items-center mb-1">
                     <label className="font-semibold text-stone-700 text-[11px]">
-                      Hozir berilgan avans summasi (so'm):
+                      Hozir berilgan avans summasi ({invoiceCurrency === 'USD' ? '$' : "so'm"}):
                     </label>
                     <button
                       type="button"
-                      onClick={() => setPaidAmount(Math.round(grandTotalCost / 2 / 1000) * 1000)}
+                      onClick={() => setPaidAmount(halfOfTotal())}
                       className="text-[10px] text-amber-800 font-bold hover:underline"
                     >
                       50% berildi
@@ -1056,7 +1005,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     type="number"
                     min="0"
                     max={grandTotalCost}
-                    step="1000"
+                    step={invoiceCurrency === 'USD' ? 'any' : '1000'}
                     value={paidAmount || ''}
                     onChange={(e) => setPaidAmount(Number(e.target.value))}
                     placeholder="Masalan: 500000"
@@ -1084,7 +1033,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     <div className="bg-red-50 p-2 rounded-xl border border-red-200 flex flex-col justify-center">
                       <span className="text-[10px] text-red-600 font-medium">Ta'minotchiga qarz:</span>
                       <span className="text-xs font-black text-red-700 truncate">
-                        {formatMoney(effectiveDebtRemaining)}
+                        {formatMoney(effectiveDebtRemaining, invoiceCurrency)}
                       </span>
                     </div>
                   </div>
@@ -1105,7 +1054,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               <span>
                 {paymentType === 'paid' 
                   ? "Kirimni Tasdiqlash va Omborga Qo'shish"
-                  : `Kirimni Qabul Qilish (Qarz: ${formatMoney(effectiveDebtRemaining)})`}
+                  : `Kirimni Qabul Qilish (Qarz: ${formatMoney(effectiveDebtRemaining, invoiceCurrency)})`}
               </span>
             </button>
           </div>
@@ -1145,10 +1094,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     +{m.quantity} ta
                   </td>
                   <td className="py-2.5 px-3 text-right text-stone-700">
-                    {formatMoney(m.unitCost)}
+                    {formatMoney(m.unitCost, currencyOf(m))}
                   </td>
                   <td className="py-2.5 px-3 text-right font-black text-stone-900">
-                    {formatMoney(m.totalCost)}
+                    {formatMoney(m.totalCost, currencyOf(m))}
                   </td>
                   <td className="py-2.5 px-3 text-stone-600">
                     {m.counterparty}

@@ -4,6 +4,7 @@ import type { Product } from '../types';
 import { exactProductCodeMatch, searchProducts } from '../utils/productSearch';
 import { LastKirim, lowStockProducts } from '../utils/kirimHelpers';
 import { formatMoney } from '../utils/formatters';
+import { currencyOf } from '../utils/money';
 import { displayDay, toLocalDay } from '../utils/debtStatementReceipt';
 
 type Mode = 'all' | 'recent' | 'low';
@@ -174,7 +175,7 @@ export const KirimProductPicker: React.FC<Props> = ({
                 <div className="text-right shrink-0">
                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-black ${stockTone}`}>Qoldiq: {p.stock}</span>
                   <div className="text-[10px] text-stone-500 mt-0.5">
-                    {last ? `Oxirgi: ${formatMoney(last.unitCost)} · ${displayDay(toLocalDay(last.timestamp))}` : `Tan: ${formatMoney(p.purchasePrice)}`}
+                    {last ? `Oxirgi: ${formatMoney(last.unitCost, currencyOf(last))} · ${displayDay(toLocalDay(last.timestamp))}` : `Tan: ${formatMoney(p.purchasePrice, currencyOf(p))}`}
                   </div>
                 </div>
               </button>

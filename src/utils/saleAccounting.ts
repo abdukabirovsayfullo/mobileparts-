@@ -1,4 +1,5 @@
-import { DebtRecord, StockMovement } from '../types';
+import { Currency, DebtRecord, StockMovement } from '../types';
+import { currencyOf, roundMoney } from './money';
 
 const cleanName = (name: string) => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 
@@ -7,15 +8,15 @@ const customerKey = (name: string, phone?: string) => {
   return digits.length >= 9 ? `phone:${digits.slice(-9)}` : `name:${cleanName(name)}`;
 };
 
-export function customerDebtTotal(debts: DebtRecord[], name: string, phone?: string): number {
+export function customerDebtTotal(debts: DebtRecord[], name: string, phone?: string, currency: Currency = 'UZS'): number {
   const key = cleanName(name);
   if (!key || key === cleanName("Do'kon mijozi")) return 0;
   const identity = customerKey(name, phone);
-  return debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity && d.status !== 'yopildi')
-    .reduce((sum, d) => sum + Math.max(0, d.remainingAmount), 0);
+  return roundMoney(debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity && d.status !== 'yopildi' && currencyOf(d) === currency)
+    .reduce((sum, d) => sum + Math.max(0, d.remainingAmount), 0), currency);
 }
 
-export function saleAccounting(amounts: number[], paidNow: number, discount = 0) {
+export function saleAccounting(amounts: number[], paidNow: number, discount = 0, currency: Currency = 'UZS') {
   const subtotal = amounts.reduce((s, n) => s + n, 0);
   const total = Math.max(0, subtotal - Math.min(subtotal, Math.max(0, discount)));
   const paid = Math.min(total, Math.max(0, paidNow));
@@ -30,6 +31,11 @@ export function saleAccounting(amounts: number[], paidNow: number, discount = 0)
     paidLeft -= linePaid;
     return { revenue, paid: linePaid, debt: revenue - linePaid, discount: amount - revenue };
   });
+  if (currency === 'USD') {
+    // Dollarda sent aniqligi: suzuvchi nuqta xatosi (0.30000000000000004) hisobga kirmasin.
+    const r = (n: number) => roundMoney(n, 'USD');
+    return { subtotal: r(subtotal), total: r(total), paid: r(paid), remaining: r(total - paid), lines: lines.map(l => ({ revenue: r(l.revenue), paid: r(l.paid), debt: r(l.debt), discount: r(l.discount) })) };
+  }
   return { subtotal, total, paid, remaining: total - paid, lines };
 }
 
@@ -42,7 +48,7 @@ export function movementPaymentSummary(m: StockMovement, related: StockMovement[
     ? related.reduce((sum, row) => sum + (row.paidAmount || 0), 0)
     : m.paymentMethod === 'nasiya' ? initialPaid : total;
   const remaining = Math.max(0, total - paidAmount);
-  const currentDebt = customerDebtTotal(debts, m.counterparty, m.customerPhone);
+  const currentDebt = customerDebtTotal(debts, m.counterparty, m.customerPhone, currencyOf(m));
   return {
     paidAmount, debtRemaining: remaining, isDebt: remaining > 0,
     previousCustomerDebt: m.previousCustomerDebt,
@@ -64,6 +70,7 @@ export function debtOverdueDays(debt: DebtRecord, now = Date.now()): number {
 
 export interface CustomerDebtSummary {
   key: string;
+  currency: Currency;
   name: string;
   phone: string;
   remaining: number;
@@ -80,11 +87,12 @@ export function groupDebtsByCustomer(debts: DebtRecord[], now = Date.now()): Cus
   for (const d of debts) {
     if (d.status === 'yopildi' || d.remainingAmount <= 0) continue;
     const name = cleanName(d.customerName);
-    const key = !name || name === anonymous ? `id:${d.id}` : customerKey(d.customerName, d.customerPhone);
+    const currency = currencyOf(d);
+    const key = (!name || name === anonymous ? `id:${d.id}` : customerKey(d.customerName, d.customerPhone)) + `|${currency}`;
     const overdue = debtOverdueDays(d, now);
     const current = map.get(key);
     if (!current) {
-      map.set(key, { key, name: d.customerName.trim(), phone: d.customerPhone, remaining: d.remainingAmount, paid: d.paidAmount, activeCount: 1, maxOverdueDays: overdue, nearestDue: d.dueDate });
+      map.set(key, { key, currency, name: d.customerName.trim(), phone: d.customerPhone, remaining: d.remainingAmount, paid: d.paidAmount, activeCount: 1, maxOverdueDays: overdue, nearestDue: d.dueDate });
     } else {
       current.remaining += d.remainingAmount;
       current.paid += d.paidAmount;
@@ -94,7 +102,7 @@ export function groupDebtsByCustomer(debts: DebtRecord[], now = Date.now()): Cus
       if (!current.phone && d.customerPhone) current.phone = d.customerPhone;
     }
   }
-  return [...map.values()].sort((a, b) => b.remaining - a.remaining);
+  return [...map.values()].sort((a, b) => Number(a.currency === 'USD') - Number(b.currency === 'USD') || b.remaining - a.remaining);
 }
 
 /** To'lovni qoldiq bilan cheklaydi: ortiqcha to'lov va manfiy summa qabul qilinmaydi. */
@@ -113,6 +121,7 @@ export interface PeriodDebtRow {
 
 export interface PeriodCustomerReport {
   key: string;
+  currency: Currency;
   name: string;
   phone: string;
   rows: PeriodDebtRow[];
@@ -139,14 +148,15 @@ export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[]
     if (!itemLines.length && d.notes) itemLines.push(d.notes);
 
     const name = cleanName(d.customerName);
-    const key = !name || name === anonymous ? `id:${d.id}` : customerKey(d.customerName, d.customerPhone);
+    const currency = currencyOf(d);
+    const key = (!name || name === anonymous ? `id:${d.id}` : customerKey(d.customerName, d.customerPhone)) + `|${currency}`;
     const returned = (d.paymentHistory || [])
       .filter(payment => payment.method === 'vazvrat')
       .reduce((sum, payment) => sum + payment.amount, 0);
     const paid = Math.max(0, d.paidAmount - returned);
     let group = groups.get(key);
     if (!group) {
-      group = { key, name: d.customerName.trim(), phone: d.customerPhone, rows: [], saleTotal: 0, paid: 0, returned: 0, remaining: 0 };
+      group = { key, currency, name: d.customerName.trim(), phone: d.customerPhone, rows: [], saleTotal: 0, paid: 0, returned: 0, remaining: 0 };
       groups.set(key, group);
     }
     group.rows.push({ debt: d, itemLines, paid, returned });
@@ -157,15 +167,21 @@ export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[]
     if (!group.phone && d.customerPhone) group.phone = d.customerPhone;
   }
   const result = [...groups.values()];
-  for (const g of result) g.rows.sort((a, b) => a.debt.createdAt.localeCompare(b.debt.createdAt));
-  return result.sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
+  for (const g of result) {
+    g.rows.sort((a, b) => a.debt.createdAt.localeCompare(b.debt.createdAt));
+    g.saleTotal = roundMoney(g.saleTotal, g.currency);
+    g.paid = roundMoney(g.paid, g.currency);
+    g.returned = roundMoney(g.returned, g.currency);
+    g.remaining = roundMoney(g.remaining, g.currency);
+  }
+  return result.sort((a, b) => Number(a.currency === 'USD') - Number(b.currency === 'USD') || b.remaining - a.remaining || a.name.localeCompare(b.name));
 }
 /** Mijozning hozirgi barcha faol nasiyalari (yopilmagan, qoldig'i bor) tovarlari bilan; bunday nasiya bo'lmasa undefined. */
 export function activeCustomerDebtReport(debts: DebtRecord[], movements: StockMovement[], debt: DebtRecord): PeriodCustomerReport | undefined {
   const anonymous = cleanName("Do'kon mijozi");
   const name = cleanName(debt.customerName);
   const identity = customerKey(debt.customerName, debt.customerPhone);
-  const sameCustomer = !name || name === anonymous ? [debt] : debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity);
+  const sameCustomer = !name || name === anonymous ? [debt] : debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity && currencyOf(d) === currencyOf(debt));
   const active = sameCustomer.filter(d => d.status !== 'yopildi' && d.remainingAmount > 0);
   return debtPeriodReport(active, movements, -Infinity, Infinity)[0];
 }

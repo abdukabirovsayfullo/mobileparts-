@@ -56,8 +56,7 @@ interface MergeableItem {
   unitCost: number;
   unitPrice: number;
   wholesalePrice?: number;
-  usdCost?: number;
-  usdRate?: number;
+  currency?: string;
 }
 
 /** Bir xil tovar bir xil narxlarda qayta qo'shilsa, yangi qator ochmasdan miqdorini oshiradi. */
@@ -68,8 +67,7 @@ export function addDraftItem<T extends MergeableItem>(items: T[], item: T): T[] 
       it.unitCost === item.unitCost &&
       it.unitPrice === item.unitPrice &&
       it.wholesalePrice === item.wholesalePrice &&
-      it.usdCost === item.usdCost &&
-      it.usdRate === item.usdRate
+      it.currency === item.currency
   );
   if (index === -1) return [...items, item];
   return items.map((it, i) => (i === index ? { ...it, quantity: it.quantity + item.quantity } : it));

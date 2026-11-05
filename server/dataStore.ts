@@ -13,7 +13,8 @@ import {
   OnlineOrderStatus,
   SaleReceiptData
 } from '../src/types';
-import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, CustomerProfile } from '../src/types';
+import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, Currency, CustomerProfile } from '../src/types';
+import { currencyOf, roundMoney } from '../src/utils/money';
 import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity, sameCustomer } from './returnLogic';
 import { tashkentDate } from './expenseLogic';
 
@@ -406,9 +407,11 @@ class DataStore {
         ? this.state.products.findIndex(p => p.barcode === productData.barcode)
         : -1;
 
+    // Tovar valyutasi birinchi saqlashda belgilanadi; mavjud tovarniki o'zgarmaydi.
+    const productCurrency = currencyOf(existingIndex >= 0 ? this.state.products[existingIndex] : productData);
     const purchasePrice = Number(productData.purchasePrice || productData.costPrice || 0);
-    const sellingPrice = Number(productData.sellingPrice || Math.round((purchasePrice * 1.5) / 1000) * 1000);
-    const wholesalePrice = Number(productData.wholesalePrice || Math.round((sellingPrice * 0.82) / 1000) * 1000);
+    const sellingPrice = Number(productData.sellingPrice || (productCurrency === 'USD' ? roundMoney(purchasePrice * 1.5, 'USD') : Math.round((purchasePrice * 1.5) / 1000) * 1000));
+    const wholesalePrice = Number(productData.wholesalePrice || (productCurrency === 'USD' ? roundMoney(sellingPrice * 0.82, 'USD') : Math.round((sellingPrice * 0.82) / 1000) * 1000));
 
     let savedProduct: Product;
 
@@ -417,6 +420,7 @@ class DataStore {
       savedProduct = {
         ...current,
         ...productData,
+        currency: current.currency,
         purchasePrice: purchasePrice || current.purchasePrice,
         costPrice: purchasePrice || current.costPrice,
         sellingPrice: sellingPrice || current.sellingPrice,
@@ -434,6 +438,7 @@ class DataStore {
         category: productData.category || 'Boshqa',
         brand: productData.brand || 'Universal',
         barcode: newBarcode,
+        ...(productCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         purchasePrice,
         costPrice: purchasePrice,
         wholesalePrice,
@@ -498,6 +503,7 @@ class DataStore {
     const customerPhone = (salePayload.customerPhone || '').trim();
     const discount = Math.max(0, Number(salePayload.discount || 0));
 
+    const saleCurrencies = new Set<Currency>();
     // Avval butun savatni tekshiramiz. Bitta xato mahsulot sabab yarim savdo
     // yozilib qolmasligi va qoldiq manfiyga tushmasligi kerak.
     for (const item of salePayload.items) {
@@ -509,7 +515,10 @@ class DataStore {
           : undefined;
       if (!product) throw new Error(`Tovar topilmadi (${item.productId || item.barcode || 'noma\'lum'})`);
       if (product.stock < qty) throw new Error(`${product.name}: omborda ${product.stock} dona, so'ralgan ${qty} dona.`);
+      saleCurrencies.add(currencyOf(product));
     }
+    if (saleCurrencies.size > 1) throw new Error("Bitta chekda faqat bitta valyuta bo'lishi mumkin. So'mli va dollarli tovarlarni alohida savdo qiling.");
+    const saleCurrency: Currency = saleCurrencies.has('USD') ? 'USD' : 'UZS';
 
     for (const item of salePayload.items) {
       const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
@@ -525,12 +534,12 @@ class DataStore {
       const unitPrice = Number(item.unitPrice || product.sellingPrice);
       const unitCost = Number(product.purchasePrice || product.costPrice || 0);
 
-      const itemTotalRevenue = unitPrice * qty;
-      const itemTotalCost = unitCost * qty;
-      const itemProfit = itemTotalRevenue - itemTotalCost;
+      const itemTotalRevenue = roundMoney(unitPrice * qty, saleCurrency);
+      const itemTotalCost = roundMoney(unitCost * qty, saleCurrency);
+      const itemProfit = roundMoney(itemTotalRevenue - itemTotalCost, saleCurrency);
 
-      totalRevenue += itemTotalRevenue;
-      totalCost += itemTotalCost;
+      totalRevenue = roundMoney(totalRevenue + itemTotalRevenue, saleCurrency);
+      totalCost = roundMoney(totalCost + itemTotalCost, saleCurrency);
 
       // Decrement stock
       product.stock -= qty;
@@ -542,6 +551,7 @@ class DataStore {
         productName: product.name,
         category: product.category,
         quantity: qty,
+        ...(saleCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         unitCost,
         unitPrice,
         discountAmount: 0,
@@ -574,14 +584,14 @@ class DataStore {
       const last = index === movements.length - 1;
       const lineDiscount = last
         ? discountLeft
-        : Math.min(discountLeft, Math.round(appliedDiscount * movement.totalRevenue / Math.max(1, grossRevenue)));
+        : Math.min(discountLeft, roundMoney(appliedDiscount * movement.totalRevenue / Math.max(saleCurrency === 'USD' ? 0.01 : 1, grossRevenue), saleCurrency));
       movement.discountAmount = lineDiscount;
-      movement.totalRevenue = Math.max(0, movement.totalRevenue - lineDiscount);
-      movement.profit = movement.totalRevenue - movement.totalCost;
-      discountLeft -= lineDiscount;
+      movement.totalRevenue = roundMoney(Math.max(0, movement.totalRevenue - lineDiscount), saleCurrency);
+      movement.profit = roundMoney(movement.totalRevenue - movement.totalCost, saleCurrency);
+      discountLeft = roundMoney(discountLeft - lineDiscount, saleCurrency);
     });
-    totalRevenue = movements.reduce((sum, movement) => sum + movement.totalRevenue, 0);
-    const totalProfit = totalRevenue - totalCost;
+    totalRevenue = roundMoney(movements.reduce((sum, movement) => sum + movement.totalRevenue, 0), saleCurrency);
+    const totalProfit = roundMoney(totalRevenue - totalCost, saleCurrency);
 
     let debtRecord: DebtRecord | undefined;
     if (paymentMethod === 'nasiya') {
@@ -590,6 +600,7 @@ class DataStore {
         movementId: movements[0]?.id,
         customerName,
         customerPhone: customerPhone || '+998',
+        ...(saleCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         totalDebt: totalRevenue,
         paidAmount: 0,
         remainingAmount: totalRevenue,
@@ -630,6 +641,7 @@ class DataStore {
       unitCost: number;
       sellingPrice?: number;
       wholesalePrice?: number;
+      currency?: Currency;
     }>;
   }): {
     success: boolean;
@@ -643,23 +655,33 @@ class DataStore {
     const movements: StockMovement[] = [];
     const itemNames: string[] = [];
 
+    const findKirimProduct = (item: (typeof kirimPayload.items)[number]): Product | undefined => {
+      let found: Product | undefined;
+      if (item.productId) found = this.state.products.find(p => p.id === item.productId);
+      if (!found && item.barcode) found = this.getProductById(item.barcode);
+      if (!found && item.name) found = this.state.products.find(p => p.name.toLowerCase() === item.name?.toLowerCase());
+      return found;
+    };
+    // Valyuta tovarning birinchi kirimida belgilanadi va o'zgarmaydi; bitta kirimda bitta valyuta.
+    // Hammasi yozishdan oldin tekshiriladi, shunda xato bo'lsa yarim kirim qolmaydi.
+    const batchCurrencies = new Set<Currency>();
+    for (const item of kirimPayload.items) {
+      const existing = findKirimProduct(item);
+      if (existing && item.currency !== undefined && currencyOf(existing) !== currencyOf({ currency: item.currency })) {
+        throw new Error(`${existing.name}: tovar valyutasi o'zgarmaydi. Boshqa valyutada kirim uchun yangi tovar yarating.`);
+      }
+      batchCurrencies.add(existing ? currencyOf(existing) : currencyOf({ currency: item.currency }));
+    }
+    if (batchCurrencies.size > 1) throw new Error("Bitta kirimda faqat bitta valyuta bo'lishi mumkin.");
+    const batchCurrency: Currency = batchCurrencies.has('USD') ? 'USD' : 'UZS';
+
     for (const item of kirimPayload.items) {
       const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
       const unitCost = Number(item.unitCost || 0);
-      const sellingPrice = Number(item.sellingPrice || Math.round((unitCost * 1.5) / 1000) * 1000);
-      const wholesalePrice = Number(item.wholesalePrice || Math.round((sellingPrice * 0.82) / 1000) * 1000);
+      const sellingPrice = Number(item.sellingPrice || (batchCurrency === 'USD' ? roundMoney(unitCost * 1.5, 'USD') : Math.round((unitCost * 1.5) / 1000) * 1000));
+      const wholesalePrice = Number(item.wholesalePrice || (batchCurrency === 'USD' ? roundMoney(sellingPrice * 0.82, 'USD') : Math.round((sellingPrice * 0.82) / 1000) * 1000));
 
-      let product: Product | undefined;
-      if (item.productId) {
-        product = this.state.products.find(p => p.id === item.productId);
-      }
-      if (!product && item.barcode) {
-        product = this.getProductById(item.barcode);
-      }
-
-      if (!product && item.name) {
-        product = this.state.products.find(p => p.name.toLowerCase() === item.name?.toLowerCase());
-      }
+      let product: Product | undefined = findKirimProduct(item);
 
       if (product) {
         product.stock += qty;
@@ -674,6 +696,7 @@ class DataStore {
           category: item.category || 'Boshqa',
           brand: item.brand || 'Universal',
           barcode: item.barcode || String(478000 + this.state.products.length + 1),
+          ...(batchCurrency === 'USD' ? { currency: 'USD' as const } : {}),
           purchasePrice: unitCost,
           costPrice: unitCost,
           wholesalePrice,
@@ -685,13 +708,14 @@ class DataStore {
         this.state.products.push(newProduct);
       }
 
-      const itemCostTotal = unitCost * qty;
-      totalKirimCost += itemCostTotal;
+      const itemCostTotal = roundMoney(unitCost * qty, batchCurrency);
+      totalKirimCost = roundMoney(totalKirimCost + itemCostTotal, batchCurrency);
       itemNames.push(`${product.name} (${qty} dona)`);
 
       const mov: StockMovement = {
         id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         type: 'kirim',
+        ...(batchCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         productId: product.id,
         productName: product.name,
         category: product.category,
@@ -715,6 +739,7 @@ class DataStore {
         id: `sdebt-${Date.now()}`,
         supplierName: supplier,
         supplierPhone: kirimPayload.supplierPhone || '',
+        ...(batchCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         productSummary: itemNames.slice(0, 5).join(', ') + (itemNames.length > 5 ? ` va yana ${itemNames.length - 5} ta tovar` : ''),
         totalDebt: totalKirimCost,
         paidAmount: 0,
@@ -804,8 +829,12 @@ class DataStore {
       prepared.push({ original, quantity, refund: refundAmount(original, quantity) });
     }
 
+    const returnCurrencies = new Set(prepared.map(item => currencyOf(item.original)));
+    if (returnCurrencies.size > 1) throw new Error("Bitta qaytarishda faqat bitta valyutadagi tovarlar bo'lishi mumkin.");
+    const returnCurrency: Currency = returnCurrencies.has('USD') ? 'USD' : 'UZS';
+    const moneyLabel = (value: number) => (returnCurrency === 'USD' ? `$${value}` : `${value} so'm`);
     const customerName = prepared[0].original.counterparty;
-    const totalRefund = prepared.reduce((sum, item) => sum + item.refund, 0);
+    const totalRefund = roundMoney(prepared.reduce((sum, item) => sum + item.refund, 0), returnCurrency);
     const nowIso = new Date().toISOString();
     const receiptNumber = `VZV-${nowIso.slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -814,8 +843,8 @@ class DataStore {
     if (input.refundMethod === 'nasiya') {
       const customerPhone = prepared[0].original.customerPhone;
       if (prepared.some(item => !sameCustomer(item.original.counterparty, item.original.customerPhone, customerName, customerPhone))) throw new Error("Nasiyaga qaytarish faqat bitta mijozning sotuvlari uchun mumkin.");
-      const result = applyRefundToDebts(this.state.debts, customerName, customerPhone, totalRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name });
-      if (result.applied < totalRefund) throw new Error(`${customerName} mijozning faol nasiyasi ${result.applied} so'm; qaytarish ${totalRefund} so'm. Naqd yoki boshqa usulni tanlang.`);
+      const result = applyRefundToDebts(this.state.debts, customerName, customerPhone, totalRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name }, returnCurrency);
+      if (result.applied < totalRefund) throw new Error(`${customerName} mijozning faol nasiyasi ${moneyLabel(result.applied)}; qaytarish ${moneyLabel(totalRefund)}. Naqd yoki boshqa usulni tanlang.`);
       nextDebts = result.debts;
       debtReduced = result.applied;
     }
@@ -824,11 +853,12 @@ class DataStore {
     const batchSaleId = `vazvrat-batch-${Date.now()}`;
     const created: StockMovement[] = [];
     prepared.forEach(({ original, quantity, refund }, index) => {
-      const totalCost = original.unitCost * quantity;
+      const totalCost = roundMoney(original.unitCost * quantity, returnCurrency);
       const movement: StockMovement = {
         id: `vazvrat-${Date.now()}-${index}-${crypto.randomBytes(3).toString('hex')}`,
         type: 'vazvrat', productId: original.productId, productName: original.productName, category: original.category,
-        quantity, unitCost: original.unitCost, unitPrice: Math.round(refund / quantity), totalCost, totalRevenue: refund, profit: refund - totalCost,
+        ...(returnCurrency === 'USD' ? { currency: 'USD' as const } : {}),
+        quantity, unitCost: original.unitCost, unitPrice: roundMoney(refund / quantity, returnCurrency), totalCost, totalRevenue: refund, profit: roundMoney(refund - totalCost, returnCurrency),
         timestamp: nowIso, paymentMethod: input.refundMethod, counterparty: original.counterparty, customerPhone: original.customerPhone,
         receiptNumber, batchSaleId, isReturn: true, returnReason: reason, originalMovementId: original.id,
         notes: [input.notes?.trim(), restoreStock ? '' : 'Yaroqsiz: omborga qaytarilmadi', `Asl chek: ${original.receiptNumber || original.id}`].filter(Boolean).join(' | '),
@@ -847,7 +877,7 @@ class DataStore {
   }
 
   /** Ishchi uchun nasiya qidiruvi: faqat so'ralgan mijozlar, minimal maydonlar. */
-  public lookupDebts(query: string): Array<{ id: string; customerName: string; phoneTail: string; remainingAmount: number; totalDebt: number; dueDate: string; status: DebtRecord['status']; recentPayments: Array<{ date: string; amount: number; method: string }> }> {
+  public lookupDebts(query: string): Array<{ id: string; customerName: string; phoneTail: string; currency?: Currency; remainingAmount: number; totalDebt: number; dueDate: string; status: DebtRecord['status']; recentPayments: Array<{ date: string; amount: number; method: string }> }> {
     const normalized = normalizeName(query);
     const tokens = normalized.split(' ').filter(Boolean);
     if (tokens.length === 0 || normalized.length < 2) return [];
@@ -857,7 +887,7 @@ class DataStore {
       .slice(0, 10)
       .map(debt => ({
         id: debt.id, customerName: debt.customerName, phoneTail: (debt.customerPhone || '').replace(/\D/g, '').slice(-4),
-        remainingAmount: debt.remainingAmount, totalDebt: debt.totalDebt, dueDate: debt.dueDate, status: debt.status,
+        currency: debt.currency, remainingAmount: debt.remainingAmount, totalDebt: debt.totalDebt, dueDate: debt.dueDate, status: debt.status,
         recentPayments: (debt.paymentHistory || []).slice(-3).reverse().map(payment => ({ date: payment.date, amount: payment.amount, method: payment.method }))
       }));
   }
@@ -877,11 +907,12 @@ class DataStore {
     if (method !== 'naqd' && method !== 'click_payme') throw new Error("To'lov usuli faqat 'naqd' yoki 'click_payme' bo'lishi mumkin.");
     if (debt.status === 'yopildi' || debt.remainingAmount <= 0) throw new Error('Bu nasiya allaqachon yopilgan.');
 
-    const payAmount = Math.round(Number(amount));
-    if (!Number.isFinite(payAmount) || payAmount < 1) throw new Error("To'lov summasi musbat son bo'lishi kerak.");
-    if (payAmount > debt.remainingAmount) throw new Error(`To'lov qarz qoldig'idan ko'p: qoldiq ${debt.remainingAmount} so'm.`);
-    debt.paidAmount += payAmount;
-    debt.remainingAmount = Math.max(0, debt.totalDebt - debt.paidAmount);
+    const debtCurrency = currencyOf(debt);
+    const payAmount = roundMoney(Number(amount), debtCurrency);
+    if (!Number.isFinite(payAmount) || payAmount < (debtCurrency === 'USD' ? 0.01 : 1)) throw new Error("To'lov summasi musbat son bo'lishi kerak.");
+    if (payAmount > debt.remainingAmount) throw new Error(`To'lov qarz qoldig'idan ko'p: qoldiq ${debtCurrency === 'USD' ? `$${debt.remainingAmount}` : `${debt.remainingAmount} so'm`}.`);
+    debt.paidAmount = roundMoney(debt.paidAmount + payAmount, debtCurrency);
+    debt.remainingAmount = Math.max(0, roundMoney(debt.totalDebt - debt.paidAmount, debtCurrency));
     debt.status = debt.remainingAmount <= 0 ? 'yopildi' : 'qisman_tolandi';
 
     if (!debt.paymentHistory) debt.paymentHistory = [];
@@ -944,6 +975,12 @@ class DataStore {
     if (!Array.isArray(payload.items) || payload.items.length === 0) {
       throw new Error("Buyurtma uchun kamida 1 ta tovar tanlanishi shart");
     }
+    // Onlayn do'kon faqat so'mda ishlaydi. Tekshiruv hech narsa yozilmasdan oldin bajariladi.
+    const hasUsdItem = payload.items.some(item => {
+      const found = (item.productId && this.getProductById(item.productId)) || (item.barcode && this.getProductById(item.barcode)) || undefined;
+      return !!found && currencyOf(found) === 'USD';
+    });
+    if (hasUsdItem) throw new Error("Dollarli tovarlar onlayn buyurtmada mavjud emas. Do'konga murojaat qiling.");
 
     const timestamp = new Date().toISOString();
     const orderId = `ord-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;

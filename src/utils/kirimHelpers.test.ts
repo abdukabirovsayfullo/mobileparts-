@@ -38,13 +38,13 @@ test('low stock list, margin and cost change helpers', () => {
 });
 
 test('adding the same product at the same prices merges quantities, different prices stay separate', () => {
-  const item = (cost: number, qty: number, usd?: number) => ({ product: { id: 'p1' }, quantity: qty, unitCost: cost, unitPrice: 60000, wholesalePrice: 50000, usdCost: usd, usdRate: usd ? 12600 : undefined });
+  const item = (cost: number, qty: number, currency = 'UZS') => ({ product: { id: 'p1' }, quantity: qty, unitCost: cost, unitPrice: 60000, wholesalePrice: 50000, currency });
   let list = addDraftItem([], item(40000, 5));
   list = addDraftItem(list, item(40000, 3));
   assert.equal(list.length, 1);
   assert.equal(list[0].quantity, 8);
   list = addDraftItem(list, item(42000, 2));
   assert.equal(list.length, 2);
-  list = addDraftItem(list, item(40000, 1, 3.17));
+  list = addDraftItem(list, item(40000, 1, 'USD'));
   assert.equal(list.length, 3);
 });

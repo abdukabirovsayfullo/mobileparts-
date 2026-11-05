@@ -1,10 +1,15 @@
-export function formatMoney(amount: number | string | null | undefined): string {
-  if (amount === null || amount === undefined || amount === '') return '0 so\'m';
-  const num = Number(amount);
-  if (isNaN(num)) return '0 so\'m';
-  return num.toLocaleString('uz-UZ').replace(/,/g, ' ') + ' so\'m';
-}
+import type { Currency } from '../types';
 
+export function formatMoney(amount: number | string | null | undefined, currency: Currency = 'UZS'): string {
+  const num = amount === null || amount === undefined || amount === '' ? 0 : Number(amount);
+  const value = isNaN(num) ? 0 : num;
+  if (currency === 'USD') {
+    const hasCents = Math.abs(value - Math.round(value)) > 0.0001;
+    const text = value.toLocaleString('en-US', { minimumFractionDigits: hasCents ? 2 : 0, maximumFractionDigits: 2 }).replace(/,/g, ' ');
+    return `$${text}`;
+  }
+  return value.toLocaleString('uz-UZ').replace(/,/g, ' ') + ' so\'m';
+}
 export function formatDate(isoString: string | null | undefined): string {
   if (!isoString) return '';
   try {

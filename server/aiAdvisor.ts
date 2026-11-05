@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { currencyOf } from '../src/utils/money';
 import { dataStore } from './dataStore';
 import { Product, StockMovement, DebtRecord } from '../src/types';
 
@@ -90,9 +91,10 @@ export function computeStoreAuditData(): {
   rawStats: any;
 } {
   const state = dataStore.getState();
-  const products = state.products || [];
-  const movements = state.movements || [];
-  const debts = state.debts || [];
+  // AI tahlil so'mdagi ma'lumotlar bo'yicha: dollarli yozuvlar aralashmasligi uchun chiqarib tashlanadi.
+  const products = (state.products || []).filter(p => currencyOf(p) === 'UZS');
+  const movements = (state.movements || []).filter(m => currencyOf(m) === 'UZS');
+  const debts = (state.debts || []).filter(d => currencyOf(d) === 'UZS');
   const storeName = state.storeInfo?.name || 'Paxtaobod Beeline';
 
   // 1. Calculate sales count and revenue per product from movements

@@ -914,8 +914,8 @@ export function generateReceiptPdf(params: GenerateReceiptPdfParams): jsPDF {
       sanitizeText(it.name),
       sanitizeText(it.category || 'Aksessuar'),
       `${it.quantity} dona`,
-      formatMoney(it.unitPrice),
-      formatMoney(it.total)
+      formatMoney(it.unitPrice, receipt.currency),
+      formatMoney(it.total, receipt.currency)
     ]);
     columnStyles = {
       0: { halign: 'center', cellWidth: 8 },
@@ -976,7 +976,7 @@ export function generateReceiptPdf(params: GenerateReceiptPdfParams): jsPDF {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
-    doc.text(`Jami: ${formatMoney(receipt.total)}`, 124, finalY + 13);
+    doc.text(`Jami: ${formatMoney(receipt.total, receipt.currency)}`, 124, finalY + 13);
     doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`To'lov turi: ${sanitizeText(receipt.paymentMethod).toUpperCase()}`, 124, finalY + 18);
@@ -1045,21 +1045,21 @@ export function generateThermalReceiptPdf(params: GenerateReceiptPdfParams): jsP
     add(`${index + 1}. ${item.name}`);
     if (item.category) add('Toifa: ' + item.category);
     add(showPrices
-      ? `${item.quantity} dona x ${formatMoney(item.unitPrice)} = ${formatMoney(item.total)}`
+      ? `${item.quantity} dona x ${formatMoney(item.unitPrice, receipt.currency)} = ${formatMoney(item.total, receipt.currency)}`
       : `${item.quantity} dona`);
   });
   separator();
   if (showPrices) {
     if (receipt.subtotal && receipt.subtotal > receipt.total) {
-      add('Mahsulotlar: ' + formatMoney(receipt.subtotal));
-      add('Chegirma: ' + formatMoney(receipt.subtotal - receipt.total));
+      add('Mahsulotlar: ' + formatMoney(receipt.subtotal, receipt.currency));
+      add('Chegirma: ' + formatMoney(receipt.subtotal - receipt.total, receipt.currency));
     }
-    add((receipt.isReturn ? "MIJOZGA TO'LANDI: " : 'JAMI: ') + formatMoney(receipt.total));
+    add((receipt.isReturn ? "MIJOZGA TO'LANDI: " : 'JAMI: ') + formatMoney(receipt.total, receipt.currency));
     add("To'lov: " + receipt.paymentMethod);
-    if (receipt.paidAmount !== undefined) add('Berilgan pul: ' + formatMoney(receipt.paidAmount));
-    if (receipt.changeAmount) add('Qaytim: ' + formatMoney(receipt.changeAmount));
+    if (receipt.paidAmount !== undefined) add('Berilgan pul: ' + formatMoney(receipt.paidAmount, receipt.currency));
+    if (receipt.changeAmount) add('Qaytim: ' + formatMoney(receipt.changeAmount, receipt.currency));
     if (receipt.isDebt) {
-      add('Qarz: ' + formatMoney(receipt.debtRemaining || 0));
+      add('Qarz: ' + formatMoney(receipt.debtRemaining || 0, receipt.currency));
       add('Muddati: ' + (receipt.debtDueDate || '-'));
     }
   } else {
