@@ -8,3 +8,6 @@ data/*.json
 data/*.tmp
 .env*
 !.env.example
+
+# Obsidian
+obsidian-vault/.obsidian/workspace.json
