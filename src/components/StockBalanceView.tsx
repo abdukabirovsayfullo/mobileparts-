@@ -1137,7 +1137,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="1"
                     required
                     value={formData.purchasePrice}
                     onChange={(e) => setFormData({ ...formData, purchasePrice: Number(e.target.value) })}
@@ -1152,7 +1152,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="1"
                     value={formData.wholesalePrice || ''}
                     onChange={(e) => setFormData({ ...formData, wholesalePrice: Number(e.target.value) })}
                     className="w-full px-3 py-2 bg-blue-50/50 border border-blue-200 rounded-xl font-bold text-blue-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -1166,7 +1166,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="1"
                     required
                     value={formData.sellingPrice}
                     onChange={(e) => setFormData({ ...formData, sellingPrice: Number(e.target.value) })}

@@ -196,7 +196,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
       <input
         type="number"
         min={usd ? '0.01' : '1000'}
-        step={usd ? 'any' : '1000'}
+        step={usd ? 'any' : '1'}
         required
         placeholder={usd ? '$' : ''}
         value={value || ''}
@@ -999,7 +999,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     type="number"
                     min="0"
                     max={grandTotalCost}
-                    step={invoiceCurrency === 'USD' ? 'any' : '1000'}
+                    step={invoiceCurrency === 'USD' ? 'any' : '1'}
                     value={paidAmount || ''}
                     onChange={(e) => setPaidAmount(Number(e.target.value))}
                     placeholder="Masalan: 500000"
