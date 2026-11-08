@@ -503,7 +503,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
                               type="number"
                               value={editCost}
                               onChange={(e) => setEditCost(Number(e.target.value))}
-                              step="500"
+                              step="1"
                               className="w-24 px-2 py-1 border border-stone-300 rounded text-right font-bold text-stone-950"
                             />
                           ) : (
@@ -518,7 +518,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
                               type="number"
                               value={editWholesale}
                               onChange={(e) => setEditWholesale(Number(e.target.value))}
-                              step="500"
+                              step="1"
                               className="w-24 px-2 py-1 border border-amber-300 bg-amber-50 rounded text-right font-black text-amber-900"
                             />
                           ) : (
@@ -533,7 +533,7 @@ export const HisobchiPanelView: React.FC<HisobchiPanelViewProps> = ({
                               type="number"
                               value={editSelling}
                               onChange={(e) => setEditSelling(Number(e.target.value))}
-                              step="500"
+                              step="1"
                               className="w-24 px-2 py-1 border border-emerald-300 bg-emerald-50 rounded text-right font-black text-emerald-900"
                             />
                           ) : (
