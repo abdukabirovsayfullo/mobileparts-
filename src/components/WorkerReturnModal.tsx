@@ -35,6 +35,8 @@ interface ReturnResult {
 
 interface Props {
   isOpen: boolean;
+  isOwner?: boolean;
+  initialQuery?: string;
   onClose: () => void;
   cashierName: string;
   onDone: (receipt: SaleReceiptData | null) => void;
@@ -57,7 +59,7 @@ const METHODS: Array<{ value: PaymentMethod; label: string }> = [
 
 const dateLabel = (iso: string) => new Date(iso).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierName, onDone }) => {
+export const WorkerReturnModal: React.FC<Props> = ({ isOpen, isOwner, initialQuery = '', onClose, cashierName, onDone }) => {
   const [query, setQuery] = useState('');
   const [sales, setSales] = useState<ReturnableSale[]>([]);
   const [selected, setSelected] = useState<ReturnableSale | null>(null);
@@ -73,9 +75,9 @@ export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierNam
   const [success, setSuccess] = useState<ReturnResult | null>(null);
 
   const reset = useCallback(() => {
-    setQuery(''); setSelected(null); setQuantities({}); setReason(REASONS[0]); setCustomReason('');
+    setQuery(initialQuery); setSales([]); setSelected(null); setQuantities({}); setReason(REASONS[0]); setCustomReason('');
     setMethod('naqd'); setRestoreStock(true); setNeedsOwner(false); setOwnerPin(''); setError(''); setSuccess(null);
-  }, []);
+  }, [initialQuery]);
 
   useEffect(() => { if (isOpen) reset(); }, [isOpen, reset]);
 
@@ -130,6 +132,7 @@ export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierNam
       setSuccess(result);
       const receipt: SaleReceiptData = {
         receiptNumber: result.receiptNumber,
+        currency: result.currency,
         date: new Date().toISOString(),
         customerName: result.customerName,
         paymentMethod: method,
@@ -156,7 +159,7 @@ export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierNam
       <div className="w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-400 text-stone-950"><RotateCcw className="h-5 w-5" /></span>
-          <div className="flex-1"><h2 className="text-base font-black">Tovar qaytarish (vazvrat)</h2><p className="text-[11px] text-stone-500">Oxirgi 7 kundagi sotuvni o‘zingiz qaytara olasiz</p></div>
+          <div className="flex-1"><h2 className="text-base font-black">Tovar qaytarish (vazvrat)</h2><p className="text-[11px] text-stone-500">{isOwner ? 'Asl sotuvni topib, qaytariladigan tovarni tanlang' : 'Oxirgi 7 kundagi sotuvni o‘zingiz qaytara olasiz'}</p></div>
           <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-lg p-2 hover:bg-stone-100"><X className="h-5 w-5" /></button>
         </div>
 
@@ -175,10 +178,10 @@ export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierNam
               <Search className="h-4 w-4 text-stone-400" />
               <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Chek raqami, mijoz yoki tovar nomi" className="w-full bg-transparent text-sm outline-none" />
             </label>
-            {sales.length === 0 && <p className="py-8 text-center text-sm text-stone-500">Oxirgi 7 kunda mos sotuv topilmadi.</p>}
+            {sales.length === 0 && <p className="py-8 text-center text-sm text-stone-500">{isOwner ? 'Mos sotuv topilmadi.' : 'Oxirgi 7 kunda mos sotuv topilmadi.'}</p>}
             <div className="space-y-2">
               {sales.map(sale => (
-                <button key={sale.key} type="button" onClick={() => { setSelected(sale); setQuantities({}); setNeedsOwner(false); setError(''); }}
+                <button key={sale.key} type="button" onClick={() => { setSelected(sale); setMethod(METHODS.find(item => item.value === sale.paymentMethod)?.value ?? 'naqd'); setQuantities({}); setNeedsOwner(false); setError(''); }}
                   className="w-full rounded-2xl border border-stone-200 p-3 text-left hover:border-amber-400 hover:bg-amber-50">
                   <div className="flex items-center justify-between gap-2 text-xs text-stone-500"><span className="font-bold text-stone-800">{sale.receiptNumber || 'Chek raqamsiz'}</span><span>{dateLabel(sale.timestamp)}</span></div>
                   <div className="mt-1 text-sm font-bold">{sale.customerName}</div>
