@@ -24,7 +24,6 @@ import { SupplierDebtsView } from './components/SupplierDebtsView';
 import { HisobchiPanelView } from './components/HisobchiPanelView';
 import { PrintReceiptModal } from './components/PrintReceiptModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
-import { VazvratModal } from './components/VazvratModal';
 import { WorkerReturnModal } from './components/WorkerReturnModal';
 import { WorkerDebtPanel } from './components/WorkerDebtPanel';
 import { ExcelImportModal } from './components/ExcelImportModal';
@@ -119,7 +118,6 @@ export default function App() {
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   // Vazvrat modal state
-  const [isVazvratModalOpen, setIsVazvratModalOpen] = useState(false);
   const [isWorkerReturnOpen, setIsWorkerReturnOpen] = useState(false);
   const [vazvratInitialMovement, setVazvratInitialMovement] = useState<StockMovement | undefined>(undefined);
 
@@ -1020,153 +1018,8 @@ export default function App() {
 
   // Open Vazvrat Modal (Optionally pre-filled with an existing movement / sale)
   const handleOpenVazvratModal = (movement?: StockMovement) => {
-    if (authUser?.role === 'worker') {
-      setIsWorkerReturnOpen(true);
-      return;
-    }
     setVazvratInitialMovement(movement);
-    setIsVazvratModalOpen(true);
-  };
-
-  // Confirm Vazvrat (Returned Goods)
-  const handleConfirmVazvrat = (data: {
-    productId: string;
-    productName: string;
-    category: string;
-    quantity: number;
-    unitPrice: number;
-    unitCost: number;
-    totalRefund: number;
-    paymentMethod: PaymentMethod;
-    customerName: string;
-    customerPhone: string;
-    returnReason: string;
-    notes: string;
-    restoreStock: boolean;
-    printReceipt: boolean;
-    originalMovementId?: string;
-    originalReceiptNumber?: string;
-  }) => {
-    const nowISO = new Date().toISOString();
-    const batchId = `vazvrat-batch-${Date.now()}`;
-    const receiptNum = `VZV-${Date.now().toString().slice(-6)}`;
-
-    // 1. If restoreStock is true, increase product stock in products state
-    if (data.restoreStock) {
-      setProducts((prevProducts) => {
-        return prevProducts.map((p) => {
-          if (p.id === data.productId) {
-            return {
-              ...p,
-              stock: p.stock + data.quantity
-            };
-          }
-          return p;
-        });
-      });
-    }
-
-    // 2. Create StockMovement entry with type: 'vazvrat'
-    const returnCurrency = currencyOf(products.find((p) => p.id === data.productId) ?? { category: data.category });
-    const totalCost = roundMoney(data.unitCost * data.quantity, returnCurrency);
-    const profit = roundMoney(data.totalRefund - totalCost, returnCurrency);
-
-    const newMovement: StockMovement = {
-      id: `vazvrat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      productId: data.productId,
-      productName: data.productName,
-      category: data.category,
-      type: 'vazvrat',
-      ...(returnCurrency === 'USD' ? { currency: 'USD' as const } : {}),
-      quantity: data.quantity,
-      unitCost: data.unitCost,
-      unitPrice: data.unitPrice,
-      totalCost: totalCost,
-      totalRevenue: data.totalRefund,
-      profit: profit,
-      counterparty: data.customerName.trim() || 'Mijoz (Vazvrat)',
-      customerPhone: data.customerPhone.trim() || undefined,
-      customerAddress: 'Do\'kondan qaytarildi (Paxtaobod)',
-      paymentMethod: data.paymentMethod,
-      timestamp: nowISO,
-      notes: data.notes ? `${data.notes} (Sabab: ${data.returnReason})` : `Vazvrat sababi: ${data.returnReason}`,
-      receiptNumber: receiptNum,
-      batchSaleId: batchId,
-      isReturn: true,
-      returnReason: data.returnReason,
-      originalMovementId: data.originalMovementId
-    };
-
-    setMovements((prev) => [newMovement, ...prev]);
-
-    // 3. If refundMethod is 'nasiya', adjust customer debt
-    if (data.paymentMethod === 'nasiya') {
-      const totalRefundSum = data.totalRefund;
-      setDebts((prevDebts) => {
-        let remainingRefundToDeduct = totalRefundSum;
-        return prevDebts.map((debt) => {
-          if (remainingRefundToDeduct <= 0) return debt;
-          const isSameCustomer = 
-            (debt.customerName.toLowerCase().trim() === data.customerName.toLowerCase().trim()) ||
-            (data.customerPhone && debt.customerPhone === data.customerPhone);
-          
-          // Faqat shu valyutadagi nasiya kamayadi (dollarli qaytarish so'mli qarzga tegmaydi).
-          if (isSameCustomer && currencyOf(debt) === returnCurrency && debt.status !== 'yopildi' && debt.remainingAmount > 0) {
-            const deduction = Math.min(debt.remainingAmount, remainingRefundToDeduct);
-            remainingRefundToDeduct = roundMoney(remainingRefundToDeduct - deduction, returnCurrency);
-            const newRemaining = roundMoney(debt.remainingAmount - deduction, returnCurrency);
-            const newPaid = roundMoney(debt.paidAmount + deduction, returnCurrency);
-            return {
-              ...debt,
-              paidAmount: newPaid,
-              remainingAmount: newRemaining,
-              status: newRemaining <= 0 ? 'yopildi' : 'qisman_tolandi',
-              notes: `${debt.notes ? debt.notes + ' | ' : ''}Vazvrat hisobiga ${formatMoney(deduction, returnCurrency)} kamaytirildi`,
-              paymentHistory: [
-                ...debt.paymentHistory,
-                {
-                  date: nowISO,
-                  amount: deduction,
-                  method: 'naqd'
-                }
-              ]
-            };
-          }
-          return debt;
-        });
-      });
-    }
-
-    // 4. Open Return Receipt if requested
-    if (data.printReceipt) {
-      const returnReceipt: SaleReceiptData = {
-        receiptNumber: receiptNum,
-        currency: returnCurrency,
-        date: nowISO,
-        customerName: data.customerName.trim() || 'Mijoz',
-        customerPhone: data.customerPhone.trim() || undefined,
-        customerAddress: 'Paxtaobod Beeline',
-        paymentMethod: data.paymentMethod,
-        items: [
-          {
-            id: data.productId,
-            name: data.productName,
-            category: data.category,
-            quantity: data.quantity,
-            unitPrice: data.unitPrice,
-            total: data.totalRefund
-          }
-        ],
-        subtotal: data.totalRefund,
-        total: data.totalRefund,
-        notes: `Vazvrat: ${data.returnReason}${data.notes ? ` | ${data.notes}` : ''}`,
-        cashierName: 'Sayfullo (Hisobchi)',
-        isReturn: true,
-        returnReason: data.returnReason
-      };
-
-      setActiveReceiptToPrint(returnReceipt);
-    }
+    setIsWorkerReturnOpen(true);
   };
 
   // Add new product directly
@@ -1881,7 +1734,9 @@ export default function App() {
 
       {/* Ishchi uchun serverga yoziladigan tovar qaytarish */}
       <WorkerReturnModal
-        isOpen={isWorkerReturnOpen && authUser?.role === 'worker'}
+        isOpen={isWorkerReturnOpen && (authUser?.role === 'worker' || authUser?.role === 'owner')}
+        isOwner={authUser?.role === 'owner'}
+        initialQuery={vazvratInitialMovement?.receiptNumber || vazvratInitialMovement?.productName || ''}
         onClose={() => setIsWorkerReturnOpen(false)}
         cashierName={authUser?.name || 'Kassir'}
         onDone={(receipt) => {
@@ -1890,18 +1745,6 @@ export default function App() {
         }}
       />
 
-      {/* Vazvrat Modal (Mijozdan tovar qaytarish) */}
-      <VazvratModal
-        isOpen={isVazvratModalOpen}
-        onClose={() => {
-          setIsVazvratModalOpen(false);
-          setVazvratInitialMovement(undefined);
-        }}
-        products={products}
-        debts={debts}
-        prefillMovement={vazvratInitialMovement}
-        onConfirmVazvrat={handleConfirmVazvrat}
-      />
 
       {/* Excel / CSV Bulk Import Modal (1 kunda barcha tovarlarni kiritish) */}
       <ExcelImportModal
