@@ -36,7 +36,7 @@ export function formatSom(value: number, currency: Currency = 'UZS'): string {
   return `${group(Math.round(value || 0).toString())} so'm`;
 }
 
-const escapeHtml = (value: unknown) =>
+export const escapeHtml = (value: unknown) =>
   String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
 
 /** Bitta mijozning nasiya hisoboti uchun 80 mm termal chek. */

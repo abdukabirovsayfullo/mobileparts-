@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { DebtRecord, StockMovement } from '../types';
-import { customerDebtHistory, planCustomerPayment, editDebt, cancelDebt } from '../utils/saleAccounting';
+import { customerDebtHistory, editDebt, cancelDebt } from '../utils/saleAccounting';
 import { currencyOf } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { X, Phone, Package, Wallet, RotateCcw, Copy, CheckCircle2, Pencil, Ban, History } from 'lucide-react';
@@ -11,8 +11,8 @@ interface Props {
   debts: DebtRecord[];
   movements: StockMovement[];
   onClose: () => void;
-  /** Mijozning umumiy to'lovi (eng eski nasiyadan boshlab). */
-  onPay?: (customer: { name: string; phone?: string; currency: 'UZS' | 'USD' }, amount: number, method: 'naqd' | 'click_payme') => Promise<boolean>;
+  /** "Mijoz to'lovi" panelini shu mijoz bilan ochadi (chek bilan). */
+  onRequestPayment?: (customer: { name: string; phone?: string; currency: 'UZS' | 'USD' }) => void;
   /** Faqat rahbar uchun beriladi. */
   onUpdateDebt?: (debt: DebtRecord) => void;
   currentUserName?: string;
@@ -34,14 +34,9 @@ const statusBadge = (d: DebtRecord) => {
 };
 
 /** Mijozning nasiyaga nima olgani, qachon qancha to'lagani — bitta joyda. */
-export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, movements, onClose, onPay, onUpdateDebt, currentUserName }) => {
+export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, movements, onClose, onRequestPayment, onUpdateDebt, currentUserName }) => {
   const [showClosed, setShowClosed] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [payCurrency, setPayCurrency] = useState<'UZS' | 'USD'>('UZS');
-  const [payAmount, setPayAmount] = useState('');
-  const [payMethod, setPayMethod] = useState<'naqd' | 'click_payme'>('naqd');
-  const [paying, setPaying] = useState(false);
-  const [payDone, setPayDone] = useState('');
   const [editing, setEditing] = useState<DebtRecord | null>(null);
   const [editForm, setEditForm] = useState({ customerName: '', customerPhone: '', dueDate: '', notes: '', totalDebt: '' });
   const [cancelReason, setCancelReason] = useState('');
@@ -51,28 +46,6 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
   const closedCount = history.debts.length - history.debts.filter((r) => r.debt.status !== 'yopildi').length;
   const currencies = (['UZS', 'USD'] as const).filter((c) => history.totals[c].taken > 0);
   const payable = (['UZS', 'USD'] as const).filter((c) => history.totals[c].remaining > 0);
-  const activePayCurrency = payable.includes(payCurrency) ? payCurrency : payable[0];
-  const plan = useMemo(
-    () => (activePayCurrency ? planCustomerPayment(debts, history.name, history.phone, activePayCurrency, Number(payAmount) || 0) : null),
-    [debts, history.name, history.phone, activePayCurrency, payAmount]
-  );
-
-  const submitPayment = async () => {
-    if (!onPay || !activePayCurrency || !plan || plan.applied <= 0) return;
-    if (plan.leftover > 0) {
-      alert(`To'lov qarzdan ko'p. Jami qoldiq: ${formatMoney(plan.totalRemaining, activePayCurrency)}`);
-      return;
-    }
-    setPaying(true);
-    const ok = await onPay({ name: history.name, phone: history.phone, currency: activePayCurrency }, plan.applied, payMethod);
-    setPaying(false);
-    if (ok) {
-      setPayDone(`${formatMoney(plan.applied, activePayCurrency)} qabul qilindi`);
-      setPayAmount('');
-      setTimeout(() => setPayDone(''), 3000);
-    }
-  };
-
   const isManual = (d: DebtRecord) => !movements.some((m) => m.id === d.movementId);
 
   const openEdit = (d: DebtRecord) => {
@@ -177,48 +150,14 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
               </div>
             </div>
           ))}
-          {onPay && activePayCurrency && (
-            <div className="bg-white rounded-xl border border-emerald-200 p-2.5 space-y-2">
-              <div className="text-[11px] font-black text-emerald-800">To'lov qabul qilish (eng eski nasiyadan boshlab yopiladi)</div>
-              <div className="flex flex-wrap items-center gap-2">
-                {payable.length > 1 && (
-                  <select value={activePayCurrency} onChange={(e) => setPayCurrency(e.target.value as 'UZS' | 'USD')} className="px-2 py-1.5 border border-stone-300 rounded-lg text-xs font-bold">
-                    <option value="UZS">So'm</option>
-                    <option value="USD">Dollar</option>
-                  </select>
-                )}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-                  placeholder={`Summa (qarz: ${formatMoney(history.totals[activePayCurrency].remaining, activePayCurrency)})`}
-                  className="flex-1 min-w-[150px] px-2.5 py-1.5 border border-stone-300 rounded-lg text-sm font-black text-right focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                />
-                <button type="button" onClick={() => setPayAmount(String(history.totals[activePayCurrency].remaining))} className="px-2 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-[11px] font-bold cursor-pointer">Hammasi</button>
-                <select value={payMethod} onChange={(e) => setPayMethod(e.target.value as 'naqd' | 'click_payme')} className="px-2 py-1.5 border border-stone-300 rounded-lg text-xs font-bold">
-                  <option value="naqd">Naqd</option>
-                  <option value="click_payme">Click / Payme</option>
-                </select>
-                <button
-                  type="button"
-                  disabled={paying || !plan || plan.applied <= 0 || plan.leftover > 0}
-                  onClick={submitPayment}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-black cursor-pointer"
-                >
-                  {paying ? 'Saqlanmoqda…' : "Qabul qilish"}
+          {onRequestPayment && payable.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {payable.map((c) => (
+                <button key={c} type="button" onClick={() => onRequestPayment({ name: history.name, phone: history.phone, currency: c })}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black inline-flex items-center justify-center gap-2 cursor-pointer">
+                  <Wallet className="w-4 h-4" /> To'lov qabul qilish{payable.length > 1 ? (c === 'USD' ? ' ($)' : " (so'm)") : ''}
                 </button>
-              </div>
-              {plan && plan.applied > 0 && (
-                <div className="text-[11px] text-stone-600">
-                  {plan.leftover > 0 ? (
-                    <span className="text-red-600 font-bold">Summa qarzdan {formatMoney(plan.leftover, activePayCurrency)} ko'p.</span>
-                  ) : (
-                    <>Taqsimlanadi: {plan.allocations.map((a) => `${formatDate(a.createdAt)} — ${formatMoney(a.amount, activePayCurrency)}`).join(', ')}. Qoladi: <b>{formatMoney(plan.totalRemaining - plan.applied, activePayCurrency)}</b></>
-                  )}
-                </div>
-              )}
-              {payDone && <div className="text-[11px] font-bold text-emerald-700">✓ {payDone}</div>}
+              ))}
             </div>
           )}
           <div className="flex items-center justify-between gap-2 pt-1">

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { CustomerProfile, DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
 import { DebtPeriodReport } from './DebtPeriodReport';
 import { CustomerDebtHistoryModal } from './CustomerDebtHistoryModal';
+import { CustomerPaymentPanel } from './CustomerPaymentPanel';
 import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
 import { DebtStatementParams, toLocalDay } from '../utils/debtStatementReceipt';
 import { STORE_INFO } from '../data/initialData';
@@ -72,6 +73,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<{ name: string; phone: string } | null>(null);
+  const [paymentPanel, setPaymentPanel] = useState<{ initial: { name: string; phone?: string; currency?: 'UZS' | 'USD' } | null } | null>(null);
 
   // Yangi nasiya oynasi uchun doimiy mijozlar: mijozlar bazasi + avvalgi nasiyalar.
   // Bir xil ism bitta bo'lib birlashtiriladi, eng oxirgi faollik bo'yicha tartiblanadi.
@@ -164,6 +166,12 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   }, [debts, statusFilter, searchQuery, sortBy]);
 
   const handleOpenPayment = (debt: DebtRecord) => {
+    // Nomli mijozning to'lovi umumiy qarzdan ayriladi (Mijoz to'lovi paneli, chek bilan).
+    const anonymous = !debt.customerName.trim() || debt.customerName.trim().toLowerCase() === "do'kon mijozi";
+    if (onAddCustomerPayment && !anonymous) {
+      setPaymentPanel({ initial: { name: debt.customerName, phone: debt.customerPhone, currency: currencyOf(debt) } });
+      return;
+    }
     setPaymentModalDebt(debt);
     setPayAmount(debt.remainingAmount);
     setPayMethod('naqd');
@@ -404,6 +412,16 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
             <Download className="w-3.5 h-3.5 text-stone-600" />
             <span>Excel</span>
           </button>
+
+          {onAddCustomerPayment && (
+            <button
+              onClick={() => setPaymentPanel({ initial: null })}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            >
+              <DollarSign className="w-4 h-4" />
+              <span>Mijoz to'lovi</span>
+            </button>
+          )}
 
           <button
             onClick={() => setIsAddModalOpen(true)}
@@ -776,9 +794,21 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           debts={debts}
           movements={movements}
           onClose={() => setHistoryCustomer(null)}
-          onPay={onAddCustomerPayment}
+          onRequestPayment={onAddCustomerPayment ? (c) => { setHistoryCustomer(null); setPaymentPanel({ initial: c }); } : undefined}
           onUpdateDebt={onUpdateDebt}
           currentUserName={currentUserName}
+        />
+      )}
+
+      {paymentPanel && onAddCustomerPayment && (
+        <CustomerPaymentPanel
+          debts={debts}
+          movements={movements}
+          store={storeInfo ?? STORE_INFO}
+          cashierName={currentUserName}
+          initialCustomer={paymentPanel.initial}
+          onPay={onAddCustomerPayment}
+          onClose={() => setPaymentPanel(null)}
         />
       )}
 
