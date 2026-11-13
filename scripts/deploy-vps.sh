@@ -75,6 +75,13 @@ if [[ "$OK" != 1 ]]; then
 fi
 
 pm2 save >/dev/null 2>&1 || true
+
+# Joy tejash: shu skript yaratgan eski nusxalardan faqat oxirgilarini qoldiramiz.
+KEEP_DIST="${KEEP_DIST:-5}"
+KEEP_DATA="${KEEP_DATA:-20}"
+ls -1dt "$APP_DIR"/dist.rollback-before-* 2>/dev/null | tail -n +"$((KEEP_DIST + 1))" | xargs -r rm -rf
+ls -1t "$APP_DIR"/backups/deploy/data-*.tar.gz 2>/dev/null | tail -n +"$((KEEP_DATA + 1))" | xargs -r rm -f
+npm cache clean --force >/dev/null 2>&1 || true
 echo -e "\n✅ Tayyor: $SHA ishga tushdi. Brauzerda Ctrl+Shift+R bosing."
 echo "Orqaga qaytarish kerak bo'lsa:"
 echo "  cd $APP_DIR && rm -rf dist && cp -a $(basename "$ROLLBACK") dist && pm2 restart $PM2_NAME"
