@@ -89,6 +89,7 @@ const removeDemoSupplierDebts = (items: SupplierDebtRecord[]) => items.filter(it
 class DataStore {
   private state: PosDatabaseState;
   private isSaving = false;
+  private saveAgain = false;
 
   constructor() {
     this.state = this.loadDatabase();
@@ -161,23 +162,47 @@ class DataStore {
       }
       const safeState = { ...state, storeInfo: withoutLegacyPin(state.storeInfo) };
       const tempFile = `${DB_FILE}.tmp`;
-      fs.writeFileSync(tempFile, JSON.stringify(safeState, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      fs.writeFileSync(tempFile, JSON.stringify(safeState), { encoding: 'utf-8', mode: 0o600 });
       fs.renameSync(tempFile, DB_FILE);
     } catch (err) {
       console.error('[DataStore] Failed to write database file:', err);
     }
   }
 
+  /**
+   * Bazani diskka asinxron yozadi, shunda yozish paytida server boshqa so'rovlarga javob berishda davom etadi.
+   * Yozish davomida yangi o'zgarish bo'lsa, tugagach yana bir marta yoziladi. Fayl vaqtinchalik nom orqali atomik almashtiriladi.
+   */
   private scheduleSave() {
-    if (this.isSaving) return;
+    if (this.isSaving) {
+      this.saveAgain = true;
+      return;
+    }
     this.isSaving = true;
-    setTimeout(() => {
-      try {
-        this.saveDatabaseSync(this.state);
-      } finally {
-        this.isSaving = false;
+    setTimeout(() => void this.writeDatabaseAsync(), 200);
+  }
+
+  private async writeDatabaseAsync() {
+    try {
+      await fs.promises.mkdir(DATA_DIR, { recursive: true });
+      const safeState = { ...this.state, storeInfo: withoutLegacyPin(this.state.storeInfo) };
+      const tempFile = `${DB_FILE}.tmp`;
+      await fs.promises.writeFile(tempFile, JSON.stringify(safeState), { encoding: 'utf-8', mode: 0o600 });
+      await fs.promises.rename(tempFile, DB_FILE);
+    } catch (err) {
+      console.error('[DataStore] Failed to write database file:', err);
+    } finally {
+      this.isSaving = false;
+      if (this.saveAgain) {
+        this.saveAgain = false;
+        this.scheduleSave();
       }
-    }, 200);
+    }
+  }
+
+  /** Server to'xtashidan oldin kutilayotgan o'zgarishlarni sinxron yozib qo'yadi. */
+  public flushSync() {
+    if (this.isSaving || this.saveAgain) this.saveDatabaseSync(this.state);
   }
 
   public getState(): PosDatabaseState {

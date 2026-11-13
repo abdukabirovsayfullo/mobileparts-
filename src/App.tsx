@@ -1,3 +1,4 @@
+import { useDebouncedStorage } from './hooks/useDebouncedStorage';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings, AuthUser, Currency } from './types';
 import { currencyOf, roundMoney, sumByCurrency } from './utils/money';
@@ -291,40 +292,15 @@ export default function App() {
     return [];
   });
 
-  // Sync with LocalStorage
-  useEffect(() => {
-    if (authUser?.role === 'worker') return;
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-  }, [products, authUser?.role]);
-
-  useEffect(() => {
-    if (authUser?.role === 'worker') return;
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
-  }, [categories, authUser?.role]);
-
-  useEffect(() => {
-    if (authUser?.role === 'worker') return;
-    localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
-  }, [movements, authUser?.role]);
-
-  useEffect(() => {
-    if (authUser?.role === 'worker') return;
-    localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(debts));
-  }, [debts, authUser?.role]);
-
-  useEffect(() => {
-    if (authUser?.role === 'worker') return;
-    localStorage.setItem(STORAGE_KEYS.SUPPLIER_DEBTS, JSON.stringify(supplierDebts));
-  }, [supplierDebts, authUser?.role]);
-
-  useEffect(() => {
-    if (authUser?.role === 'worker') return;
-    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-  }, [customers, authUser?.role]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.STORE_INFO, JSON.stringify(storeInfo));
-  }, [storeInfo]);
+  // Sync with LocalStorage (kechiktirib yoziladi: har o'zgarishda emas, to'xtagach bir marta)
+  const persistLocally = authUser?.role !== 'worker';
+  useDebouncedStorage(STORAGE_KEYS.PRODUCTS, products, persistLocally);
+  useDebouncedStorage(STORAGE_KEYS.CATEGORIES, categories, persistLocally);
+  useDebouncedStorage(STORAGE_KEYS.MOVEMENTS, movements, persistLocally);
+  useDebouncedStorage(STORAGE_KEYS.DEBTS, debts, persistLocally);
+  useDebouncedStorage(STORAGE_KEYS.SUPPLIER_DEBTS, supplierDebts, persistLocally);
+  useDebouncedStorage(STORAGE_KEYS.CUSTOMERS, customers, persistLocally);
+  useDebouncedStorage(STORAGE_KEYS.STORE_INFO, storeInfo);
 
   // Ishchi kirganda shu qurilmada oldin saqlangan (rahbarga tegishli) ma'lumotlar o'chiriladi va ekranda qoldirilmaydi.
   useEffect(() => {

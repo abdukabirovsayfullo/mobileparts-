@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import "dotenv/config";
 import { apiV1Router } from "./server/apiV1";
+import { dataStore } from "./server/dataStore";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -355,6 +356,13 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Secure server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    dataStore.flushSync();
+    process.exit(0);
   });
 }
 
