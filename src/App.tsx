@@ -1765,6 +1765,7 @@ export default function App() {
             storeInfo={storeInfo}
             onAddDebtPayment={handleAddDebtPayment}
             onAddNewDebt={handleAddNewDebtManual}
+            customers={customers}
           />
         )}
 

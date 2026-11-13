@@ -20,16 +20,30 @@ BUILD_DIR="$(mktemp -d /tmp/mp-build.XXXXXX)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
 log "1/6 GitHub'dan yuklanmoqda ($BRANCH)"
-git clone -q --depth 1 --branch "$BRANCH" "$REPO" "$BUILD_DIR/src"
+git clone -q --depth 200 --branch "$BRANCH" "$REPO" "$BUILD_DIR/src"
 cd "$BUILD_DIR/src"
 SHA="$(git rev-parse --short HEAD)"
 echo "Versiya: $SHA — $(git log -1 --pretty=%s)"
 
-# Himoya: serverdagi versiyada repoda yo'q funksiyalar bo'lsa, eski kod ustiga yozilmasin.
-if [[ -f "$APP_DIR/data/customer-telegram.json" ]] && ! grep -rqs "customer-telegram" server server.ts src; then
-  echo "TO'XTATILDI: serverda GitHub'dagidan yangiroq versiya ishlayapti (customer-telegram)."
-  echo "Avval yangi versiya kodini GitHub'ga yuklash kerak. Hech narsa o'zgartirilmadi."
-  exit 1
+# Himoya: serverdagi versiya shu skript orqali joylanmagan bo'lsa (masalan Codex yoki qo'lda),
+# yoki joylangan versiya bu kodning ichida bo'lmasa, ustidan yozilmaydi.
+MARKER="$APP_DIR/.deployed-sha"
+if [[ "${FORCE:-0}" != 1 ]]; then
+  if [[ ! -f "$MARKER" ]]; then
+    echo "TO'XTATILDI: serverdagi versiya qayerdan kelgani noma'lum (.deployed-sha yo'q)."
+    echo "Agar GitHub'dagi kod serverdagidan yangi ekaniga ishonchingiz komil bo'lsa: FORCE=1 bilan ishga tushiring."
+    exit 1
+  fi
+  if [[ "$APP_DIR/dist/index.html" -nt "$MARKER" ]]; then
+    echo "TO'XTATILDI: server oxirgi deploydan keyin boshqa yo'l bilan yangilangan (dist o'zgargan)."
+    echo "Avval o'sha o'zgarishlarni GitHub'ga yuklang. Hech narsa o'zgartirilmadi."
+    exit 1
+  fi
+  PREV="$(cat "$MARKER")"
+  if ! git merge-base --is-ancestor "$PREV" HEAD 2>/dev/null; then
+    echo "TO'XTATILDI: serverdagi versiya ($PREV) GitHub'dagi '$BRANCH' tarixida yo'q."
+    exit 1
+  fi
 fi
 
 log "2/6 Build qilinmoqda (bir necha daqiqa)"
@@ -82,6 +96,7 @@ if [[ "$OK" != 1 ]]; then
 fi
 
 pm2 save >/dev/null 2>&1 || true
+git rev-parse HEAD > "$MARKER"
 
 # Joy tejash: shu skript yaratgan eski nusxalardan faqat oxirgilarini qoldiramiz.
 KEEP_DIST="${KEEP_DIST:-5}"

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, CustomerProfile, Currency } from '../types';
 import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
@@ -74,6 +74,56 @@ interface ChiqimCartItem {
   unitPrice: number;
   priceType?: 'chakana' | 'optom' | 'maxsus';
 }
+
+// Savatdagi miqdorni qo'lda yozib kiritish maydoni.
+// Yozish paytida qiymat erkin o'zgaradi, Enter yoki maydondan chiqqanda tasdiqlanadi.
+const CartQuantityInput: React.FC<{
+  quantity: number;
+  max: number;
+  onCommit: (qty: number) => void;
+}> = ({ quantity, max, onCommit }) => {
+  const [draft, setDraft] = useState(String(quantity));
+
+  useEffect(() => {
+    setDraft(String(quantity));
+  }, [quantity]);
+
+  const commit = () => {
+    const parsed = parseInt(draft, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setDraft(String(quantity));
+      return;
+    }
+    if (parsed > max) {
+      alert(`Omborda faqat ${max} dona bor!`);
+      setDraft(String(quantity));
+      return;
+    }
+    if (parsed !== quantity) onCommit(parsed);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+      onFocus={(e) => e.target.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') {
+          setDraft(String(quantity));
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      className="w-12 px-1 py-1.5 bg-white border-x border-stone-200 text-center text-base font-black text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
+      title="Miqdorni yozib kiriting"
+      aria-label="Miqdor"
+    />
+  );
+};
 
 export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   products,
@@ -277,6 +327,17 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           return item;
         })
         .filter((item) => item.quantity > 0)
+    );
+  };
+
+  // Miqdorni to'g'ridan-to'g'ri o'rnatish (qo'lda yozilganda)
+  const handleSetQuantity = (productId: string, qty: number) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.product.id !== productId) return item;
+        const safeQty = Math.max(1, Math.min(Math.floor(qty), item.product.stock));
+        return { ...item, quantity: safeQty };
+      })
     );
   };
 
@@ -840,9 +901,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         >
                           -
                         </button>
-                        <span className="px-2 text-base font-black text-stone-900">
-                          {item.quantity}
-                        </span>
+                        <CartQuantityInput
+                          quantity={item.quantity}
+                          max={item.product.stock}
+                          onCommit={(qty) => handleSetQuantity(item.product.id, qty)}
+                        />
                         <button
                           type="button"
                           onClick={() => handleUpdateQuantity(item.product.id, 1)}
