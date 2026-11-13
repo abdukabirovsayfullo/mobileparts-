@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, CustomerProfile, Currency } from '../types';
 import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
@@ -75,6 +75,37 @@ interface ChiqimCartItem {
   unitPrice: number;
   priceType?: 'chakana' | 'optom' | 'maxsus';
 }
+
+/** Savatdagi miqdor maydoni: yozib o'zgartiriladi, Enter yoki maydondan chiqilganda qo'llanadi. */
+const CartQuantityInput: React.FC<{ value: number; onCommit: (qty: number) => void }> = ({ value, onCommit }) => {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = () => {
+    const qty = Math.floor(Number(text));
+    if (!text.trim() || !Number.isFinite(qty) || qty < 1) {
+      setText(String(value));
+      return;
+    }
+    if (qty !== value) onCommit(qty);
+    else setText(String(value));
+  };
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={text}
+      onChange={(e) => setText(e.target.value.replace(/\D/g, ''))}
+      onFocus={(e) => e.target.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      }}
+      className="w-12 px-1 py-1.5 text-center text-base font-black text-stone-900 bg-white border-x border-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-400"
+      title="Miqdorni yozib o'zgartiring"
+      aria-label="Miqdor"
+    />
+  );
+};
 
 export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   products,
@@ -285,6 +316,19 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         })
         .filter((item) => item.quantity > 0)
     );
+  };
+
+  // Miqdorni to'g'ridan-to'g'ri yozib o'zgartirish (ombordagi qoldiqdan oshmaydi, kamida 1)
+  const handleSetQuantity = (productId: string, requested: number) => {
+    const item = cart.find((i) => i.product.id === productId);
+    if (!item) return;
+    let qty = Math.floor(Number(requested));
+    if (!Number.isFinite(qty) || qty < 1) qty = 1;
+    if (qty > item.product.stock) {
+      alert(`Omborda faqat ${item.product.stock} dona bor!`);
+      qty = item.product.stock;
+    }
+    setCart((prev) => prev.map((i) => (i.product.id === productId ? { ...i, quantity: qty } : i)));
   };
 
   // Immediate in-place price edit for a product in cart
@@ -835,9 +879,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         >
                           -
                         </button>
-                        <span className="px-2 text-base font-black text-stone-900">
-                          {item.quantity}
-                        </span>
+                        <CartQuantityInput
+                          value={item.quantity}
+                          onCommit={(qty) => handleSetQuantity(item.product.id, qty)}
+                        />
                         <button
                           type="button"
                           onClick={() => handleUpdateQuantity(item.product.id, 1)}
