@@ -808,6 +808,34 @@ apiV1Router.delete('/customers/:id', requireOwner, (req: Request, res: Response)
   res.json({ success: true });
 });
 
+apiV1Router.post('/debts/customer-pay', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (user?.role === 'worker' && dataStore.getClosedShift(user.id, tashkentDate())) {
+    return res.status(409).json({ success: false, error: 'Smena yopilgan. Davom etish uchun Rahbar qayta ochishi kerak.' });
+  }
+  try {
+    const { name, phone, currency, amount, method } = req.body || {};
+    const result = dataStore.recordCustomerPayment({ name, phone, currency, amount: Number(amount), method }, user ? { id: user.id, name: user.name } : undefined);
+    res.json({ success: true, message: "To'lov qabul qilindi", applied: result.applied, debtIds: result.debts.map(d => d.id) });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || "To'lov qabul qilinmadi" });
+  }
+});
+
+apiV1Router.post('/debts', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  if (user.role === 'worker' && dataStore.getClosedShift(user.id, tashkentDate())) {
+    return res.status(409).json({ success: false, error: 'Smena yopilgan. Davom etish uchun Rahbar qayta ochishi kerak.' });
+  }
+  try {
+    const debt = dataStore.addManualDebt(req.body || {}, { id: user.id, name: user.name });
+    res.status(201).json({ success: true, data: debt });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || 'Nasiya saqlanmadi' });
+  }
+});
+
 apiV1Router.post('/debts/:id/pay', (req: Request, res: Response) => {
   try {
     const { id } = req.params;

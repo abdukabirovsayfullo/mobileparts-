@@ -175,6 +175,9 @@ export interface DebtRecord {
     employeeId?: string;
     employeeName?: string;
   }[];
+  /** Rahbar tomonidan qilingan tahrir/bekor qilish izlari (o'chirilmaydi). */
+  auditLog?: { date: string; by?: string; action: 'tahrir' | 'bekor'; details: string }[];
+  cancelledAt?: string;
 }
 
 export interface SupplierPaymentEntry {

@@ -32,6 +32,9 @@ interface DebtsViewProps {
   storeInfo?: StoreSettings;
   onAddDebtPayment: (debtId: string, amount: number, method: 'naqd' | 'click_payme') => void;
   onAddNewDebt: (debt: DebtRecord) => void;
+  onAddCustomerPayment?: (customer: { name: string; phone?: string; currency: 'UZS' | 'USD' }, amount: number, method: 'naqd' | 'click_payme') => Promise<boolean>;
+  onUpdateDebt?: (debt: DebtRecord) => void;
+  currentUserName?: string;
   customers?: CustomerProfile[];
 }
 
@@ -41,6 +44,9 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   storeInfo,
   onAddDebtPayment,
   onAddNewDebt,
+  onAddCustomerPayment,
+  onUpdateDebt,
+  currentUserName,
   customers = []
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -236,6 +242,10 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
     e.preventDefault();
     if (!newDebtData.customerName.trim() || newDebtData.totalDebt <= 0) {
       alert('Mijoz ismi va nasiya summasini kiriting!');
+      return;
+    }
+    if (newDebtData.paidAmount < 0 || newDebtData.paidAmount > newDebtData.totalDebt) {
+      alert("Boshlang'ich to'lov nasiya summasidan katta bo'lishi mumkin emas!");
       return;
     }
 
@@ -766,6 +776,9 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           debts={debts}
           movements={movements}
           onClose={() => setHistoryCustomer(null)}
+          onPay={onAddCustomerPayment}
+          onUpdateDebt={onUpdateDebt}
+          currentUserName={currentUserName}
         />
       )}
 

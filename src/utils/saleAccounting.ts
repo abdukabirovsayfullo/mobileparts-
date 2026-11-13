@@ -231,6 +231,7 @@ export function customerDebtHistory(debts: DebtRecord[], movements: StockMovemen
     const history = d.paymentHistory || [];
     const returned = history.filter(p => p.method === 'vazvrat').reduce((s, p) => s + p.amount, 0);
     const c = currencyOf(d);
+    if (d.cancelledAt) return { debt: d, items, note: d.notes || undefined, payments: history.map(p => ({ date: p.date, amount: p.amount, method: p.method, employeeName: p.employeeName })) };
     totals[c].taken += d.totalDebt;
     totals[c].paid += Math.max(0, d.paidAmount - returned);
     totals[c].returned += returned;
@@ -249,4 +250,103 @@ export function customerDebtHistory(debts: DebtRecord[], movements: StockMovemen
   rows.sort((a, b) => b.debt.createdAt.localeCompare(a.debt.createdAt));
   const withPhone = own.find(d => d.customerPhone && d.customerPhone.replace(/\D/g, '').length >= 9);
   return { name: own[0]?.customerName.trim() || name.trim(), phone: withPhone?.customerPhone || phone || '', debts: rows, totals };
+}
+
+/** Bitta nasiyaga to'lov yozadi (o'zgartirmasdan yangi nusxa qaytaradi). Ortiqcha to'lov qoldiq bilan cheklanadi. */
+export function applyDebtPayment(
+  debt: DebtRecord, amount: number, method: 'naqd' | 'click_payme', nowIso: string, actor?: { id?: string; name?: string }
+): { debt: DebtRecord; accepted: number } {
+  const accepted = roundMoney(clampDebtPayment(debt, amount), currencyOf(debt));
+  if (accepted <= 0) return { debt, accepted: 0 };
+  const c = currencyOf(debt);
+  const paid = roundMoney(debt.paidAmount + accepted, c);
+  const remaining = Math.max(0, roundMoney(debt.totalDebt - paid, c));
+  return {
+    accepted,
+    debt: {
+      ...debt,
+      paidAmount: paid,
+      remainingAmount: remaining,
+      status: remaining <= 0 ? 'yopildi' : 'qisman_tolandi',
+      paymentHistory: [...(debt.paymentHistory || []), { date: nowIso, amount: accepted, method, employeeId: actor?.id, employeeName: actor?.name }]
+    }
+  };
+}
+
+export interface CustomerPaymentPlan {
+  allocations: { debtId: string; amount: number; createdAt: string; remainingBefore: number }[];
+  applied: number;
+  /** Mijozning shu valyutadagi qarzidan ortib qolgan summa (qabul qilinmaydi). */
+  leftover: number;
+  totalRemaining: number;
+}
+
+/** Mijoz bergan umumiy summani uning faol nasiyalariga eng eskisidan boshlab taqsimlaydi. */
+export function planCustomerPayment(debts: DebtRecord[], name: string, phone: string | undefined, currency: Currency, amount: number): CustomerPaymentPlan {
+  const anonymous = cleanName("Do'kon mijozi");
+  const identity = customerKey(name, phone);
+  const active = cleanName(name) === anonymous || !cleanName(name) ? [] : debts
+    .filter(d => d.status !== 'yopildi' && d.remainingAmount > 0 && currencyOf(d) === currency && customerKey(d.customerName, d.customerPhone) === identity)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const totalRemaining = roundMoney(active.reduce((s, d) => s + d.remainingAmount, 0), currency);
+  let left = Math.max(0, roundMoney(Number(amount) || 0, currency));
+  const allocations: CustomerPaymentPlan['allocations'] = [];
+  for (const d of active) {
+    if (left <= 0) break;
+    const part = roundMoney(Math.min(d.remainingAmount, left), currency);
+    if (part <= 0) continue;
+    allocations.push({ debtId: d.id, amount: part, createdAt: d.createdAt, remainingBefore: d.remainingAmount });
+    left = roundMoney(left - part, currency);
+  }
+  const applied = roundMoney(allocations.reduce((s, a) => s + a.amount, 0), currency);
+  return { allocations, applied, leftover: left, totalRemaining };
+}
+
+/** Rahbar tahriri: ism, telefon, muddat, izoh; summa faqat savdoga bog'lanmagan (qo'lda) nasiyada. */
+export function editDebt(
+  debt: DebtRecord,
+  changes: { customerName?: string; customerPhone?: string; dueDate?: string; notes?: string; totalDebt?: number },
+  by: string | undefined,
+  nowIso: string,
+  allowTotalChange: boolean
+): DebtRecord {
+  if (debt.cancelledAt) throw new Error('Bekor qilingan nasiyani tahrirlab bo\'lmaydi.');
+  const c = currencyOf(debt);
+  const next: DebtRecord = { ...debt };
+  const diff: string[] = [];
+  const set = <K extends 'customerName' | 'customerPhone' | 'dueDate' | 'notes'>(key: K, label: string) => {
+    const v = changes[key];
+    if (v === undefined) return;
+    const clean = String(v).trim();
+    if (key === 'customerName' && !clean) throw new Error('Mijoz ismi bo\'sh bo\'lmasin.');
+    if (clean !== String(debt[key] ?? '').trim()) { diff.push(`${label}: "${debt[key] ?? ''}" → "${clean}"`); (next as any)[key] = clean; }
+  };
+  set('customerName', 'Ism'); set('customerPhone', 'Telefon'); set('dueDate', 'Muddat'); set('notes', 'Izoh');
+  if (changes.totalDebt !== undefined && roundMoney(changes.totalDebt, c) !== debt.totalDebt) {
+    if (!allowTotalChange) throw new Error("Savdodan yozilgan nasiya summasini o'zgartirib bo'lmaydi — tovar qaytarish (vazvrat) orqali to'g'rilang.");
+    const total = roundMoney(changes.totalDebt, c);
+    if (!(total > 0)) throw new Error('Summa musbat bo\'lishi kerak.');
+    if (total < debt.paidAmount) throw new Error('Summa to\'langan miqdordan kam bo\'lishi mumkin emas.');
+    diff.push(`Summa: ${debt.totalDebt} → ${total}`);
+    next.totalDebt = total;
+    next.remainingAmount = roundMoney(total - debt.paidAmount, c);
+    next.status = next.remainingAmount <= 0 ? 'yopildi' : debt.paidAmount > 0 ? 'qisman_tolandi' : 'faol';
+  }
+  if (!diff.length) return debt;
+  next.auditLog = [...(debt.auditLog || []), { date: nowIso, by, action: 'tahrir', details: diff.join('; ') }];
+  return next;
+}
+
+/** Xato yozilgan (qo'lda) nasiyani bekor qilish: yozuv o'chirilmaydi, qoldiq 0 bo'ladi, sabab tarixda qoladi. */
+export function cancelDebt(debt: DebtRecord, reason: string, by: string | undefined, nowIso: string): DebtRecord {
+  const why = reason.trim();
+  if (why.length < 3) throw new Error('Bekor qilish sababini yozing.');
+  if (debt.cancelledAt) return debt;
+  return {
+    ...debt,
+    status: 'yopildi',
+    remainingAmount: 0,
+    cancelledAt: nowIso,
+    auditLog: [...(debt.auditLog || []), { date: nowIso, by, action: 'bekor', details: `Bekor qilindi (qoldiq ${debt.remainingAmount} edi). Sabab: ${why}` }]
+  };
 }

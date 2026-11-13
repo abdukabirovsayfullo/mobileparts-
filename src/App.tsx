@@ -45,7 +45,7 @@ import { ReportsDashboard } from './components/ReportsDashboard';
 import { TechnicianServiceView } from './components/TechnicianServiceView';
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment } from './utils/saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment, applyDebtPayment, planCustomerPayment } from './utils/saleAccounting';
 import { 
   RotateCcw, Smartphone, ShieldCheck, HelpCircle, Monitor, Lock, ShieldAlert,
   ShoppingBag, ArrowDownLeft, Package, BookOpen, SlidersHorizontal, X, Truck, BarChart3, Calculator, FileText, KeyRound, FileSpreadsheet, Camera, Code2, Sparkles, Users, LogOut
@@ -1341,41 +1341,86 @@ export default function App() {
   };
 
   // Debt payment handling
+  // Xodimning nasiya amallari to'g'ridan-to'g'ri serverga yoziladi (xodim to'liq sinxron qila olmaydi).
+  const postWorkerDebtAction = async (url: string, body: unknown, fallbackError: string): Promise<boolean> => {
+    try {
+      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) throw new Error(data.error || fallbackError);
+      await fetchLatestStateFromServer(undefined, true);
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : fallbackError);
+      return false;
+    }
+  };
+
   const handleAddDebtPayment = (
     debtId: string,
     amount: number,
     method: 'naqd' | 'click_payme'
   ) => {
-    setDebts((prev) =>
-      prev.map((d) => {
-        if (d.id === debtId) {
-          const accepted = clampDebtPayment(d, amount);
-          if (accepted <= 0) return d;
-          const newPaid = d.paidAmount + accepted;
-          const newRemaining = Math.max(0, d.totalDebt - newPaid);
-          const history = d.paymentHistory || [];
-          return {
-            ...d,
-            paidAmount: newPaid,
-            remainingAmount: newRemaining,
-            status: newRemaining === 0 ? 'yopildi' : 'qisman_tolandi',
-            paymentHistory: [
-              ...history,
-              {
-                date: new Date().toISOString(),
-                amount: accepted,
-                method
-              }
-            ]
-          };
-        }
-        return d;
-      })
-    );
+    if (authUser?.role === 'worker') {
+      void postWorkerDebtAction(`/api/v1/debts/${encodeURIComponent(debtId)}/pay`, { amount, method }, "To'lov serverga saqlanmadi.");
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const actor = authUser ? { id: authUser.id, name: authUser.name } : undefined;
+    setDebts((prev) => prev.map((d) => (d.id === debtId ? applyDebtPayment(d, amount, method, nowIso, actor).debt : d)));
+  };
+
+  /** Mijozning umumiy to'lovi: eng eski nasiyadan boshlab yopiladi. */
+  const handleAddCustomerPayment = async (
+    customer: { name: string; phone?: string; currency: 'UZS' | 'USD' },
+    amount: number,
+    method: 'naqd' | 'click_payme'
+  ): Promise<boolean> => {
+    if (authUser?.role === 'worker') {
+      return postWorkerDebtAction('/api/v1/debts/customer-pay', { ...customer, amount, method }, "To'lov serverga saqlanmadi.");
+    }
+    const plan = planCustomerPayment(debts, customer.name, customer.phone, customer.currency, amount);
+    if (plan.applied <= 0) return false;
+    const nowIso = new Date().toISOString();
+    const actor = authUser ? { id: authUser.id, name: authUser.name } : undefined;
+    const parts = new Map(plan.allocations.map((a) => [a.debtId, a.amount]));
+    setDebts((prev) => prev.map((d) => (parts.has(d.id) ? applyDebtPayment(d, parts.get(d.id)!, method, nowIso, actor).debt : d)));
+    return true;
   };
 
   const handleAddNewDebtManual = (newDebt: DebtRecord) => {
+    if (authUser?.role === 'worker') {
+      const first = newDebt.paymentHistory?.[0];
+      void postWorkerDebtAction('/api/v1/debts', {
+        customerName: newDebt.customerName,
+        customerPhone: newDebt.customerPhone,
+        totalDebt: newDebt.totalDebt,
+        paidAmount: newDebt.paidAmount,
+        dueDate: newDebt.dueDate,
+        notes: newDebt.notes,
+        currency: newDebt.currency,
+        initialMethod: first?.method === 'click_payme' ? 'click_payme' : 'naqd'
+      }, 'Nasiya serverga saqlanmadi.');
+      return;
+    }
     setDebts((prev) => [newDebt, ...prev]);
+    // Yangi mijoz keyingi safar "doimiy mijozlar" ro'yxatida chiqishi uchun bazaga eslab qolinadi.
+    if (newDebt.customerPhone.replace(/\D/g, '').length >= 9) {
+      void fetch('/api/v1/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newDebt.customerName, phone: newDebt.customerPhone })
+      }).then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data?.data?.id) {
+          setCustomers((prev) => (prev.some((c) => c.id === data.data.id) ? prev.map((c) => (c.id === data.data.id ? data.data : c)) : [data.data, ...prev]));
+        }
+      }).catch(() => undefined);
+    }
+  };
+
+  /** Rahbar: nasiyani tahrirlash yoki bekor qilish (to'liq sinxron orqali saqlanadi). */
+  const handleUpdateDebt = (updated: DebtRecord) => {
+    setDebts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
   };
 
   // Supplier Debts Handlers
@@ -1765,6 +1810,9 @@ export default function App() {
             storeInfo={storeInfo}
             onAddDebtPayment={handleAddDebtPayment}
             onAddNewDebt={handleAddNewDebtManual}
+            onAddCustomerPayment={handleAddCustomerPayment}
+            onUpdateDebt={isAdminUnlocked ? handleUpdateDebt : undefined}
+            currentUserName={authUser?.name}
             customers={customers}
           />
         )}

@@ -18,7 +18,7 @@ import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, Currency, C
 import { currencyOf, roundMoney } from '../src/utils/money';
 import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity, sameCustomer } from './returnLogic';
 import { tashkentDate } from './expenseLogic';
-import { customerDebtTotal, saleAccounting } from '../src/utils/saleAccounting';
+import { customerDebtTotal, planCustomerPayment, saleAccounting } from '../src/utils/saleAccounting';
 
 export class OwnerApprovalRequiredError extends Error {
   constructor(message = "7 kundan eski sotuvni qaytarish uchun Rahbar PIN'i kerak.") { super(message); this.name = 'OwnerApprovalRequiredError'; }
@@ -1005,6 +1005,60 @@ class DataStore {
     });
 
     this.state.lastUpdated = new Date().toISOString();
+    this.scheduleSave();
+    return debt;
+  }
+
+  /** Mijoz bergan umumiy summani uning faol nasiyalariga eng eskisidan boshlab taqsimlaydi. */
+  public recordCustomerPayment(
+    input: { name: string; phone?: string; currency?: Currency; amount: number; method?: 'naqd' | 'click_payme' },
+    actor?: { id?: string; name?: string }
+  ): { applied: number; leftover: number; debts: DebtRecord[] } {
+    const currency: Currency = input.currency === 'USD' ? 'USD' : 'UZS';
+    const method = input.method === 'click_payme' ? 'click_payme' : 'naqd';
+    if (!String(input.name || '').trim()) throw new Error('Mijoz ismi kerak.');
+    const plan = planCustomerPayment(this.state.debts, String(input.name), input.phone, currency, Number(input.amount));
+    if (plan.applied <= 0) throw new Error(plan.totalRemaining <= 0 ? "Bu mijozning ochiq nasiyasi yo'q." : "To'lov summasi musbat son bo'lishi kerak.");
+    if (plan.leftover > 0) {
+      throw new Error(`To'lov qarzdan ko'p: jami qoldiq ${currency === 'USD' ? `$${plan.totalRemaining}` : `${plan.totalRemaining} so'm`}.`);
+    }
+    const changed = plan.allocations.map(a => this.recordDebtPayment(a.debtId, a.amount, method, actor));
+    return { applied: plan.applied, leftover: plan.leftover, debts: changed };
+  }
+
+  /** Savdosiz (qo'lda) nasiya yozuvi. Xodimlar ham kirita oladi; mijoz bazaga eslab qolinadi. */
+  public addManualDebt(
+    input: { customerName: string; customerPhone?: string; totalDebt: number; paidAmount?: number; dueDate?: string; notes?: string; currency?: Currency; initialMethod?: 'naqd' | 'click_payme' },
+    actor?: { id?: string; name?: string }
+  ): DebtRecord {
+    const name = String(input.customerName || '').trim();
+    if (!name) throw new Error('Mijoz ismi kerak.');
+    const currency: Currency = input.currency === 'USD' ? 'USD' : 'UZS';
+    const total = roundMoney(Number(input.totalDebt), currency);
+    const paid = roundMoney(Number(input.paidAmount || 0), currency);
+    if (!Number.isFinite(total) || total <= 0) throw new Error('Nasiya summasi musbat bo\'lishi kerak.');
+    if (!Number.isFinite(paid) || paid < 0 || paid > total) throw new Error('Boshlang\'ich to\'lov nasiya summasidan katta bo\'lishi mumkin emas.');
+    const now = new Date().toISOString();
+    const remaining = roundMoney(total - paid, currency);
+    const id = `debt-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+    const debt: DebtRecord = {
+      id,
+      movementId: `manual-${id}`,
+      currency,
+      customerName: name,
+      customerPhone: String(input.customerPhone || '').trim(),
+      totalDebt: total,
+      paidAmount: paid,
+      remainingAmount: remaining,
+      dueDate: String(input.dueDate || ''),
+      createdAt: now,
+      status: remaining <= 0 ? 'yopildi' : paid > 0 ? 'qisman_tolandi' : 'faol',
+      notes: String(input.notes || '').trim() || "Qo'lda kiritilgan nasiya",
+      paymentHistory: paid > 0 ? [{ date: now, amount: paid, method: input.initialMethod === 'click_payme' ? 'click_payme' : 'naqd', employeeId: actor?.id, employeeName: actor?.name }] : []
+    };
+    this.state.debts.unshift(debt);
+    this.rememberSaleCustomer(name, debt.customerPhone);
+    this.state.lastUpdated = now;
     this.scheduleSave();
     return debt;
   }

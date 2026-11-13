@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { DebtRecord, StockMovement } from '../types';
-import { customerDebtHistory } from '../utils/saleAccounting';
+import { customerDebtHistory, planCustomerPayment, editDebt, cancelDebt } from '../utils/saleAccounting';
 import { currencyOf } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
-import { X, Phone, Package, Wallet, RotateCcw, Copy, CheckCircle2 } from 'lucide-react';
+import { X, Phone, Package, Wallet, RotateCcw, Copy, CheckCircle2, Pencil, Ban, History } from 'lucide-react';
 
 interface Props {
   name: string;
@@ -11,6 +11,11 @@ interface Props {
   debts: DebtRecord[];
   movements: StockMovement[];
   onClose: () => void;
+  /** Mijozning umumiy to'lovi (eng eski nasiyadan boshlab). */
+  onPay?: (customer: { name: string; phone?: string; currency: 'UZS' | 'USD' }, amount: number, method: 'naqd' | 'click_payme') => Promise<boolean>;
+  /** Faqat rahbar uchun beriladi. */
+  onUpdateDebt?: (debt: DebtRecord) => void;
+  currentUserName?: string;
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -20,6 +25,7 @@ const METHOD_LABEL: Record<string, string> = {
 };
 
 const statusBadge = (d: DebtRecord) => {
+  if (d.cancelledAt) return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-200 text-stone-700 line-through">Bekor qilingan</span>;
   if (d.status === 'yopildi') return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Yopilgan</span>;
   const overdue = d.dueDate && new Date(d.dueDate).getTime() < Date.now();
   return overdue
@@ -28,13 +34,80 @@ const statusBadge = (d: DebtRecord) => {
 };
 
 /** Mijozning nasiyaga nima olgani, qachon qancha to'lagani — bitta joyda. */
-export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, movements, onClose }) => {
+export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, movements, onClose, onPay, onUpdateDebt, currentUserName }) => {
   const [showClosed, setShowClosed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [payCurrency, setPayCurrency] = useState<'UZS' | 'USD'>('UZS');
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState<'naqd' | 'click_payme'>('naqd');
+  const [paying, setPaying] = useState(false);
+  const [payDone, setPayDone] = useState('');
+  const [editing, setEditing] = useState<DebtRecord | null>(null);
+  const [editForm, setEditForm] = useState({ customerName: '', customerPhone: '', dueDate: '', notes: '', totalDebt: '' });
+  const [cancelReason, setCancelReason] = useState('');
+  const [editError, setEditError] = useState('');
   const history = useMemo(() => customerDebtHistory(debts, movements, name, phone), [debts, movements, name, phone]);
   const visible = history.debts.filter((r) => showClosed || r.debt.status !== 'yopildi');
   const closedCount = history.debts.length - history.debts.filter((r) => r.debt.status !== 'yopildi').length;
   const currencies = (['UZS', 'USD'] as const).filter((c) => history.totals[c].taken > 0);
+  const payable = (['UZS', 'USD'] as const).filter((c) => history.totals[c].remaining > 0);
+  const activePayCurrency = payable.includes(payCurrency) ? payCurrency : payable[0];
+  const plan = useMemo(
+    () => (activePayCurrency ? planCustomerPayment(debts, history.name, history.phone, activePayCurrency, Number(payAmount) || 0) : null),
+    [debts, history.name, history.phone, activePayCurrency, payAmount]
+  );
+
+  const submitPayment = async () => {
+    if (!onPay || !activePayCurrency || !plan || plan.applied <= 0) return;
+    if (plan.leftover > 0) {
+      alert(`To'lov qarzdan ko'p. Jami qoldiq: ${formatMoney(plan.totalRemaining, activePayCurrency)}`);
+      return;
+    }
+    setPaying(true);
+    const ok = await onPay({ name: history.name, phone: history.phone, currency: activePayCurrency }, plan.applied, payMethod);
+    setPaying(false);
+    if (ok) {
+      setPayDone(`${formatMoney(plan.applied, activePayCurrency)} qabul qilindi`);
+      setPayAmount('');
+      setTimeout(() => setPayDone(''), 3000);
+    }
+  };
+
+  const isManual = (d: DebtRecord) => !movements.some((m) => m.id === d.movementId);
+
+  const openEdit = (d: DebtRecord) => {
+    setEditing(d);
+    setEditError('');
+    setCancelReason('');
+    setEditForm({ customerName: d.customerName, customerPhone: d.customerPhone, dueDate: d.dueDate || '', notes: d.notes || '', totalDebt: String(d.totalDebt) });
+  };
+
+  const saveEdit = () => {
+    if (!editing || !onUpdateDebt) return;
+    try {
+      const updated = editDebt(editing, { ...editForm, totalDebt: Number(editForm.totalDebt) }, currentUserName, new Date().toISOString(), isManual(editing));
+      if (updated !== editing) onUpdateDebt(updated);
+      setEditing(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Saqlanmadi');
+    }
+  };
+
+  const doCancel = () => {
+    if (!editing || !onUpdateDebt) return;
+    if (!isManual(editing)) {
+      setEditError("Savdodan yozilgan nasiyani bekor qilish uchun tovarni qaytarish (Vazvrat) bo'limidan foydalaning — shunda ombor ham to'g'rilanadi.");
+      return;
+    }
+    try {
+      const updated = cancelDebt(editing, cancelReason, currentUserName, new Date().toISOString());
+      if (!window.confirm(`${editing.customerName} — ${formatMoney(editing.remainingAmount, currencyOf(editing))} nasiya bekor qilinsinmi? Yozuv tarixda qoladi.`)) return;
+      onUpdateDebt(updated);
+      setEditing(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Bekor qilinmadi');
+    }
+  };
 
   const copyText = async () => {
     const lines: string[] = [`${history.name} — nasiya xaridlari`];
@@ -104,6 +177,50 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
               </div>
             </div>
           ))}
+          {onPay && activePayCurrency && (
+            <div className="bg-white rounded-xl border border-emerald-200 p-2.5 space-y-2">
+              <div className="text-[11px] font-black text-emerald-800">To'lov qabul qilish (eng eski nasiyadan boshlab yopiladi)</div>
+              <div className="flex flex-wrap items-center gap-2">
+                {payable.length > 1 && (
+                  <select value={activePayCurrency} onChange={(e) => setPayCurrency(e.target.value as 'UZS' | 'USD')} className="px-2 py-1.5 border border-stone-300 rounded-lg text-xs font-bold">
+                    <option value="UZS">So'm</option>
+                    <option value="USD">Dollar</option>
+                  </select>
+                )}
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                  placeholder={`Summa (qarz: ${formatMoney(history.totals[activePayCurrency].remaining, activePayCurrency)})`}
+                  className="flex-1 min-w-[150px] px-2.5 py-1.5 border border-stone-300 rounded-lg text-sm font-black text-right focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+                <button type="button" onClick={() => setPayAmount(String(history.totals[activePayCurrency].remaining))} className="px-2 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-[11px] font-bold cursor-pointer">Hammasi</button>
+                <select value={payMethod} onChange={(e) => setPayMethod(e.target.value as 'naqd' | 'click_payme')} className="px-2 py-1.5 border border-stone-300 rounded-lg text-xs font-bold">
+                  <option value="naqd">Naqd</option>
+                  <option value="click_payme">Click / Payme</option>
+                </select>
+                <button
+                  type="button"
+                  disabled={paying || !plan || plan.applied <= 0 || plan.leftover > 0}
+                  onClick={submitPayment}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-black cursor-pointer"
+                >
+                  {paying ? 'Saqlanmoqda…' : "Qabul qilish"}
+                </button>
+              </div>
+              {plan && plan.applied > 0 && (
+                <div className="text-[11px] text-stone-600">
+                  {plan.leftover > 0 ? (
+                    <span className="text-red-600 font-bold">Summa qarzdan {formatMoney(plan.leftover, activePayCurrency)} ko'p.</span>
+                  ) : (
+                    <>Taqsimlanadi: {plan.allocations.map((a) => `${formatDate(a.createdAt)} — ${formatMoney(a.amount, activePayCurrency)}`).join(', ')}. Qoladi: <b>{formatMoney(plan.totalRemaining - plan.applied, activePayCurrency)}</b></>
+                  )}
+                </div>
+              )}
+              {payDone && <div className="text-[11px] font-bold text-emerald-700">✓ {payDone}</div>}
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2 pt-1">
             {closedCount > 0 ? (
               <label className="flex items-center gap-1.5 text-[11px] text-stone-600 font-semibold cursor-pointer">
@@ -194,15 +311,75 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
                   </div>
                 )}
 
+                {r.debt.auditLog && r.debt.auditLog.length > 0 && (
+                  <div className="text-[10px] text-stone-500 bg-stone-50 rounded-lg px-2 py-1 space-y-0.5">
+                    {r.debt.auditLog.map((l, idx) => (
+                      <div key={idx} className="flex gap-1"><History className="w-3 h-3 shrink-0 mt-px" /> {formatDate(l.date)}{l.by ? ` · ${l.by}` : ''}: {l.details}</div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center pt-2 border-t border-stone-200 text-xs">
                   <span className="text-stone-600">Summa: <strong className="text-stone-900">{formatMoney(r.debt.totalDebt, c)}</strong></span>
-                  <span className="text-stone-600">Qoldiq: <strong className="text-red-600">{formatMoney(r.debt.status === 'yopildi' ? 0 : r.debt.remainingAmount, c)}</strong></span>
+                  <span className="flex items-center gap-2">
+                    {onUpdateDebt && !r.debt.cancelledAt && (
+                      <button type="button" onClick={() => openEdit(r.debt)} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stone-300 hover:bg-stone-100 text-[10px] font-bold text-stone-700 cursor-pointer">
+                        <Pencil className="w-3 h-3" /> Tahrirlash
+                      </button>
+                    )}
+                    <span className="text-stone-600">Qoldiq: <strong className="text-red-600">{formatMoney(r.debt.status === 'yopildi' ? 0 : r.debt.remainingAmount, c)}</strong></span>
+                  </span>
                 </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {editing && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3" onClick={(e) => { e.stopPropagation(); setEditing(null); }}>
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-5 space-y-3 text-xs" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h4 className="font-black text-sm">Nasiyani tahrirlash</h4>
+              <button onClick={() => setEditing(null)} className="text-stone-400 hover:text-stone-800 cursor-pointer"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="text-[11px] text-stone-500">{formatDate(editing.createdAt)} · {isManual(editing) ? "Qo'lda yozilgan" : 'Savdodan yozilgan'}</div>
+            {([
+              ['customerName', 'Mijoz ismi', 'text'],
+              ['customerPhone', 'Telefon', 'text'],
+              ['dueDate', "To'lash muddati", 'date'],
+              ['notes', 'Izoh', 'text']
+            ] as const).map(([key, label, type]) => (
+              <label key={key} className="block">
+                <span className="font-semibold text-stone-700">{label}</span>
+                <input type={type} value={editForm[key]} onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-400" />
+              </label>
+            ))}
+            <label className="block">
+              <span className="font-semibold text-stone-700">Nasiya summasi {isManual(editing) ? '' : "(savdodan — o'zgarmaydi)"}</span>
+              <input type="number" disabled={!isManual(editing)} value={editForm.totalDebt} onChange={(e) => setEditForm({ ...editForm, totalDebt: e.target.value })}
+                className="mt-1 w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold disabled:opacity-50" />
+              <span className="text-[10px] text-stone-500">To'langan: {formatMoney(editing.paidAmount, currencyOf(editing))}</span>
+            </label>
+            {editError && <div className="text-red-600 font-bold bg-red-50 border border-red-200 rounded-lg p-2">{editError}</div>}
+            <div className="flex gap-2">
+              <button onClick={saveEdit} className="flex-1 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 font-black cursor-pointer">Saqlash</button>
+              <button onClick={() => setEditing(null)} className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 font-bold cursor-pointer">Bekor</button>
+            </div>
+            {isManual(editing) && editing.status !== 'yopildi' && (
+              <div className="border-t border-stone-200 pt-3 space-y-2">
+                <div className="font-bold text-red-700">Xato yozilgan nasiyani bekor qilish</div>
+                <input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Sababi (masalan: ikki marta yozilgan)"
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl" />
+                <button onClick={doCancel} className="w-full py-2 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-black inline-flex items-center justify-center gap-1.5 cursor-pointer">
+                  <Ban className="w-3.5 h-3.5" /> Nasiyani bekor qilish
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

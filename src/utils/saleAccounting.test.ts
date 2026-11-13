@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment, debtPeriodReport, activeCustomerDebtReport, customerDebtHistory } from './saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment, debtPeriodReport, activeCustomerDebtReport, customerDebtHistory, planCustomerPayment, applyDebtPayment, editDebt, cancelDebt } from './saleAccounting';
 import { thermalReceiptHtml } from './thermalReceiptHtml';
 import { DebtRecord, StockMovement, SaleReceiptData } from '../types';
 
@@ -191,4 +191,44 @@ test('customerDebtHistory: mijoz nasiyaga olgan tovarlar, to\'lov va qaytarishla
   assert.deepEqual(first.items.map(i => [i.name, i.quantity, i.returnedQty]), [['Ekran A10', 2, 1], ['Kabel', 1, 0]]);
   assert.equal(first.payments.length, 2);
   assert.deepEqual(h.totals.UZS, { taken: 370000, paid: 100000, returned: 150000, remaining: 120000 });
+});
+
+test('planCustomerPayment: eski nasiyadan boshlab taqsimlaydi, ortig\'ini qabul qilmaydi', () => {
+  const base = { totalDebt: 0, paidAmount: 0, dueDate: '2026-12-01', status: 'faol' as const };
+  const debts: DebtRecord[] = [
+    { ...base, id: 'new', customerName: 'Ali', customerPhone: '+998901112233', totalDebt: 50000, remainingAmount: 50000, createdAt: '2026-11-10T00:00:00Z' },
+    { ...base, id: 'old', customerName: 'ali ', customerPhone: '90 111 22 33', totalDebt: 80000, remainingAmount: 30000, paidAmount: 50000, status: 'qisman_tolandi', createdAt: '2026-11-01T00:00:00Z' },
+    { ...base, id: 'usd', customerName: 'Ali', customerPhone: '+998901112233', currency: 'USD', totalDebt: 10, remainingAmount: 10, createdAt: '2026-10-01T00:00:00Z' },
+    { ...base, id: 'closed', customerName: 'Ali', customerPhone: '+998901112233', totalDebt: 5000, remainingAmount: 0, paidAmount: 5000, status: 'yopildi', createdAt: '2026-09-01T00:00:00Z' },
+    { ...base, id: 'other', customerName: 'Vali', customerPhone: '+998930000000', totalDebt: 9000, remainingAmount: 9000, createdAt: '2026-08-01T00:00:00Z' }
+  ];
+  const p = customerPlan(debts, 40000);
+  assert.deepEqual(p.allocations.map(a => [a.debtId, a.amount]), [['old', 30000], ['new', 10000]]);
+  assert.equal(p.applied, 40000); assert.equal(p.leftover, 0); assert.equal(p.totalRemaining, 80000);
+  const over = customerPlan(debts, 100000);
+  assert.equal(over.applied, 80000); assert.equal(over.leftover, 20000);
+  function customerPlan(d: DebtRecord[], amount: number) { return planCustomerPayment(d, 'Ali', '+998 90 111 22 33', 'UZS', amount); }
+
+  const paid = applyDebtPayment(debts[1], 30000, 'click_payme', '2026-11-13T10:00:00Z', { id: 'u1', name: 'Akmal' });
+  assert.equal(paid.accepted, 30000);
+  assert.equal(paid.debt.status, 'yopildi');
+  assert.equal(paid.debt.remainingAmount, 0);
+  assert.equal(paid.debt.paymentHistory?.at(-1)?.employeeName, 'Akmal');
+  assert.equal(debts[1].remainingAmount, 30000); // asl yozuv o'zgarmaydi
+});
+
+test('editDebt va cancelDebt: tarix saqlanadi, savdo nasiyasi summasi himoyalangan', () => {
+  const d: DebtRecord = { id: 'd', customerName: 'Ali', customerPhone: '', totalDebt: 100000, paidAmount: 30000, remainingAmount: 70000,
+    dueDate: '2026-11-20', createdAt: '2026-11-01T00:00:00Z', status: 'qisman_tolandi' };
+  const e = editDebt(d, { customerName: 'Ali usta', totalDebt: 80000 }, 'Rahbar', '2026-11-13T00:00:00Z', true);
+  assert.equal(e.customerName, 'Ali usta'); assert.equal(e.remainingAmount, 50000);
+  assert.equal(e.auditLog?.length, 1); assert.match(e.auditLog![0].details, /Summa: 100000 → 80000/);
+  assert.throws(() => editDebt(d, { totalDebt: 20000 }, 'R', 'x', true), /to'langan/);
+  assert.throws(() => editDebt(d, { totalDebt: 90000 }, 'R', 'x', false), /vazvrat/);
+  assert.equal(editDebt(d, { notes: undefined }, 'R', 'x', true), d);
+  assert.throws(() => cancelDebt(d, ' ', 'R', 'x'), /sabab/i);
+  const c = cancelDebt(d, 'Xato yozilgan', 'Rahbar', '2026-11-13T00:00:00Z');
+  assert.equal(c.status, 'yopildi'); assert.equal(c.remainingAmount, 0); assert.ok(c.cancelledAt);
+  const h = customerDebtHistory([c], [], 'Ali', '');
+  assert.deepEqual(h.totals.UZS, { taken: 0, paid: 0, returned: 0, remaining: 0 });
 });
