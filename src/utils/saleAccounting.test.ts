@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment, debtPeriodReport, activeCustomerDebtReport } from './saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, debtOverdueDays, groupDebtsByCustomer, clampDebtPayment, debtPeriodReport, activeCustomerDebtReport, customerDebtHistory } from './saleAccounting';
 import { thermalReceiptHtml } from './thermalReceiptHtml';
 import { DebtRecord, StockMovement, SaleReceiptData } from '../types';
 
@@ -160,4 +160,35 @@ test('debt period report separates cash payments from return reductions', () => 
   assert.equal(report.returned, 20000);
   assert.equal(report.rows[0].paid, 40000);
   assert.equal(report.rows[0].returned, 20000);
+});
+
+test('customerDebtHistory: mijoz nasiyaga olgan tovarlar, to\'lov va qaytarishlar', () => {
+  const mv = (o: Partial<StockMovement>): StockMovement => ({
+    id: 'x', type: 'chiqim', productId: 'p', productName: 'Tovar', category: 'c', quantity: 1, unitCost: 0, unitPrice: 0,
+    totalCost: 0, totalRevenue: 0, profit: 0, timestamp: '2026-11-01T10:00:00Z', counterparty: 'Ali', ...o
+  } as StockMovement);
+  const movements = [
+    mv({ id: 'm1', batchSaleId: 'b1', productName: 'Ekran A10', quantity: 2, unitPrice: 150000, totalRevenue: 300000 }),
+    mv({ id: 'm2', batchSaleId: 'b1', productName: 'Kabel', quantity: 1, unitPrice: 20000, totalRevenue: 20000 }),
+    mv({ id: 'r1', type: 'vazvrat', originalMovementId: 'm1', quantity: 1, productName: 'Ekran A10' }),
+    mv({ id: 'other', productName: 'Boshqa mijoz tovari', quantity: 5 })
+  ];
+  const debts: DebtRecord[] = [
+    { id: 'd1', movementId: 'm1', customerName: 'Ali usta', customerPhone: '+998 90 111 22 33', totalDebt: 320000, paidAmount: 250000,
+      remainingAmount: 70000, dueDate: '2026-11-15', createdAt: '2026-11-01T10:00:00Z', status: 'qisman_tolandi',
+      paymentHistory: [{ date: '2026-11-03', amount: 100000, method: 'naqd' }, { date: '2026-11-04', amount: 150000, method: 'vazvrat' }] },
+    { id: 'd2', customerName: 'ali usta', customerPhone: '901112233', totalDebt: 50000, paidAmount: 0, remainingAmount: 50000,
+      dueDate: '2026-11-20', createdAt: '2026-11-05T10:00:00Z', status: 'faol', notes: '1 ta oyna (qo\'lda)' },
+    { id: 'd3', customerName: 'Vali', customerPhone: '+998 93 000 00 00', totalDebt: 10000, paidAmount: 0, remainingAmount: 10000,
+      dueDate: '2026-11-20', createdAt: '2026-11-06T10:00:00Z', status: 'faol' }
+  ];
+  const h = customerDebtHistory(debts, movements, 'Ali usta', '+998 90 111 22 33');
+  assert.equal(h.debts.length, 2);
+  assert.equal(h.debts[0].debt.id, 'd2'); // yangisi birinchi
+  assert.equal(h.debts[0].items.length, 0);
+  assert.equal(h.debts[0].note, "1 ta oyna (qo'lda)");
+  const first = h.debts[1];
+  assert.deepEqual(first.items.map(i => [i.name, i.quantity, i.returnedQty]), [['Ekran A10', 2, 1], ['Kabel', 1, 0]]);
+  assert.equal(first.payments.length, 2);
+  assert.deepEqual(h.totals.UZS, { taken: 370000, paid: 100000, returned: 150000, remaining: 120000 });
 });

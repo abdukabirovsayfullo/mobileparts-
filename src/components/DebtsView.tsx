@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { CustomerProfile, DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
 import { DebtPeriodReport } from './DebtPeriodReport';
+import { CustomerDebtHistoryModal } from './CustomerDebtHistoryModal';
 import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
 import { DebtStatementParams, toLocalDay } from '../utils/debtStatementReceipt';
 import { STORE_INFO } from '../data/initialData';
@@ -64,6 +65,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   });
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [historyCustomer, setHistoryCustomer] = useState<{ name: string; phone: string } | null>(null);
 
   // Yangi nasiya oynasi uchun doimiy mijozlar: mijozlar bazasi + avvalgi nasiyalar.
   // Bir xil ism bitta bo'lib birlashtiriladi, eng oxirgi faollik bo'yicha tartiblanadi.
@@ -426,8 +428,16 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   customerSummaries
                     .filter((c) => !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.phone.includes(searchQuery.trim()))
                     .map((c) => (
-                      <tr key={c.key} className="hover:bg-stone-50/70">
-                        <td className="py-3 px-4 font-bold text-stone-900">{c.name}</td>
+                      <tr
+                        key={c.key}
+                        className="hover:bg-amber-50/60 cursor-pointer"
+                        onClick={() => setHistoryCustomer({ name: c.name, phone: c.phone })}
+                        title="Nasiyaga nima olganini ko'rish"
+                      >
+                        <td className="py-3 px-4 font-bold text-stone-900">
+                          {c.name}
+                          <div className="text-[10px] font-semibold text-amber-700">Nima olgan? →</div>
+                        </td>
                         <td className="py-3 px-4 whitespace-nowrap">{c.phone}</td>
                         <td className="py-3 px-4 text-center">{c.activeCount}</td>
                         <td className="py-3 px-4 text-right font-black text-red-600 whitespace-nowrap">{formatMoney(c.remaining, c.currency)}</td>
@@ -478,9 +488,14 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                 {/* Header: Customer Name, Phone & Status */}
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="font-black text-sm text-stone-900 leading-tight">
+                    <button
+                      type="button"
+                      onClick={() => setHistoryCustomer({ name: debt.customerName, phone: debt.customerPhone })}
+                      className="font-black text-sm text-stone-900 leading-tight text-left underline decoration-dotted decoration-amber-500 underline-offset-2 cursor-pointer"
+                      title="Nasiyaga nima olganini ko'rish"
+                    >
                       {debt.customerName}
-                    </div>
+                    </button>
                     <div className="flex items-center gap-2 mt-1">
                       <a
                         href={`tel:${debt.customerPhone}`}
@@ -623,7 +638,14 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   return (
                     <tr key={debt.id} className="hover:bg-stone-50/70 transition-colors">
                       <td className="py-3 px-4 font-bold text-stone-900">
-                        {debt.customerName}
+                        <button
+                          type="button"
+                          onClick={() => setHistoryCustomer({ name: debt.customerName, phone: debt.customerPhone })}
+                          className="text-left underline decoration-dotted decoration-amber-500 underline-offset-2 hover:text-amber-700 cursor-pointer"
+                          title="Nasiyaga nima olganini ko'rish"
+                        >
+                          {debt.customerName}
+                        </button>
                         {debt.notes && (
                           <div className="text-[10px] text-stone-400 font-normal">
                             {debt.notes}
@@ -737,6 +759,16 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
       </>)}
 
       {/* Payment Acceptance Modal */}
+      {historyCustomer && (
+        <CustomerDebtHistoryModal
+          name={historyCustomer.name}
+          phone={historyCustomer.phone}
+          debts={debts}
+          movements={movements}
+          onClose={() => setHistoryCustomer(null)}
+        />
+      )}
+
       {paymentModalDebt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">

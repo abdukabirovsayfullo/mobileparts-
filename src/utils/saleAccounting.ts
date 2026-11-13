@@ -185,3 +185,68 @@ export function activeCustomerDebtReport(debts: DebtRecord[], movements: StockMo
   const active = sameCustomer.filter(d => d.status !== 'yopildi' && d.remainingAmount > 0);
   return debtPeriodReport(active, movements, -Infinity, Infinity)[0];
 }
+
+export interface CustomerHistoryItem {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  returnedQty: number;
+}
+
+export interface CustomerHistoryDebt {
+  debt: DebtRecord;
+  items: CustomerHistoryItem[];
+  /** Sotuv topilmasa (qo'lda yozilgan nasiya) izoh shu yerda bo'ladi. */
+  note?: string;
+  payments: { date: string; amount: number; method: string; employeeName?: string }[];
+}
+
+export interface CustomerDebtHistory {
+  name: string;
+  phone: string;
+  debts: CustomerHistoryDebt[];
+  totals: Record<Currency, { taken: number; paid: number; returned: number; remaining: number }>;
+}
+
+/** Bitta mijozning barcha nasiyalari: nima olgani, qancha to'lagani va qaytargani. Yangi nasiyalar birinchi. */
+export function customerDebtHistory(debts: DebtRecord[], movements: StockMovement[], name: string, phone?: string): CustomerDebtHistory {
+  const anonymous = cleanName("Do'kon mijozi");
+  const identity = customerKey(name, phone);
+  const own = cleanName(name) === anonymous || !cleanName(name)
+    ? []
+    : debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity);
+  const totals = { UZS: { taken: 0, paid: 0, returned: 0, remaining: 0 }, USD: { taken: 0, paid: 0, returned: 0, remaining: 0 } };
+
+  const rows: CustomerHistoryDebt[] = own.map(d => {
+    const sale = movements.find(m => m.id === d.movementId);
+    const related = sale ? (sale.batchSaleId ? movements.filter(m => m.batchSaleId === sale.batchSaleId) : [sale]) : [];
+    const sold = related.filter(m => m.type === 'chiqim' && !m.isReturn);
+    const items = sold.map(m => {
+      const returnedQty = movements
+        .filter(r => (r.type === 'vazvrat' || r.isReturn) && r.originalMovementId === m.id)
+        .reduce((s, r) => s + Math.abs(r.quantity), 0);
+      return { name: m.productName, quantity: m.quantity, unitPrice: m.unitPrice, total: m.totalRevenue, returnedQty };
+    });
+    const history = d.paymentHistory || [];
+    const returned = history.filter(p => p.method === 'vazvrat').reduce((s, p) => s + p.amount, 0);
+    const c = currencyOf(d);
+    totals[c].taken += d.totalDebt;
+    totals[c].paid += Math.max(0, d.paidAmount - returned);
+    totals[c].returned += returned;
+    totals[c].remaining += d.status === 'yopildi' ? 0 : Math.max(0, d.remainingAmount);
+    return {
+      debt: d,
+      items,
+      note: items.length ? d.notes : d.notes || undefined,
+      payments: history.map(p => ({ date: p.date, amount: p.amount, method: p.method, employeeName: p.employeeName }))
+    };
+  });
+
+  for (const c of ['UZS', 'USD'] as const) {
+    for (const k of ['taken', 'paid', 'returned', 'remaining'] as const) totals[c][k] = roundMoney(totals[c][k], c);
+  }
+  rows.sort((a, b) => b.debt.createdAt.localeCompare(a.debt.createdAt));
+  const withPhone = own.find(d => d.customerPhone && d.customerPhone.replace(/\D/g, '').length >= 9);
+  return { name: own[0]?.customerName.trim() || name.trim(), phone: withPhone?.customerPhone || phone || '', debts: rows, totals };
+}
