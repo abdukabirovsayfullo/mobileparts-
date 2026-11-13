@@ -3,7 +3,10 @@ import { thermalReceiptHtml } from '../utils/thermalReceiptHtml';
 import { SaleReceiptData, StoreSettings } from '../types';
 import { STORE_INFO } from '../data/initialData';
 import { formatMoney, formatDate } from '../utils/formatters';
-import { generateReceiptPdf, generateThermalReceiptPdf, triggerPdfDownload, openPdfInNewTab } from '../utils/pdfGenerator';
+type PdfModule = typeof import('../utils/pdfGenerator');
+let pdfModulePromise: Promise<PdfModule> | null = null;
+/** PDF kutubxonasi (jsPDF) faqat chek oynasi ochilganda yuklanadi. */
+const loadPdfModule = () => (pdfModulePromise ??= import('../utils/pdfGenerator'));
 import { 
   Printer, 
   X, 
@@ -51,8 +54,17 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
 
   const [printError, setPrintError] = useState('');
 
-  const handleDownloadPdf = React.useCallback(() => {
+  const pdfRef = React.useRef<PdfModule | null>(null);
+  React.useEffect(() => {
+    let alive = true;
+    loadPdfModule().then((m) => { if (alive) pdfRef.current = m; }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
+  const handleDownloadPdf = React.useCallback(async () => {
     if (!receipt) return false;
+    const pdf = pdfRef.current ?? (pdfRef.current = await loadPdfModule());
+    const { generateReceiptPdf, generateThermalReceiptPdf, triggerPdfDownload } = pdf;
     setDownloadingPdf(true);
     setPrintError('');
     try {
@@ -158,8 +170,9 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     onToggleShowPrices?.(next);
   };
 
-  const handleOpenInNewTab = () => {
+  const handleOpenInNewTab = async () => {
     try {
+      const { generateReceiptPdf, generateThermalReceiptPdf, openPdfInNewTab } = pdfRef.current ?? (pdfRef.current = await loadPdfModule());
       const doc = (printFormat === 'pos' ? generateThermalReceiptPdf : generateReceiptPdf)({
         receipt, storeInfo: currentStore, showPrices
       });

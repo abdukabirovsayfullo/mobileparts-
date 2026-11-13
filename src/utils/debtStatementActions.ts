@@ -1,11 +1,19 @@
-import { createDebtStatementPdf, debtStatementFileName } from './debtStatementPdf';
 import { DebtStatementParams, debtStatementReceiptHtml, printThermalHtml } from './debtStatementReceipt';
-import { triggerPdfDownload } from './pdfGenerator';
 
-export function downloadDebtStatementPdf(params: DebtStatementParams): void {
+/** jsPDF faqat PDF tugmasi bosilganda yuklanadi (ilova tezroq ochilishi uchun). */
+export async function downloadDebtStatementPdf(params: DebtStatementParams): Promise<void> {
   const { customer, from, to } = params;
-  if (!triggerPdfDownload(createDebtStatementPdf(params), debtStatementFileName(customer.name, from, to))) {
-    alert('PDF saqlanmadi. Brauzerda yuklab olishga ruxsat berilganini tekshiring.');
+  try {
+    const [{ createDebtStatementPdf, debtStatementFileName }, { triggerPdfDownload }] = await Promise.all([
+      import('./debtStatementPdf'),
+      import('./pdfGenerator')
+    ]);
+    if (!triggerPdfDownload(createDebtStatementPdf(params), debtStatementFileName(customer.name, from, to))) {
+      alert('PDF saqlanmadi. Brauzerda yuklab olishga ruxsat berilganini tekshiring.');
+    }
+  } catch (error) {
+    console.error('[PDF] Nasiya hisobi:', error);
+    alert('PDF tayyorlanmadi. Internet aloqasini tekshirib, qayta urinib ko\'ring.');
   }
 }
 

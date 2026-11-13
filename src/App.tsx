@@ -1,6 +1,6 @@
 import { OfflineDevicePanel } from './components/OfflineDevicePanel';
 import { browserSnapshot, mergeBrowserSnapshot } from './utils/browserSync';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings, AuthUser, Currency } from './types';
 import { currencyOf, roundMoney, sumByCurrency } from './utils/money';
 import { formatMoney } from './utils/formatters';
@@ -19,33 +19,68 @@ import { CompactTopNavbar as TopNavbar } from './components/CompactTopNavbar';
 import { DailyReportView } from './components/DailyReportView';
 import { KirimFormView } from './components/KirimFormView';
 import { ChiqimFormView } from './components/ChiqimFormView';
-import { MovementJournalView } from './components/MovementJournalView';
+
 import { StockBalanceView } from './components/StockBalanceView';
 import { DebtsView } from './components/DebtsView';
-import { SupplierDebtsView } from './components/SupplierDebtsView';
-import { HisobchiPanelView } from './components/HisobchiPanelView';
+
+
 import { PrintReceiptModal } from './components/PrintReceiptModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { VazvratModal } from './components/VazvratModal';
 import { WorkerReturnModal } from './components/WorkerReturnModal';
 import { WorkerDebtPanel } from './components/WorkerDebtPanel';
-import { ExcelImportModal } from './components/ExcelImportModal';
-import { PdfReportModal, PdfReportType } from './components/PdfReportModal';
-import { PhotoKirimModal } from './components/PhotoKirimModal';
-import { ApiIntegrationModal } from './components/ApiIntegrationModal';
-import { AiAnalystView } from './components/AiAnalystView';
-import { TelegramMiniAppView } from './components/TelegramMiniAppView';
-import { TelegramOrdersManagementView } from './components/TelegramOrdersManagementView';
+
+import type { PdfReportType } from './components/PdfReportModal';
+
+
+
+
+
 import { LoginScreen } from './components/LoginScreen';
-import { WorkerManagement } from './components/WorkerManagement';
+
 import { CashExpensePanel } from './components/CashExpensePanel';
 import { CashShiftPanel } from './components/CashShiftPanel';
 import { CustomersPanel } from './components/CustomersPanel';
-import { ReportsDashboard } from './components/ReportsDashboard';
-import { TechnicianServiceView } from './components/TechnicianServiceView';
+
+
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
 import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment, applyDebtPayment, planCustomerPayment } from './utils/saleAccounting';
+
+// Kamdan-kam ochiladigan og'ir bo'limlar faqat kerak bo'lganda yuklanadi.
+const lazyLoaders = {
+  ExcelImportModal: () => import('./components/ExcelImportModal'),
+  PdfReportModal: () => import('./components/PdfReportModal'),
+  PhotoKirimModal: () => import('./components/PhotoKirimModal'),
+  ApiIntegrationModal: () => import('./components/ApiIntegrationModal'),
+  AiAnalystView: () => import('./components/AiAnalystView'),
+  TelegramMiniAppView: () => import('./components/TelegramMiniAppView'),
+  TelegramOrdersManagementView: () => import('./components/TelegramOrdersManagementView'),
+  WorkerManagement: () => import('./components/WorkerManagement'),
+  ReportsDashboard: () => import('./components/ReportsDashboard'),
+  TechnicianServiceView: () => import('./components/TechnicianServiceView'),
+  SupplierDebtsView: () => import('./components/SupplierDebtsView'),
+  HisobchiPanelView: () => import('./components/HisobchiPanelView'),
+  MovementJournalView: () => import('./components/MovementJournalView'),
+};
+const ExcelImportModal = lazy(() => lazyLoaders.ExcelImportModal().then((m) => ({ default: m.ExcelImportModal })));
+const PdfReportModal = lazy(() => lazyLoaders.PdfReportModal().then((m) => ({ default: m.PdfReportModal })));
+const PhotoKirimModal = lazy(() => lazyLoaders.PhotoKirimModal().then((m) => ({ default: m.PhotoKirimModal })));
+const ApiIntegrationModal = lazy(() => lazyLoaders.ApiIntegrationModal().then((m) => ({ default: m.ApiIntegrationModal })));
+const AiAnalystView = lazy(() => lazyLoaders.AiAnalystView().then((m) => ({ default: m.AiAnalystView })));
+const TelegramMiniAppView = lazy(() => lazyLoaders.TelegramMiniAppView().then((m) => ({ default: m.TelegramMiniAppView })));
+const TelegramOrdersManagementView = lazy(() => lazyLoaders.TelegramOrdersManagementView().then((m) => ({ default: m.TelegramOrdersManagementView })));
+const WorkerManagement = lazy(() => lazyLoaders.WorkerManagement().then((m) => ({ default: m.WorkerManagement })));
+const ReportsDashboard = lazy(() => lazyLoaders.ReportsDashboard().then((m) => ({ default: m.ReportsDashboard })));
+const TechnicianServiceView = lazy(() => lazyLoaders.TechnicianServiceView().then((m) => ({ default: m.TechnicianServiceView })));
+const SupplierDebtsView = lazy(() => lazyLoaders.SupplierDebtsView().then((m) => ({ default: m.SupplierDebtsView })));
+const HisobchiPanelView = lazy(() => lazyLoaders.HisobchiPanelView().then((m) => ({ default: m.HisobchiPanelView })));
+const MovementJournalView = lazy(() => lazyLoaders.MovementJournalView().then((m) => ({ default: m.MovementJournalView })));
+/** Kirgandan keyin bo'sh vaqtda qolgan bo'limlarni oldindan yuklab qo'yadi (keyin darhol ochiladi). */
+const prefetchLazyViews = () => {
+  Object.values(lazyLoaders).forEach((load, i) => setTimeout(() => { void load().catch(() => undefined); }, i * 150));
+  void import('./utils/pdfGenerator').catch(() => undefined);
+};
 import { 
   RotateCcw, Smartphone, ShieldCheck, HelpCircle, Monitor, Lock, ShieldAlert,
   ShoppingBag, ArrowDownLeft, Package, BookOpen, SlidersHorizontal, X, Truck, BarChart3, Calculator, FileText, KeyRound, FileSpreadsheet, Camera, Code2, Sparkles, Users, LogOut
@@ -96,6 +131,11 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(canReachPos());
   const isAdminUnlocked = authUser?.role === 'owner';
+  useEffect(() => {
+    if (!authUser) return;
+    const timer = window.setTimeout(prefetchLazyViews, 2500);
+    return () => window.clearTimeout(timer);
+  }, [authUser?.id]);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingTab, setPendingTab] = useState<AccountingTab | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -1642,6 +1682,7 @@ export default function App() {
   }
 
   return (
+    <Suspense fallback={<div className="fixed inset-x-0 top-0 z-[120] h-1 bg-amber-400 animate-pulse" aria-label="Yuklanmoqda" />}>
     <div className="min-h-screen bg-stone-100 text-stone-900 font-sans flex flex-col lg:flex-row">
 
       {!isOnline && (
@@ -2540,5 +2581,6 @@ export default function App() {
       </footer>
       </div>
     </div>
+    </Suspense>
   );
 }
