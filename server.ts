@@ -1,11 +1,24 @@
 import express, { Request, Response, NextFunction } from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import "dotenv/config";
 import { apiV1Router } from "./server/apiV1";
+import { requireOwner } from "./server/auth";
+import { installDeviceSync } from "./server/deviceSync";
+import { installCustomerTelegram } from "./server/customerTelegram";
 
 const app = express();
+const localDevice = process.env.POS_LOCAL_DEVICE === '1';
+if (localDevice) {
+  app.use((req, res, next) => {
+    const allowed = /^(127\.0\.0\.1|localhost)(:\d+)?$/;
+    const origin = req.get('origin');
+    if (!allowed.test(req.get('host') || '') || (origin && origin !== `http://${req.get('host')}`)) {
+      return res.sendStatus(403);
+    }
+    next();
+  });
+}
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const PRIMARY_POS_URL = "https://77-81-138-243.sslip.io";
 
@@ -35,7 +48,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // CORS: Allow external automation tools (n8n, webhooks, 1C, mobile apps) to access API without cookie restrictions
 app.use((req: Request, res: Response, next: NextFunction) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  if (!localDevice) res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin");
   if (req.method === "OPTIONS") {
@@ -74,7 +87,7 @@ setInterval(() => {
 
 function rateLimit(map: Map<string, RateLimitRecord>, maxRequests: number, windowMs: number) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "127.0.0.1";
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
     const now = Date.now();
     const record = map.get(ip);
 
@@ -137,6 +150,9 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+installDeviceSync(app, localDevice);
+installCustomerTelegram(app, localDevice);
+
 // Mount POS REST API v1 (Products, Sales, Stock Movements, Debts, Summary & Docs)
 app.use("/api/v1", apiV1Router);
 
@@ -155,7 +171,7 @@ const ALLOWED_IMAGE_MIMES = new Set([
   "image/jpg"
 ]);
 
-app.post("/api/gemini/parse-receipt", geminiRateLimiter, async (req: Request, res: Response) => {
+app.post("/api/gemini/parse-receipt", requireOwner, geminiRateLimiter, async (req: Request, res: Response) => {
   try {
     const { imageBase64, mimeType, currentCategories, customInstructions } = req.body;
 
@@ -340,6 +356,7 @@ app.all("/api/*", (_req: Request, res: Response) => {
 // Vite middleware for development & static serving for production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
@@ -353,8 +370,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Secure server running on http://0.0.0.0:${PORT}`);
+  const host = localDevice ? "127.0.0.1" : process.env.HOST || "0.0.0.0";
+  app.listen(PORT, host, () => {
+    console.log(`Secure server running on http://${host}:${PORT}`);
   });
 }
 

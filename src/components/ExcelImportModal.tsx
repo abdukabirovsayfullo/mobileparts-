@@ -365,11 +365,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
       // Smart default retail price if missing: +40% markup
       if (sellingPrice === 0 && purchasePrice > 0) {
-        sellingPrice = Math.round((purchasePrice * 1.4) / 1000) * 1000;
+        sellingPrice = Math.round((purchasePrice * 1.4));
       }
       // Smart default wholesale price if missing: 15% discount from retail
       if (wholesalePrice === 0 && sellingPrice > 0) {
-        wholesalePrice = Math.round((sellingPrice * 0.85) / 1000) * 1000;
+        wholesalePrice = Math.round((sellingPrice * 0.85));
       }
 
       const barcode = barcodeCol ? String(row[barcodeCol] || '').trim() : undefined;
@@ -439,7 +439,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setItems((prev) =>
       prev.map((item) => {
         if (item.purchasePrice > 0) {
-          const newSelling = Math.round((item.purchasePrice * (1 + percent / 100)) / 1000) * 1000;
+          const newSelling = Math.round((item.purchasePrice * (1 + percent / 100)));
           return { ...item, sellingPrice: newSelling };
         }
         return item;
@@ -451,7 +451,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setItems((prev) =>
       prev.map((item) => {
         if (item.sellingPrice > 0) {
-          const newWholesale = Math.round((item.sellingPrice * (1 - percent / 100)) / 1000) * 1000;
+          const newWholesale = Math.round((item.sellingPrice * (1 - percent / 100)));
           return { ...item, wholesalePrice: newWholesale };
         }
         return item;
@@ -1184,7 +1184,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                                   <input
                                     type="number"
                                     min="0"
-                                    step="500"
+                                    step="1"
                                     value={item.purchasePrice}
                                     onChange={(e) => handleUpdateItem(trueIndex, 'purchasePrice', Math.max(0, parseFloat(e.target.value) || 0))}
                                     className="w-full bg-emerald-950/20 border border-emerald-800/60 text-emerald-300 font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-emerald-400 text-right"
@@ -1198,7 +1198,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                                   <input
                                     type="number"
                                     min="0"
-                                    step="500"
+                                    step="1"
                                     value={item.sellingPrice}
                                     onChange={(e) => handleUpdateItem(trueIndex, 'sellingPrice', Math.max(0, parseFloat(e.target.value) || 0))}
                                     className="w-full bg-sky-950/20 border border-sky-800/60 text-sky-300 font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-sky-400 text-right"
@@ -1212,7 +1212,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                                   <input
                                     type="number"
                                     min="0"
-                                    step="500"
+                                    step="1"
                                     value={item.wholesalePrice || 0}
                                     onChange={(e) => handleUpdateItem(trueIndex, 'wholesalePrice', Math.max(0, parseFloat(e.target.value) || 0))}
                                     className="w-full bg-purple-950/20 border border-purple-800/60 text-purple-300 font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-purple-400 text-right"

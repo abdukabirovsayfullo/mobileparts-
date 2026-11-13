@@ -31,7 +31,7 @@ interface SessionRecord {
 
 const AUTH_FILE = path.join(process.cwd(), 'data', 'auth.json');
 const SESSION_COOKIE = 'mp_session';
-const OWNER_IDLE_MS = 15 * 60 * 1000;
+const OWNER_IDLE_MS = 8 * 60 * 60 * 1000;
 const WORKER_IDLE_MS = 12 * 60 * 60 * 1000;
 const sessions = new Map<string, SessionRecord>();
 const failedLogins = new Map<string, { count: number; lockedUntil: number }>();
@@ -68,7 +68,10 @@ function loadAuthDatabase(): AuthDatabase {
     console.error('[Auth] auth.json o\'qilmadi:', error);
   }
 
-  const initialPin = process.env.POS_OWNER_PIN || '2508';
+  const initialPin = process.env.POS_OWNER_PIN || '';
+  if (!/^\d{4,8}$/.test(initialPin)) {
+    throw new Error('POS_OWNER_PIN o‘zgaruvchisini sozlang (4–8 raqam). Standart PIN bilan ishga tushirish taqiqlangan.');
+  }
   const now = new Date().toISOString();
   const database: AuthDatabase = {
     users: [{
@@ -87,9 +90,17 @@ function loadAuthDatabase(): AuthDatabase {
 
 let authDatabase = loadAuthDatabase();
 
+export const authReplica = {
+  read: () => authDatabase,
+  write(next: AuthDatabase) {
+    saveAuthDatabase(next);
+    authDatabase = next;
+    sessions.clear();
+  }
+};
+
 function clientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  return (Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0])?.trim() || req.ip || 'unknown';
+  return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
 function parseCookies(req: Request): Record<string, string> {
@@ -102,12 +113,12 @@ function parseCookies(req: Request): Record<string, string> {
 }
 
 function setSessionCookie(res: Response, token: string): void {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  const secure = process.env.NODE_ENV === 'production' && process.env.POS_LOCAL_DEVICE !== '1' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict${secure}`);
 }
 
 function clearSessionCookie(res: Response): void {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  const secure = process.env.NODE_ENV === 'production' && process.env.POS_LOCAL_DEVICE !== '1' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
 

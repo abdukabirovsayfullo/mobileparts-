@@ -61,6 +61,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
   onOpenPdfReports,
   onNavigateToAiAnalyst
 }) => {
+  const [visibleRows, setVisibleRows] = useState(75);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'critical3' | 'low' | 'zero'>('all');
@@ -158,11 +159,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
     category: 'Chexollar',
     brand: '',
     barcode: '',
-    purchasePrice: 0,
-    wholesalePrice: 0,
-    sellingPrice: 0,
-    stock: 0,
-    minStockAlert: 5
+    purchasePrice: '0',
+    wholesalePrice: '0',
+    sellingPrice: '0',
+    stock: '0',
+    minStockAlert: '5'
   });
 
   const filterCategories = useMemo(
@@ -196,6 +197,9 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
     });
     return searchProducts(filtered, searchQuery);
   }, [products, selectedCategory, stockStatusFilter, searchQuery]);
+  const displayedProducts = filteredProducts.slice(0, visibleRows);
+  useEffect(() => setVisibleRows(75), [searchQuery, selectedCategory, stockStatusFilter]);
+
 
   const handleOpenCreate = () => {
     setModalMode('create');
@@ -204,11 +208,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
       category: 'Chexollar',
       brand: 'Universal',
       barcode: `${Math.floor(100000 + Math.random() * 900000)}`,
-      purchasePrice: 40000,
-      wholesalePrice: 65000,
-      sellingPrice: 80000,
-      stock: 10,
-      minStockAlert: 5
+      purchasePrice: '40000',
+      wholesalePrice: '65000',
+      sellingPrice: '80000',
+      stock: '10',
+      minStockAlert: '5'
     });
   };
 
@@ -220,11 +224,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
       category: prod.category,
       brand: prod.brand,
       barcode: prod.barcode,
-      purchasePrice: prod.purchasePrice,
-      wholesalePrice: prod.wholesalePrice || Math.round(prod.sellingPrice * 0.8),
-      sellingPrice: prod.sellingPrice,
-      stock: prod.stock,
-      minStockAlert: prod.minStockAlert
+      purchasePrice: String(prod.purchasePrice),
+      wholesalePrice: String(prod.wholesalePrice || Math.round(prod.sellingPrice * 0.8)),
+      sellingPrice: String(prod.sellingPrice),
+      stock: String(prod.stock),
+      minStockAlert: String(prod.minStockAlert)
     });
   };
 
@@ -243,7 +247,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
         wholesalePrice: Number(formData.wholesalePrice) || Math.round(Number(formData.sellingPrice) * 0.8),
         sellingPrice: Number(formData.sellingPrice),
         stock: Number(formData.stock),
-        minStockAlert: Number(formData.minStockAlert)
+        minStockAlert: Number(formData.minStockAlert || 5)
       };
       onAddProduct(newP);
     } else if (modalMode === 'edit' && editingProduct) {
@@ -257,7 +261,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
         wholesalePrice: Number(formData.wholesalePrice) || Math.round(Number(formData.sellingPrice) * 0.8),
         sellingPrice: Number(formData.sellingPrice),
         stock: Number(formData.stock),
-        minStockAlert: Number(formData.minStockAlert)
+        minStockAlert: Number(formData.minStockAlert || 5)
       });
     }
 
@@ -391,16 +395,17 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
       {/* Dedicated Warehouse Search & Filter Panel */}
       <div className="bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs space-y-3.5">
         {/* Top: Large Dedicated Search Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col gap-3">
+          <div className="relative w-full min-w-0">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-amber-500" />
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Mahsulot nomi, brend yoki shtrix-kod bo'yicha qidirish... (Masalan: iPhone 15, Remax, Shisha, Zaryadka...)"
+              aria-label="Ombordan tovar qidirish"
+              placeholder="Tovar nomi, brend yoki shtrix-kod bo‘yicha qidiring..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-24 py-2.5 bg-stone-50 hover:bg-stone-50/80 focus:bg-white border-2 border-stone-200 focus:border-amber-400 rounded-xl text-sm font-medium placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-400/20 transition-all"
+              className="w-full min-w-0 pl-11 pr-12 py-3 text-stone-900 caret-stone-900 bg-stone-50 hover:bg-stone-50/80 focus:bg-white border-2 border-stone-200 focus:border-amber-400 rounded-xl text-sm font-medium placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-400/20 transition-all"
             />
             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
               {searchQuery ? (
@@ -659,7 +664,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
             Aksessuarlar topilmadi
           </div>
         ) : (
-          filteredProducts.map((p) => {
+          displayedProducts.map((p) => {
             const isZero = p.stock <= 0;
             const isCritical = p.stock > 0 && p.stock <= 3;
             const isLow = p.stock > 3 && p.stock <= 7;
@@ -858,7 +863,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((p) => {
+                displayedProducts.map((p) => {
                   const isCritical = p.stock <= 3 && p.stock > 0;
                   const isLow = p.stock <= p.minStockAlert && !isCritical;
                   const isZero = p.stock <= 0;
@@ -996,6 +1001,12 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
             </tbody>
           </table>
         </div>
+        {visibleRows < filteredProducts.length && (
+          <button type="button" onClick={() => setVisibleRows((count) => count + 75)}
+            className="mx-auto my-3 block rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold">
+            Yana tovar ko‘rsatish ({displayedProducts.length} / {filteredProducts.length})
+          </button>
+        )}
       </div>
 
       {/* Modal for Add/Edit Product */}
@@ -1137,10 +1148,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="any"
                     required
                     value={formData.purchasePrice}
-                    onChange={(e) => setFormData({ ...formData, purchasePrice: Number(e.target.value) })}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value })}
                     className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                 </div>
@@ -1152,9 +1164,10 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="any"
                     value={formData.wholesalePrice || ''}
-                    onChange={(e) => setFormData({ ...formData, wholesalePrice: Number(e.target.value) })}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setFormData({ ...formData, wholesalePrice: e.target.value })}
                     className="w-full px-3 py-2 bg-blue-50/50 border border-blue-200 rounded-xl font-bold text-blue-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
                   />
                 </div>
@@ -1166,10 +1179,11 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="any"
                     required
                     value={formData.sellingPrice}
-                    onChange={(e) => setFormData({ ...formData, sellingPrice: Number(e.target.value) })}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
                     className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                 </div>
@@ -1185,7 +1199,8 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                     min="0"
                     required
                     value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
                     className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                 </div>
@@ -1198,7 +1213,8 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                     type="number"
                     min="1"
                     value={formData.minStockAlert}
-                    onChange={(e) => setFormData({ ...formData, minStockAlert: Number(e.target.value) })}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setFormData({ ...formData, minStockAlert: e.target.value })}
                     className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                 </div>

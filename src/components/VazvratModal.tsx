@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Product, StockMovement, PaymentMethod, DebtRecord } from '../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Product, StockMovement, PaymentMethod, DebtRecord, CustomerProfile } from '../types';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { currencyOf } from '../utils/money';
 import {
@@ -23,6 +23,7 @@ interface VazvratModalProps {
   onClose: () => void;
   products: Product[];
   debts: DebtRecord[];
+  customers: CustomerProfile[];
   prefillMovement?: StockMovement | null;
   onConfirmVazvrat: (data: {
     productId: string;
@@ -57,10 +58,13 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
   onClose,
   products,
   debts,
+  customers,
   prefillMovement,
   onConfirmVazvrat
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const productsRef = useRef(products);
+  productsRef.current = products;
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
   const [unitPrice, setUnitPrice] = useState<number>(0);
@@ -72,12 +76,28 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
   const [restoreStock, setRestoreStock] = useState(true);
   const [printReceipt, setPrintReceipt] = useState(true);
   const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [showCustomers, setShowCustomers] = useState(false);
+  const [customerIndex, setCustomerIndex] = useState(-1);
+  const customerMatches = useMemo(() => {
+    const query = customerName.trim().toLocaleLowerCase();
+    const digits = query.replace(/\D/g, '');
+    return customers.filter(c => !query || c.name.toLocaleLowerCase().includes(query) ||
+      (digits.length > 0 && c.phone?.replace(/\D/g, '').includes(digits))).slice(0, 10);
+  }, [customers, customerName]);
+  const selectCustomer = (customer: CustomerProfile) => {
+    setCustomerName(customer.name);
+    setCustomerPhone(customer.phone || '+998 ');
+    setShowCustomers(false);
+    setCustomerIndex(-1);
+  };
 
   // Initialize or reset when modal opens or prefillMovement changes
   useEffect(() => {
     if (isOpen) {
+      setShowCustomers(false);
+      setCustomerIndex(-1);
       if (prefillMovement) {
-        const matchingProduct = products.find((p) => p.id === prefillMovement.productId);
+        const matchingProduct = productsRef.current.find((p) => p.id === prefillMovement.productId);
         setSelectedProduct(matchingProduct || {
           id: prefillMovement.productId,
           name: prefillMovement.productName,
@@ -109,7 +129,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
         setPrintReceipt(true);
       }
     }
-  }, [isOpen, prefillMovement, products]);
+  }, [isOpen, prefillMovement]);
 
   // When selected product changes in manual mode, set default price
   const handleSelectProduct = (prod: Product) => {
@@ -371,7 +391,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
               <input
                 type="number"
                 min="0"
-                step="1000"
+                step="1"
                 value={unitPrice || ''}
                 onChange={(e) => setUnitPrice(Math.max(0, parseInt(e.target.value) || 0))}
                 className="w-full py-2.5 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-black text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
@@ -405,7 +425,9 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
 
           {/* Customer Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
+            <div className="relative space-y-1" onBlur={e => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowCustomers(false);
+            }}>
               <label className="block font-bold text-stone-700 text-xs flex items-center gap-1">
                 <User className="w-3.5 h-3.5 text-stone-400" />
                 <span>Mijoz Ismi:</span>
@@ -413,10 +435,44 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
               <input
                 type="text"
                 placeholder="Mijoz ismi (ixtiyoriy)"
+                aria-label="Qaytarishda mijoz ismi"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={showCustomers}
+                aria-controls="return-customer-options"
+                aria-activedescendant={showCustomers && customerIndex >= 0 ? `return-customer-${customerIndex}` : undefined}
+                autoComplete="off"
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
+                onFocus={() => setShowCustomers(true)}
+                onChange={(e) => { setCustomerName(e.target.value); setShowCustomers(true); setCustomerIndex(-1); }}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setShowCustomers(true);
+                    setCustomerIndex(index => customerMatches.length ?
+                      (e.key === 'ArrowDown' ? (index + 1) % customerMatches.length : (index <= 0 ? customerMatches.length - 1 : index - 1)) : -1);
+                  } else if (e.key === 'Enter' && showCustomers) {
+                    e.preventDefault();
+                    const customer = customerMatches[customerIndex >= 0 ? customerIndex : 0];
+                    if (customer) selectCustomer(customer);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault(); e.stopPropagation(); setShowCustomers(false);
+                  }
+                }}
                 className="w-full py-2 px-3 bg-stone-50 border border-stone-200 rounded-xl text-xs font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
               />
+              {showCustomers && (
+                <div id="return-customer-options" role="listbox" aria-label="Doimiy mijozlar" className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-xl">
+                  {customerMatches.length ? customerMatches.map((customer, index) => (
+                    <button key={customer.id} id={`return-customer-${index}`} type="button" role="option" aria-selected={index === customerIndex}
+                      onMouseDown={e => e.preventDefault()} onClick={() => selectCustomer(customer)}
+                      className={`block w-full px-3 py-2 text-left text-xs hover:bg-amber-50 ${index === customerIndex ? 'bg-amber-50' : ''}`}>
+                      <span className="block font-bold text-stone-900">{customer.name}</span>
+                      {customer.phone && <span className="text-stone-500">{customer.phone}</span>}
+                    </button>
+                  )) : <p className="px-3 py-2 text-xs text-stone-500">Mos mijoz topilmadi. Ismni qo‘lda yozishingiz mumkin.</p>}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">

@@ -1,3 +1,5 @@
+import { OfflineDevicePanel } from './components/OfflineDevicePanel';
+import { browserSnapshot, mergeBrowserSnapshot } from './utils/browserSync';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, StockMovement, DebtRecord, PaymentMethod, SaleReceiptData, CustomerProfile, SupplierDebtRecord, StoreSettings, AuthUser, Currency } from './types';
 import { currencyOf, roundMoney, sumByCurrency } from './utils/money';
@@ -86,9 +88,13 @@ const mergeOnlineOrders = (localOrders: OnlineOrder[], serverOrders: OnlineOrder
   );
 };
 
+const isLocalDevice = ['127.0.0.1', 'localhost'].includes(window.location.hostname) && window.location.port === '3318';
+const canReachPos = () => isLocalDevice || navigator.onLine;
+
 export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(canReachPos());
   const isAdminUnlocked = authUser?.role === 'owner';
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingTab, setPendingTab] = useState<AccountingTab | null>(null);
@@ -109,7 +115,7 @@ export default function App() {
   // If unlocked, default to 'report'; if locked for employee/cashier, default to 'chiqim'
   const [activeTabState, setActiveTabState] = useState<AccountingTab>('chiqim');
   // Ishchi faqat Kassa (sotuv) va Nasiya bo'limlarini ko'ra oladi. Boshqa bo'limga o'tishga urinish kassaga qaytaradi.
-  const WORKER_TABS: AccountingTab[] = ['chiqim', 'debts', 'customers'];
+  const WORKER_TABS: AccountingTab[] = ['chiqim', 'debts', 'customers', 'kirim'];
   const [presetCustomer, setPresetCustomer] = useState<{ name: string; phone: string; address: string; nonce: number } | null>(null);
   const isWorkerUser = authUser?.role === 'worker';
   const activeTab: AccountingTab = isWorkerUser && !WORKER_TABS.includes(activeTabState) ? 'chiqim' : activeTabState;
@@ -144,46 +150,53 @@ export default function App() {
   const serverSyncReadyRef = useRef(false);
   const applyingServerStateRef = useRef(false);
   const serverRevisionRef = useRef<string | null>(null);
+  const syncBaseRef = useRef<any>(null);
+  const syncCurrentRef = useRef<any>(null);
+  const pushInFlightRef = useRef(false);
   const legacyHistoryImportedRef = useRef(false);
+  const activeSessionRef = useRef(authUser);
+  activeSessionRef.current = authUser;
+  const pullSequenceRef = useRef(0);
 
   useEffect(() => {
-    fetch('/api/v1/auth/me')
+    const update = () => setIsOnline(canReachPos());
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/v1/auth/me', { signal: controller.signal })
       .then(async response => response.ok ? response.json() : null)
       .then(data => {
-        if (data?.user) {
+        if (data?.user && !controller.signal.aborted) {
           setAuthUser(data.user);
           setActiveTab(data.user.role === 'owner' ? 'report' : 'chiqim');
         }
       })
-      .finally(() => setIsAuthLoading(false));
+      .catch(() => undefined)
+      .finally(() => { if (!controller.signal.aborted) setIsAuthLoading(false); });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
     if (!authUser) return;
     let lastTouch = 0;
-    let ownerTimer: ReturnType<typeof setTimeout> | undefined;
-    const logoutLocally = () => {
-      setAuthUser(null);
-      setActiveTab('chiqim');
-    };
     const registerActivity = () => {
       const now = Date.now();
-      if (authUser.role === 'owner') {
-        if (ownerTimer) clearTimeout(ownerTimer);
-        ownerTimer = setTimeout(logoutLocally, 15 * 60 * 1000);
-      }
-      if (now - lastTouch > 30_000) {
+      if (canReachPos() && now - lastTouch > 30_000) {
         lastTouch = now;
         fetch('/api/v1/auth/touch', { method: 'POST' }).catch(() => undefined);
       }
     };
-    const events: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'touchstart'];
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'touchstart', 'online'];
     events.forEach(event => window.addEventListener(event, registerActivity, { passive: true }));
     registerActivity();
-    return () => {
-      events.forEach(event => window.removeEventListener(event, registerActivity));
-      if (ownerTimer) clearTimeout(ownerTimer);
-    };
+    return () => events.forEach(event => window.removeEventListener(event, registerActivity));
   }, [authUser]);
 
   // Telegram Mini App & Online Buyurtmalar holati
@@ -293,32 +306,32 @@ export default function App() {
 
   // Sync with LocalStorage
   useEffect(() => {
-    if (authUser?.role === 'worker') return;
+    if (authUser?.role !== 'owner') return;
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
   }, [products, authUser?.role]);
 
   useEffect(() => {
-    if (authUser?.role === 'worker') return;
+    if (authUser?.role !== 'owner') return;
     localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
   }, [categories, authUser?.role]);
 
   useEffect(() => {
-    if (authUser?.role === 'worker') return;
+    if (authUser?.role !== 'owner') return;
     localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
   }, [movements, authUser?.role]);
 
   useEffect(() => {
-    if (authUser?.role === 'worker') return;
+    if (authUser?.role !== 'owner') return;
     localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(debts));
   }, [debts, authUser?.role]);
 
   useEffect(() => {
-    if (authUser?.role === 'worker') return;
+    if (authUser?.role !== 'owner') return;
     localStorage.setItem(STORAGE_KEYS.SUPPLIER_DEBTS, JSON.stringify(supplierDebts));
   }, [supplierDebts, authUser?.role]);
 
   useEffect(() => {
-    if (authUser?.role === 'worker') return;
+    if (authUser?.role !== 'owner') return;
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
   }, [customers, authUser?.role]);
 
@@ -339,9 +352,18 @@ export default function App() {
   }, [authUser?.id, authUser?.role]);
 
   // Serverdan eng so'nggi ma'lumotlarni tortib olish (Pull latest live data from server)
-  const fetchLatestStateFromServer = async () => {
+  syncCurrentRef.current = browserSnapshot({ products, movements, debts, supplierDebts, categories, storeInfo });
+  const fetchLatestStateFromServer = async (signal?: AbortSignal, resolveConflict = false) => {
+    if (!authUser || !canReachPos() || activeSessionRef.current !== authUser) return;
+    if (pushInFlightRef.current && !resolveConflict) return;
+    if (!resolveConflict && authUser.role === 'owner' && syncBaseRef.current && JSON.stringify(syncCurrentRef.current) !== JSON.stringify(syncBaseRef.current)) {
+      void handleSyncWithServer();
+      return;
+    }
+    const sequence = ++pullSequenceRef.current;
+    const isCurrent = () => !signal?.aborted && activeSessionRef.current === authUser && sequence === pullSequenceRef.current;
     try {
-      if (authUser?.role === 'owner' && !legacyHistoryImportedRef.current) {
+      if (!isLocalDevice && authUser?.role === 'owner' && !legacyHistoryImportedRef.current) {
         legacyHistoryImportedRef.current = true;
         if (movements.length || debts.length || supplierDebts.length) {
           await fetch('/api/v1/sync/import-legacy', {
@@ -351,9 +373,11 @@ export default function App() {
           });
         }
       }
+      if (!isCurrent()) return;
       const revision = serverRevisionRef.current;
       const syncUrl = revision ? `/api/v1/sync?since=${encodeURIComponent(revision)}` : '/api/v1/sync';
-      const res = await fetch(syncUrl, { cache: 'no-store' });
+      const res = await fetch(syncUrl, { cache: 'no-store', signal });
+      if (!isCurrent()) return;
       if (res.status === 304) return;
       if (res.status === 401) {
         setAuthUser(null);
@@ -362,13 +386,18 @@ export default function App() {
       }
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.state) {
+        if (isCurrent() && data.success && data.state) {
           applyingServerStateRef.current = true;
-          const s = data.state;
+          const remote = browserSnapshot(data.state);
+          const dirty = authUser.role === 'owner' && syncBaseRef.current && JSON.stringify(syncCurrentRef.current) !== JSON.stringify(syncBaseRef.current);
+          const s = dirty ? mergeBrowserSnapshot(syncBaseRef.current, syncCurrentRef.current, remote) : data.state;
+          syncBaseRef.current = remote;
+          syncCurrentRef.current = browserSnapshot(s);
           serverRevisionRef.current = data.serverTimestamp || s.lastUpdated || null;
           if (typeof data.apiKey === 'string') setApiKey(data.apiKey);
           const serverProducts = Array.isArray(s.products) ? removeDemoProducts(s.products) : [];
           setProducts(serverProducts);
+          if (s.storeInfo) setStoreInfo(s.storeInfo);
           if (Array.isArray(s.categories)) setCategories(s.categories);
           if (Array.isArray(s.movements)) setMovements(s.movements);
           if (Array.isArray(s.debts)) {
@@ -381,8 +410,10 @@ export default function App() {
             setCustomers(s.customers);
           }
           window.setTimeout(() => {
+            if (activeSessionRef.current !== authUser) return;
             applyingServerStateRef.current = false;
             serverSyncReadyRef.current = true;
+            if (dirty) void handleSyncWithServer();
           }, 0);
         }
       }
@@ -391,46 +422,57 @@ export default function App() {
     }
   };
 
-  // Dastur yuklanganda va har 5 soniyada serverdan yangilanishlarni olish (Real vaqt rejimida telefon <-> kompyuter sinxronlash)
   useEffect(() => {
+    serverRevisionRef.current = null;
+    syncBaseRef.current = null;
+    serverSyncReadyRef.current = false;
+    applyingServerStateRef.current = false;
+    legacyHistoryImportedRef.current = false;
+    setApiKey('');
     if (!authUser) return;
-    fetchLatestStateFromServer();
 
-    const interval = setInterval(fetchLatestStateFromServer, 10_000);
-    const handleFocus = () => fetchLatestStateFromServer();
-    window.addEventListener('focus', handleFocus);
-
+    const controller = new AbortController();
+    const refresh = () => { void fetchLatestStateFromServer(controller.signal); };
+    const refreshVisible = () => { if (!document.hidden) refresh(); };
+    refresh();
+    const interval = setInterval(refreshVisible, 15_000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    window.addEventListener('online', refresh);
     return () => {
+      controller.abort();
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', refreshVisible);
+      window.removeEventListener('online', refresh);
     };
-  }, [authUser?.id]);
+  }, [authUser]);
 
   // Server REST API bilan ikki tomonlama sinxronizatsiya (Push changes to server)
   async function handleSyncWithServer(overrideProducts?: Product[]) {
-    if (authUser?.role !== 'owner') return;
+    if (authUser?.role !== 'owner' || !canReachPos() || activeSessionRef.current !== authUser || !serverRevisionRef.current) return;
+    if (pushInFlightRef.current) return;
+    const snapshot = browserSnapshot({ ...syncCurrentRef.current, ...(overrideProducts ? { products: overrideProducts } : {}) });
+    if (JSON.stringify(snapshot) === JSON.stringify(syncBaseRef.current)) return;
+    pushInFlightRef.current = true;
+    ++pullSequenceRef.current;
     setIsSyncingWithServer(true);
     try {
       const res = await fetch('/api/v1/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          products: overrideProducts || products,
-          movements,
-          debts,
-          supplierDebts,
-          categories,
-          storeInfo,
+          ...snapshot,
           baseRevision: serverRevisionRef.current,
           clientTimestamp: new Date().toISOString()
         })
       });
+      if (activeSessionRef.current !== authUser) return;
       if (res.status === 409) {
-        await fetchLatestStateFromServer();
+        await fetchLatestStateFromServer(undefined, true);
         return;
       }
       if (res.ok) {
         const data = await res.json();
+        syncBaseRef.current = snapshot;
         serverRevisionRef.current = data.serverTimestamp || data.state?.lastUpdated || serverRevisionRef.current;
         if (data.success && data.apiKey) {
           setApiKey(data.apiKey);
@@ -439,7 +481,11 @@ export default function App() {
     } catch (err) {
       console.warn('[Sync] Server bilan ulanish kutilmoqda:', err);
     } finally {
+      pushInFlightRef.current = false;
       setIsSyncingWithServer(false);
+      if (activeSessionRef.current === authUser && canReachPos() && JSON.stringify(syncCurrentRef.current) !== JSON.stringify(syncBaseRef.current)) {
+        window.setTimeout(() => { void handleSyncWithServer(); }, 1000);
+      }
     }
   }
 
@@ -561,6 +607,7 @@ export default function App() {
     let isSubscribed = true;
 
     const pollPendingOrders = async () => {
+      if (document.hidden || !canReachPos()) return;
       try {
         const res = await fetch('/api/v1/telegram/miniapp/pending-orders');
         if (!res.ok) return;
@@ -612,14 +659,7 @@ export default function App() {
 
           // 3. Refresh orders & products list so POS inventory and movements are immediately updated
           handleRefreshOnlineOrders();
-          fetch('/api/v1/telegram/miniapp/products', { cache: 'no-store' })
-            .then((r) => r.json())
-            .then((d) => {
-              if (d.products && Array.isArray(d.products)) {
-                setProducts(d.products);
-              }
-            })
-            .catch(() => {});
+          void fetchLatestStateFromServer();
         }
       } catch (e) {
         // Network blip, will retry next cycle
@@ -680,10 +720,12 @@ export default function App() {
           const current = updated[prodIndex];
           updated[prodIndex] = {
             ...current,
+            name: item.product.name.trim(),
+            category: item.product.category.trim(),
             stock: current.stock + item.quantity,
             purchasePrice: item.unitCost,
-            wholesalePrice: item.wholesalePrice !== undefined 
-              ? item.wholesalePrice 
+            wholesalePrice: item.wholesalePrice !== undefined
+              ? item.wholesalePrice
               : current.wholesalePrice || Math.round(item.unitPrice * 0.8),
             sellingPrice: item.unitPrice
           };
@@ -698,31 +740,32 @@ export default function App() {
             sellingPrice: item.unitPrice
           });
         }
-
-        newMovements.push({
-          id: `mov-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          type: 'kirim',
-          productId: item.product.id,
-          productName: item.product.name,
-          category: item.product.category,
-          quantity: item.quantity,
-          unitCost: item.unitCost,
-          unitPrice: item.unitPrice,
-          ...(item.currency === 'USD' ? { currency: 'USD' as const } : {}),
-          totalCost: roundMoney(item.unitCost * item.quantity, currencyOf({ currency: item.currency })),
-          totalRevenue: roundMoney(item.unitCost * item.quantity, currencyOf({ currency: item.currency })),
-          profit: 0,
-          timestamp: nowISO,
-          counterparty: supplier,
-          notes: supplierDebtInfo?.isDebt 
-            ? `${notes ? notes + ' | ' : ''}Qarzga olindi (Qoldiq: ${formatMoney(supplierDebtInfo.remainingAmount, currencyOf({ currency: item.currency }))})` 
-            : notes
-        });
       });
 
       return updated;
     });
 
+    items.forEach((item) => {
+      newMovements.push({
+        id: `mov-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        type: 'kirim',
+        productId: item.product.id,
+        productName: item.product.name,
+        category: item.product.category,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        unitPrice: item.unitPrice,
+        ...(item.currency === 'USD' ? { currency: 'USD' as const } : {}),
+        totalCost: roundMoney(item.unitCost * item.quantity, currencyOf({ currency: item.currency })),
+        totalRevenue: roundMoney(item.unitCost * item.quantity, currencyOf({ currency: item.currency })),
+        profit: 0,
+        timestamp: nowISO,
+        counterparty: supplier,
+        notes: supplierDebtInfo?.isDebt
+          ? `${notes ? notes + ' | ' : ''}Qarzga olindi (Qoldiq: ${formatMoney(supplierDebtInfo.remainingAmount, currencyOf({ currency: item.currency }))})`
+          : notes
+      });
+    });
     setMovements((prev) => [...newMovements, ...prev]);
 
     // Automatically record into Supplier Debts if purchased on credit / partial credit
@@ -805,8 +848,9 @@ export default function App() {
     customerPhone: string,
     customerAddress: string,
     notes: string,
-    debtDetails?: { paidNow: number; dueDate: string; discountAmount?: number; receiptNumber?: string }
+    debtDetails?: { paidNow: number; discountAmount?: number; receiptNumber?: string }
   ): Promise<void> => {
+    if (!canReachPos()) throw new Error('Internet uzilgan. Savat shu oynada saqlanadi. Aloqa tiklangach qayta urinib ko‘ring.');
     const requestBody = JSON.stringify({
         items: items.map(item => ({ productId: item.product.id, quantity: item.quantity, unitPrice: item.unitPrice })),
         paymentMethod,
@@ -814,7 +858,6 @@ export default function App() {
         customerPhone,
         customerAddress,
         notes,
-        dueDate: debtDetails?.dueDate,
         discount: debtDetails?.discountAmount,
         paidNow: debtDetails?.paidNow,
         receiptNumber: debtDetails?.receiptNumber
@@ -861,7 +904,6 @@ export default function App() {
     notes: string,
     debtDetails?: {
       paidNow: number;
-      dueDate: string;
       discountAmount?: number;
       receiptNumber?: string;
     }
@@ -892,8 +934,7 @@ export default function App() {
           customerPhone,
           customerAddress,
           notes,
-          dueDate: debtDetails?.dueDate,
-          discount: debtDetails?.discountAmount
+            discount: debtDetails?.discountAmount
         })
       }).then(async response => {
         const data = await response.json();
@@ -940,7 +981,6 @@ export default function App() {
         debtRemaining: line.debt,
         previousCustomerDebt,
         customerTotalDebt: roundMoney(previousCustomerDebt + accounting.remaining, saleCurrency),
-        debtDueDate: accounting.remaining > 0 ? debtDetails?.dueDate : undefined,
         profit,
         timestamp: nowISO,
         paymentMethod,
@@ -1000,7 +1040,7 @@ export default function App() {
           totalDebt: saleTotalRevenue,
           paidAmount: accounting.paid,
           remainingAmount: remaining,
-          dueDate: debtDetails.dueDate,
+          dueDate: '',
           createdAt: nowISO,
           status: accounting.paid > 0 ? 'qisman_tolandi' : 'faol',
           notes: items.map((i) => `${i.product.name} (${i.quantity} ta)`).join(', '),
@@ -1109,7 +1149,7 @@ export default function App() {
           const isSameCustomer = 
             (debt.customerName.toLowerCase().trim() === data.customerName.toLowerCase().trim()) ||
             (data.customerPhone && debt.customerPhone === data.customerPhone);
-          
+
           // Faqat shu valyutadagi nasiya kamayadi (dollarli qaytarish so'mli qarzga tegmaydi).
           if (isSameCustomer && currencyOf(debt) === returnCurrency && debt.status !== 'yopildi' && debt.remainingAmount > 0) {
             const deduction = Math.min(debt.remainingAmount, remainingRefundToDeduct);
@@ -1123,7 +1163,7 @@ export default function App() {
               status: newRemaining <= 0 ? 'yopildi' : 'qisman_tolandi',
               notes: `${debt.notes ? debt.notes + ' | ' : ''}Vazvrat hisobiga ${formatMoney(deduction, returnCurrency)} kamaytirildi`,
               paymentHistory: [
-                ...debt.paymentHistory,
+                ...(debt.paymentHistory || []),
                 {
                   date: nowISO,
                   amount: deduction,
@@ -1512,8 +1552,10 @@ export default function App() {
     }
   };
 
-  const handleAdminLock = () => {
-    fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => undefined);
+  const handleAdminLock = async () => {
+    if (canReachPos()) {
+      await fetch('/api/v1/auth/logout', { method: 'POST', signal: AbortSignal.timeout(4000) }).catch(() => undefined);
+    }
     setAuthUser(null);
     const protectedTabs: AccountingTab[] = ['report', 'supplier-debts', 'hisobchi'];
     if (protectedTabs.includes(activeTab)) {
@@ -1556,6 +1598,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900 font-sans flex flex-col lg:flex-row">
+
+      {!isOnline && (
+        <div role="status" className="fixed inset-x-0 top-0 z-[110] bg-amber-100 px-3 py-2 text-center text-xs font-semibold text-amber-950">
+          Internet uzilgan. Yuklangan katalog va savatdan foydalanish mumkin. Savdoni aloqa tiklangach tasdiqlang.
+        </div>
+      )}
       {/* Left Column Sidebar (Chap tarafdagi vertikal ustun) */}
       <Sidebar
         activeTab={activeTab}
@@ -1613,6 +1661,7 @@ export default function App() {
 
         {/* Main Container */}
         <main className={`flex-1 w-full mx-auto px-2.5 sm:px-6 pt-3 sm:pt-6 pb-28 lg:pb-12 overflow-x-clip ${activeTab === 'chiqim' ? 'max-w-[1700px]' : 'max-w-7xl'}`}>
+        {isLocalDevice && <OfflineDevicePanel local />}
         {activeTab === 'report' && (
           !isAdminUnlocked ? (
             <div className="py-16 px-4 text-center max-w-md mx-auto space-y-4">
@@ -1637,22 +1686,6 @@ export default function App() {
           ) : (
             <ReportsDashboard onOpenPdfReports={handleOpenPdfReports} />
           )
-        )}
-
-        {activeTab === 'kirim' && (
-          <KirimFormView
-            products={products}
-            categories={categories}
-            recentKirimMovements={movements.filter((m) => m.type === 'kirim')}
-            onConfirmKirim={handleConfirmKirim}
-            onAddNewProductDirect={handleAddNewProductDirect}
-            onAddCategory={handleAddCategory}
-            onEditCategory={handleEditCategory}
-            onDeleteCategory={handleDeleteCategory}
-            onNavigateToSupplierDebts={() => setActiveTab('supplier-debts')}
-            onOpenExcelImport={() => setIsExcelImportModalOpen(true)}
-            onOpenPhotoKirim={() => setIsPhotoKirimModalOpen(true)}
-          />
         )}
 
         {activeTab === 'chiqim' && (
@@ -1732,7 +1765,6 @@ export default function App() {
             storeInfo={storeInfo}
             onAddDebtPayment={handleAddDebtPayment}
             onAddNewDebt={handleAddNewDebtManual}
-            customers={customers}
           />
         )}
 
@@ -1792,6 +1824,7 @@ export default function App() {
             </div>
           ) : (
             <>
+              {!isLocalDevice && <OfflineDevicePanel local={false} />}
               <WorkerManagement />
               <HisobchiPanelView
                 products={products}
@@ -1861,6 +1894,37 @@ export default function App() {
         )}
       </main>
 
+      {activeTab === 'kirim' && (
+        <KirimFormView
+          onClose={() => setActiveTab('stock')}
+          products={products}
+          categories={categories}
+          recentKirimMovements={movements.filter((m) => m.type === 'kirim')}
+          supplierNames={Array.from(new Set([
+            ...supplierDebts.map((debt) => debt.supplierName),
+            ...movements.filter((m) => m.type === 'kirim' && !m.isReturn).map((m) => m.counterparty)
+          ].flatMap((name) => name?.trim() ? [name.trim()] : []))).sort((a, b) => a.localeCompare(b))}
+          onConfirmKirim={handleConfirmKirim}
+          onSubmitWorkerKirim={isWorkerUser ? async (payload) => {
+            const response = await fetch('/api/v1/worker/kirim', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Kirim saqlanmadi.');
+            await fetchLatestStateFromServer();
+          } : undefined}
+          onAddNewProductDirect={isWorkerUser ? undefined : handleAddNewProductDirect}
+          onAddCategory={isWorkerUser ? undefined : (handleAddCategory)}
+          onEditCategory={isWorkerUser ? undefined : (handleEditCategory)}
+          onDeleteCategory={isWorkerUser ? undefined : (handleDeleteCategory)}
+          onNavigateToSupplierDebts={isWorkerUser ? undefined : (() => setActiveTab('supplier-debts'))}
+          onOpenExcelImport={isWorkerUser ? undefined : (() => setIsExcelImportModalOpen(true))}
+          onOpenPhotoKirim={isWorkerUser ? undefined : (() => setIsPhotoKirimModalOpen(true))}
+        />
+      )}
+
       {/* Global Printable Receipt Modal */}
       {activeReceiptToPrint && (
         <PrintReceiptModal
@@ -1901,6 +1965,7 @@ export default function App() {
         products={products}
         debts={debts}
         prefillMovement={vazvratInitialMovement}
+        customers={customers}
         onConfirmVazvrat={handleConfirmVazvrat}
       />
 

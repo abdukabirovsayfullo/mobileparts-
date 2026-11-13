@@ -107,7 +107,7 @@ export const WorkerDebtPanel: React.FC<{ onChanged?: () => void; storeInfo: Stor
         {results.map(debt => (
           <article key={debt.id} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
-              <div><h3 className="text-sm font-black">{debt.customerName}</h3><p className="text-[11px] text-stone-500">{debt.phoneTail ? `Telefon …${debt.phoneTail} • ` : ''}muddat {debt.dueDate}</p></div>
+              <div><h3 className="text-sm font-black">{debt.customerName}</h3><p className="text-[11px] text-stone-500">{[debt.phoneTail && `Telefon …${debt.phoneTail}`, debt.dueDate && `muddat ${debt.dueDate}`].filter(Boolean).join(' • ')}</p></div>
               <div className="text-right"><div className="text-[10px] text-stone-500">Qarz qoldig‘i</div><div className="text-lg font-black text-rose-600">{formatMoney(debt.remainingAmount, debt.currency)}</div></div>
             </div>
             {debt.recentPayments.length > 0 && (

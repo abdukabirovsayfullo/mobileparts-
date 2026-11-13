@@ -1,3 +1,4 @@
+import { CustomerTelegramPanel } from './CustomerTelegramPanel';
 import React, { useCallback, useEffect, useState } from 'react';
 import { MapPin, Phone, Plus, Search, ShoppingCart, Trash2, Upload, Users } from 'lucide-react';
 import type { CustomerProfile } from '../types';
@@ -95,6 +96,8 @@ export const CustomersPanel: React.FC<Props> = ({ isOwner, localCustomers = [], 
           </button>
         </div>
       </div>
+
+      {isOwner && <CustomerTelegramPanel />}
 
       {showForm && (
         <form onSubmit={save} className="bg-white rounded-2xl border border-stone-200 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">

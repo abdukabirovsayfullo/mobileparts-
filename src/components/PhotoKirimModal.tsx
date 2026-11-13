@@ -285,11 +285,11 @@ export const PhotoKirimModal: React.FC<PhotoKirimModalProps> = ({
       
       const selling = Number(item.sellingPrice) > 0
         ? Number(item.sellingPrice)
-        : (matched?.sellingPrice || Math.round((cost * 1.5) / 1000) * 1000);
+        : (matched?.sellingPrice || Math.round((cost * 1.5)));
 
       const wholesale = Number(item.wholesalePrice) > 0
         ? Number(item.wholesalePrice)
-        : (matched?.wholesalePrice || Math.round((selling * 0.8) / 1000) * 1000);
+        : (matched?.wholesalePrice || Math.round((selling * 0.8)));
 
       const cat = item.category && categories.includes(item.category)
         ? item.category
@@ -390,8 +390,8 @@ export const PhotoKirimModal: React.FC<PhotoKirimModalProps> = ({
           if (field === 'costPrice') {
             const newCost = Number(value) || 0;
             if (newCost > 0 && updated.sellingPrice < newCost) {
-              updated.sellingPrice = Math.round((newCost * 1.5) / 1000) * 1000;
-              updated.wholesalePrice = Math.round((updated.sellingPrice * 0.8) / 1000) * 1000;
+              updated.sellingPrice = Math.round((newCost * 1.5));
+              updated.wholesalePrice = Math.round((updated.sellingPrice * 0.8));
             }
           }
           return updated;
@@ -1090,7 +1090,7 @@ export const PhotoKirimModal: React.FC<PhotoKirimModalProps> = ({
                             <td className="p-3 text-right">
                               <input
                                 type="number"
-                                step="500"
+                                step="1"
                                 value={item.costPrice}
                                 onChange={(e) => handleUpdateItem(item.id, 'costPrice', Number(e.target.value))}
                                 className="w-24 text-right px-2 py-1 bg-stone-50 focus:bg-white border border-stone-200 focus:border-amber-400 rounded-lg text-xs font-mono font-bold text-stone-900 focus:outline-none"
@@ -1101,7 +1101,7 @@ export const PhotoKirimModal: React.FC<PhotoKirimModalProps> = ({
                               <div className="space-y-0.5">
                                 <input
                                   type="number"
-                                  step="1000"
+                                  step="1"
                                   value={item.sellingPrice}
                                   onChange={(e) => handleUpdateItem(item.id, 'sellingPrice', Number(e.target.value))}
                                   className="w-24 text-right px-2 py-1 bg-stone-50 focus:bg-white border border-stone-200 focus:border-emerald-500 rounded-lg text-xs font-mono font-bold text-emerald-800 focus:outline-none"

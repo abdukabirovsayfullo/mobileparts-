@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, CustomerProfile, Currency } from '../types';
 import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
@@ -58,7 +58,6 @@ interface ChiqimFormViewProps {
     notes: string,
     debtDetails?: {
       paidNow: number;
-      dueDate: string;
       discountAmount?: number;
       receiptNumber?: string;
     }
@@ -75,56 +74,6 @@ interface ChiqimCartItem {
   unitPrice: number;
   priceType?: 'chakana' | 'optom' | 'maxsus';
 }
-
-// Savatdagi miqdorni qo'lda yozib kiritish maydoni.
-// Yozish paytida qiymat erkin o'zgaradi, Enter yoki maydondan chiqqanda tasdiqlanadi.
-const CartQuantityInput: React.FC<{
-  quantity: number;
-  max: number;
-  onCommit: (qty: number) => void;
-}> = ({ quantity, max, onCommit }) => {
-  const [draft, setDraft] = useState(String(quantity));
-
-  useEffect(() => {
-    setDraft(String(quantity));
-  }, [quantity]);
-
-  const commit = () => {
-    const parsed = parseInt(draft, 10);
-    if (!Number.isFinite(parsed) || parsed < 1) {
-      setDraft(String(quantity));
-      return;
-    }
-    if (parsed > max) {
-      alert(`Omborda faqat ${max} dona bor!`);
-      setDraft(String(quantity));
-      return;
-    }
-    if (parsed !== quantity) onCommit(parsed);
-  };
-
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      pattern="[0-9]*"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
-      onFocus={(e) => e.target.select()}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape') {
-          setDraft(String(quantity));
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      className="w-12 px-1 py-1.5 bg-white border-x border-stone-200 text-center text-base font-black text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
-      title="Miqdorni yozib kiriting"
-      aria-label="Miqdor"
-    />
-  );
-};
 
 export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   products,
@@ -172,6 +121,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   // Phone sale flow: select products, review the cart, then take payment.
   const [mobileTab, setMobileTab] = useState<'catalog' | 'cart' | 'payment'>('catalog');
+  const saleAttempt = useRef<{ payload: string; receipt: string } | null>(null);
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const [saleError, setSaleError] = useState('');
 
@@ -186,13 +136,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [selectedDebtToPay, setSelectedDebtToPay] = useState<DebtRecord | null>(null);
   const [quickPayAmount, setQuickPayAmount] = useState<number>(0);
   const [quickPayMethod, setQuickPayMethod] = useState<'naqd' | 'click_payme'>('naqd');
-
-  // Nasiya inputs if paymentMethod === 'nasiya'
-  const [nasiyaDueDate, setNasiyaDueDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 10);
-    return d.toISOString().slice(0, 10);
-  });
 
   // Calculate customer debt and past records automatically!
   const customerDebtInfo = useMemo(() => {
@@ -337,17 +280,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     );
   };
 
-  // Miqdorni to'g'ridan-to'g'ri o'rnatish (qo'lda yozilganda)
-  const handleSetQuantity = (productId: string, qty: number) => {
-    setCart((prev) =>
-      prev.map((item) => {
-        if (item.product.id !== productId) return item;
-        const safeQty = Math.max(1, Math.min(Math.floor(qty), item.product.stock));
-        return { ...item, quantity: safeQty };
-      })
-    );
-  };
-
   // Immediate in-place price edit for a product in cart
   const handleUpdatePrice = (productId: string, newPrice: number) => {
     setCart((prev) =>
@@ -417,13 +349,22 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const willBeDebt = effectiveRemainingDebt > 0;
     const salePaymentMethod = willBeDebt ? 'nasiya' : paymentMethod === 'nasiya' ? 'naqd' : paymentMethod;
 
-    // This number is also the server-side idempotency key, so it must remain
-    // unique even when several cashiers sell at the same time.
-    const receiptNum = `PB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-
     const saleNotesWithDiscount = discountAmount > 0
       ? `${currentNotes ? currentNotes + ' | ' : ''}Chegirma (Skitka): ${formatMoney(discountAmount, cartCurrency)}`
       : currentNotes;
+
+    const payload = JSON.stringify({
+      items: cart.map(({ product, quantity, unitPrice }) => [product.id, quantity, unitPrice]),
+      salePaymentMethod, currentCustomer, currentPhone, currentAddress,
+      saleNotesWithDiscount, effectivePaid, discountAmount
+    });
+    if (saleAttempt.current?.payload !== payload) {
+      saleAttempt.current = {
+        payload,
+        receipt: `PB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
+      };
+    }
+    const receiptNum = saleAttempt.current.receipt;
 
     setIsSubmittingSale(true);
     setSaleError('');
@@ -435,7 +376,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         currentPhone,
         currentAddress,
         saleNotesWithDiscount,
-        { paidNow: effectivePaid, dueDate: nasiyaDueDate, discountAmount, receiptNumber: receiptNum }
+        { paidNow: effectivePaid, discountAmount, receiptNumber: receiptNum }
       );
     } catch (error) {
       setSaleError(error instanceof Error ? error.message : 'Savdo saqlanmadi. Internetni tekshirib qayta urinib ko‘ring.');
@@ -472,18 +413,25 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         debtRemaining: effectiveRemainingDebt,
         previousCustomerDebt: customerDebtInfo.totalDebt,
         customerTotalDebt: customerDebtInfo.totalDebt + effectiveRemainingDebt,
-        debtDueDate: willBeDebt ? nasiyaDueDate : undefined,
+
         showPrices: receiptPriceView
       };
       setPrintOnOpen(true);
       setReceiptToPrint(generatedReceipt);
     }
 
+    saleAttempt.current = null;
     setCart([]);
     setMobileTab('catalog');
     setCashReceived(0);
     setDiscountValue(0);
     setNotes('');
+    setCustomerName("Do'kon mijozi");
+    setCustomerPhone('+998 ');
+    setCustomerAddress("Do'kondan olib ketildi (Paxtaobod)");
+    setPaymentMethod('naqd');
+    setShowCustomerDropdown(false);
+    setShowAdditional(false);
   };
 
   const handlePreviewCartReceipt = (showPricesOnly: boolean) => {
@@ -517,7 +465,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
       debtRemaining: unpaidRemaining,
       previousCustomerDebt: customerDebtInfo.totalDebt,
       customerTotalDebt: customerDebtInfo.totalDebt + unpaidRemaining,
-      debtDueDate: unpaidRemaining > 0 ? nasiyaDueDate : undefined,
+
       notes: notes,
       cashierName: 'Sayfullo (Hisobchi)',
       showPrices: showPricesOnly
@@ -703,6 +651,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
             </div>
           )}
 
+          {topSlot}
+
           {/* Product Items Cards with both Retail & Wholesale prices */}
           <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5 max-h-[70vh] lg:max-h-[calc(100vh-17rem)] overflow-y-auto pr-1 content-start">
             {filteredProducts.length === 0 && <div className="sm:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">Hech narsa topilmadi. Tovar nomi yoki kodini tekshiring.</div>}
@@ -775,8 +725,6 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
             )}
           </div>
 
-          {/* Secondary cash tools stay below the everyday product flow on phones. */}
-          {topSlot}
         </div>
 
         {/* Floating Mobile Cart Bar when browsing Catalog on Phone */}
@@ -805,7 +753,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         )}
 
         {/* Right Side: Sales Cart & Checkout (5 cols) */}
-        <div className={`${mobileTab !== 'catalog' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-7rem)] lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-4`}>
+        <div className={`${mobileTab !== 'catalog' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start ${cart.length > 0 ? 'lg:h-[calc(100dvh-7rem)]' : ''} lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-3`}>
           {/* Mobile Back to Catalog Button */}
           <div className="lg:hidden flex items-center justify-between pb-2 border-b border-stone-100">
             <button
@@ -823,7 +771,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           <div className={`${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex flex-wrap items-center justify-between border-b border-stone-100 pb-3 gap-2`}>
             <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
               <ShoppingCart className="w-4 h-4 text-amber-500" />
-              <span>Chiqim Savatchasi ({cart.length})</span>
+              <span>Savat ({cart.length})</span>
             </h3>
             {cart.length > 0 && (
               <div className="flex items-center gap-1.5">
@@ -834,7 +782,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   title="Savatdagi tovarlarni narxlarsiz Buyurtma Ro'yxati (Order list) sifatida ko'rish va chop etish"
                 >
                   <EyeOff className="w-3 h-3 text-emerald-600" />
-                  <span>Order List</span>
+                  <span>Buyurtma</span>
                 </button>
                 <button
                   type="button"
@@ -858,15 +806,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           </div>
 
           {/* Cart Items List with INLINE PRICE EDITING & QUICK OPTOM/CHAKANA BUTTONS */}
-          <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:block flex-1 lg:flex-none min-h-[120px] max-h-[52vh] lg:max-h-[26vh] overflow-y-auto divide-y divide-stone-100`}>
+          <div className={`${mobileTab === 'cart' ? 'block' : 'hidden'} lg:block flex-1 lg:flex-none max-h-[52vh] lg:max-h-[22vh] overflow-y-auto divide-y divide-stone-100`}>
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center p-6 text-center text-stone-400 space-y-1">
-                <ShoppingCart className="w-8 h-8 text-stone-300" />
-                <span className="text-xs">Savatcha bo'sh</span>
-                <span className="text-[11px] text-stone-400">
-                  Chapdagi aksessuarlarni bosib savatga qo'shing.
-                </span>
-              </div>
+              <p className="rounded-xl bg-stone-50 px-3 py-4 text-center text-xs text-stone-600">
+                Savat bo'sh. Tovarni tanlab savatga qo'shing.
+              </p>
             ) : (
               cart.map((item) => {
                 const optomPrice = wholesaleOf(item.product);
@@ -896,11 +840,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         >
                           -
                         </button>
-                        <CartQuantityInput
-                          quantity={item.quantity}
-                          max={item.product.stock}
-                          onCommit={(qty) => handleSetQuantity(item.product.id, qty)}
-                        />
+                        <span className="px-2 text-base font-black text-stone-900">
+                          {item.quantity}
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleUpdateQuantity(item.product.id, 1)}
@@ -915,8 +857,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         <Edit3 className="w-3 h-3 text-stone-400 shrink-0" />
                         <input
                           type="number"
-                          step={cartCurrency === 'USD' ? 'any' : '500'}
-                          value={item.unitPrice}
+                          step={cartCurrency === 'USD' ? 'any' : '1'}
+                          min="0"
+                          value={item.unitPrice || ''}
+                          onFocus={(e) => e.currentTarget.select()}
                           onChange={(e) => handleUpdatePrice(item.product.id, Number(e.target.value))}
                           className="w-24 px-1.5 py-1.5 bg-white border border-stone-300 rounded-md text-right font-black text-sm text-stone-950 focus:ring-1 focus:ring-amber-400"
                           title="Narxni o'sha joyning o'zida tahrirlash"
@@ -964,7 +908,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
             )}
           </div>
 
-          {mobileTab === 'cart' && (
+          {mobileTab === 'cart' && cart.length > 0 && (
             <button
               type="button"
               disabled={cart.length === 0}
@@ -981,12 +925,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           )}
 
           {/* Checkout Form */}
-          <form onSubmit={handleFinalizeSale} className={`${mobileTab === 'payment' ? 'block' : 'hidden'} lg:flex border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0`}>
+          {cart.length > 0 && <form onSubmit={handleFinalizeSale} className={`${mobileTab === 'payment' ? 'block' : 'hidden'} lg:flex border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0`}>
             <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             {/* Payment Method Selector */}
             <div>
               <label className="block font-semibold text-stone-700 mb-1">
-                To'lov Turi:
+                To'lov turi
               </label>
               <div className="grid grid-cols-4 gap-1.5">
                 {[
@@ -998,10 +942,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => {
-                      setPaymentMethod(m.id as PaymentMethod);
-                                          }}
-                    className={`py-2.5 text-sm rounded-xl font-black text-center cursor-pointer transition-colors ${
+                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
+                    aria-pressed={paymentMethod === m.id}
+                    className={`py-2 text-xs rounded-lg font-black text-center cursor-pointer transition-colors ${
                       paymentMethod === m.id
                         ? m.id === 'nasiya'
                           ? 'bg-red-500 text-white'
@@ -1017,79 +960,57 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
             {/* If Cash or partial payment: Amount Received & Auto-Debt Logic (1-talab) */}
             <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-stone-700">
-                  {paymentMethod === 'nasiya' ? "Hozir berilgan naqd pul (bo'lsa):" : "Mijoz to'lagan / bergan summa:"}
-                </span>
-                <div className="flex items-center gap-1">
+              <div className="space-y-1.5">
+                <label htmlFor="checkout-paid" className="font-semibold text-stone-700">
+                  {paymentMethod === 'nasiya' ? "Avans (ixtiyoriy)" : "To'langan summa"}
+                </label>
+                <div className="flex items-center gap-2">
                   <input
+                    id="checkout-paid"
                     type="number"
-                    step={cartCurrency === 'USD' ? 'any' : '1000'}
-                    placeholder={`To'liq: ${grandTotalRevenue}`}
+                    step={cartCurrency === 'USD' ? 'any' : '1'}
+                    placeholder={paymentMethod === 'nasiya' ? '0' : String(grandTotalRevenue)}
                     value={cashReceived || ''}
                     min="0"
                     onChange={(e) => {
                       const nextAmount = Math.max(0, Number(e.target.value));
                       setCashReceived(nextAmount);
                     }}
-                    className="w-32 px-2 py-1 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    className="min-w-0 flex-1 px-2 py-2 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                   <span className="text-[10px] text-stone-500 font-bold">{cartCurrency === 'USD' ? '$' : "so'm"}</span>
                 </div>
               </div>
 
-              {/* Exact Change Calculation */}
-              <div className="space-y-1 text-xs font-bold border-t border-stone-200 pt-2">
-                <div className="flex justify-between"><span>Avvalgi qarz:</span><span>{formatMoney(customerDebtInfo.totalDebt, cartCurrency)}</span></div>
-                <div className="flex justify-between"><span>Bu savdodan qarz:</span><span>{formatMoney(unpaidRemaining, cartCurrency)}</span></div>
-                <div className="flex justify-between text-red-700"><span>Jami qarzdorlik:</span><span>{formatMoney(roundMoney(customerDebtInfo.totalDebt + unpaidRemaining, cartCurrency), cartCurrency)}</span></div>
-              </div>
-              {changeAmount > 0 && (
-                <div className="flex justify-between font-black text-amber-700 pt-1.5 border-t border-stone-200">
-                  <span>Qaytim (sdacha):</span>
-                  <span className="text-sm">{formatMoney(changeAmount, cartCurrency)}</span>
+              {(customerDebtInfo.totalDebt > 0 || unpaidRemaining > 0 || changeAmount > 0) && (
+                <div className="space-y-1 border-t border-stone-200 pt-2 font-bold">
+                  {customerDebtInfo.totalDebt > 0 && (
+                    <div className="flex justify-between gap-2">
+                      <span>Avvalgi qarz</span>
+                      <span>{formatMoney(customerDebtInfo.totalDebt, cartCurrency)}</span>
+                    </div>
+                  )}
+                  {unpaidRemaining > 0 && (
+                    <div className="flex justify-between gap-2 text-red-700">
+                      <span>Nasiyaga yoziladi</span>
+                      <span>{formatMoney(unpaidRemaining, cartCurrency)}</span>
+                    </div>
+                  )}
+                  {customerDebtInfo.totalDebt > 0 && unpaidRemaining > 0 && (
+                    <div className="flex justify-between gap-2 text-red-700">
+                      <span>Jami qarz</span>
+                      <span>{formatMoney(roundMoney(customerDebtInfo.totalDebt + unpaidRemaining, cartCurrency), cartCurrency)}</span>
+                    </div>
+                  )}
+                  {changeAmount > 0 && (
+                    <div className="flex justify-between gap-2 text-emerald-700">
+                      <span>Qaytim</span>
+                      <span>{formatMoney(changeAmount, cartCurrency)}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* 1-TALAB: Bergan summadan qolgan pulni qarzga o'tkazib qo'yish! */}
-              {isUnderpaid && (
-                <div className="p-2.5 bg-red-50 border-2 border-red-400 rounded-xl space-y-2 mt-1">
-                  <div className="flex items-center gap-1.5 text-red-800 font-black text-xs">
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                    <span>BERILGAN PUL KAM: QOLGAN SUMMA QARZGA O'TADI!</span>
-                  </div>
-                  <div className="text-[11px] text-stone-700">
-                    Mijoz to'lagan: <strong className="text-emerald-700">{formatMoney(cashReceived, cartCurrency)}</strong>.
-                    <br />
-                    Qolgan qarz: <strong className="text-red-700 text-xs font-black">{formatMoney(unpaidRemaining, cartCurrency)}</strong> avtomatik ravishda Nasiya (Qarz) ro'yxatiga yoziladi.
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-red-800 block mb-1">
-                      Qarzni qaytarish va'da sanasi:
-                    </label>
-                    <input
-                      type="date"
-                      value={nasiyaDueDate}
-                      onChange={(e) => setNasiyaDueDate(e.target.value)}
-                      className="w-full px-2 py-1 bg-white border border-red-300 rounded-lg text-xs font-bold text-stone-900"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {(paymentMethod === 'nasiya' || isUnderpaid) && (
-                <div className="pt-2 border-t border-stone-200">
-                  <label className="text-[10px] font-bold text-red-700 block mb-1">
-                    Qarzni qaytarish sanasi
-                  </label>
-                  <input
-                    type="date"
-                    value={nasiyaDueDate}
-                    onChange={(e) => setNasiyaDueDate(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-red-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-red-400"
-                  />
-                </div>
-              )}
             </div>
 
             {/* Customer & Delivery / Destination Information (Kimga & Qayerga) with CRM Memory & Debt Auto-Detection */}
@@ -1097,10 +1018,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs text-amber-950 flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Xaridor va Joylashuv (Kimga & Qayerga):</span>
-                </span>
-                <span className="text-[10px] text-amber-800 bg-amber-200/60 px-2 py-0.5 rounded-md font-bold">
-                  Avtomatik eslab qolinadi
+                  <span>Xaridor</span>
                 </span>
               </div>
 
@@ -1109,7 +1027,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 <div>
                   <div className="text-[10px] font-bold text-stone-500 mb-1.5 flex items-center gap-1">
                     <History className="w-3 h-3 text-stone-400" />
-                    <span>Doimiy / Avvalgi xaridorlar (Tezkor tanlash):</span>
+                    <span>Tezkor tanlash</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                     {customers.slice(0, 8).map((c) => {
@@ -1258,7 +1176,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
                 <div>
                   <label className="text-[10px] font-bold text-stone-600 block mb-1">
-                    Qayerga sotildi (Manzil / Joylashuv) *
+                    Manzil *
                   </label>
                   <div className="relative">
                     <MapPin className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2.5" />
@@ -1293,9 +1211,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       <div key={d.id} className="flex justify-between items-center text-stone-800">
                         <div>
                           <span className="font-bold text-stone-900">{d.notes || "Oldingi aksessuar xaridi"}</span>
-                          <span className="text-[10px] text-stone-500 ml-1.5">
+                          {d.dueDate && (<span className="text-[10px] text-stone-500 ml-1.5">
                             (Muddat: {formatDate(d.dueDate)})
-                          </span>
+                          </span>)}
                         </div>
                         <span className="font-black text-red-600">
                           {formatMoney(d.remainingAmount, currencyOf(d))}
@@ -1361,7 +1279,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               <div className="flex items-center justify-between">
                 <span className="font-bold text-stone-800 flex items-center gap-1.5">
                   <Percent className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Skitka (Chegirma berish):</span>
+                  <span>Chegirma</span>
                 </span>
                 <div className="flex items-center bg-stone-200/80 p-0.5 rounded-lg text-[10px] font-bold">
                   <button
@@ -1425,23 +1343,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
             {/* Chek va Nakladnoy Sozlamalari (Receipt & Order List Options) */}
             {showAdditional && <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
-                  {receiptPriceView ? (
-                    <Eye className="w-4 h-4 text-amber-600" />
-                  ) : (
-                    <EyeOff className="w-4 h-4 text-emerald-600" />
-                  )}
-                  <span>Chek & Nakladnoy Narx Rejimi:</span>
-                </div>
-                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
-                  receiptPriceView 
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300' 
-                    : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                }`}>
-                  {receiptPriceView ? "Narxlar Ko'rinsin" : "Narxlarsiz (Order List)"}
-                </span>
-              </div>
+              <p className="font-bold text-stone-800">Chekdagi narxlar</p>
 
               {/* Price View Mode Toggle Buttons */}
               <div className="grid grid-cols-2 gap-1.5 p-1 bg-white rounded-lg border border-stone-200">
@@ -1467,15 +1369,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   }`}
                 >
                   <EyeOff className="w-3.5 h-3.5" />
-                  <span>Narxlarsiz (Order List)</span>
+                  <span>Narxlarsiz</span>
                 </button>
               </div>
-
-              <p className="text-[10px] text-stone-500 leading-snug">
-                {receiptPriceView
-                  ? "Chek va PDF nakladnoyda barcha donasi, narxi va to'lov summalari ko'rsatiladi."
-                  : "Chek va PDF'da narxlar yashirilib, faqat tovar nomi, toifasi va donasi ko'rsatiladi (ta'minotchi yoki mijozga buyurtma tashlash uchun)."}
-              </p>
 
               {/* Auto Print Checkbox */}
               <label className="flex items-center gap-2 pt-2 border-t border-stone-200/80 cursor-pointer text-xs font-bold text-stone-700 hover:text-stone-900 transition-colors">
@@ -1486,7 +1382,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   className="w-4 h-4 text-amber-500 rounded border-stone-300 focus:ring-amber-400 cursor-pointer accent-amber-500"
                 />
                 <Printer className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-                <span>Sotuvdan so'ng darhol chek oynasini ochish</span>
+                <span>Sotuvdan keyin chekni ochish</span>
               </label>
             </div>}
 
@@ -1501,15 +1397,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               <div className="flex items-center justify-between gap-3 text-white lg:flex-col lg:items-start lg:justify-center lg:gap-0 lg:min-w-[40%]">
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-stone-400 font-bold">
-                    {cart.length} xil / {cart.reduce((s, i) => s + i.quantity, 0)} dona
+                    Jami
                   </div>
                   <div className="text-lg font-black text-amber-400">{formatMoney(grandTotalRevenue, cartCurrency)}</div>
                 </div>
-                {unpaidRemaining > 0 && (
-                  <div className="text-right text-[10px] text-red-300 font-bold">
-                    Qarzga: {formatMoney(unpaidRemaining, cartCurrency)}
-                  </div>
-                )}
               </div>
               <button
                 type="submit"
@@ -1524,7 +1415,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 <span>{isSubmittingSale ? 'VPSga saqlanmoqda…' : 'Sotish'}</span>
               </button>
             </div>
-          </form>
+          </form>}
         </div>
       </div>
 
@@ -1688,9 +1579,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </label>
                 <input
                   type="number"
-                  min={currencyOf(selectedDebtToPay) === 'USD' ? '0.01' : '1000'}
+                  min={currencyOf(selectedDebtToPay) === 'USD' ? '0.01' : '1'}
                   max={selectedDebtToPay.remainingAmount}
-                  step={currencyOf(selectedDebtToPay) === 'USD' ? 'any' : '1000'}
+                  step={currencyOf(selectedDebtToPay) === 'USD' ? 'any' : '1'}
                   value={quickPayAmount || ''}
                   onChange={(e) => setQuickPayAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-black text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-400"

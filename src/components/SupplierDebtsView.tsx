@@ -663,9 +663,9 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                 </label>
                 <input
                   type="number"
-                  min={currencyOf(payingDebt) === 'USD' ? '0.01' : '1000'}
+                  min={currencyOf(payingDebt) === 'USD' ? '0.01' : '1'}
                   max={payingDebt.remainingAmount}
-                  step={currencyOf(payingDebt) === 'USD' ? 'any' : '1000'}
+                  step={currencyOf(payingDebt) === 'USD' ? 'any' : '1'}
                   required
                   value={paymentAmount || ''}
                   onChange={(e) => setPaymentAmount(Number(e.target.value))}
@@ -684,7 +684,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                   {payingDebt.remainingAmount > 100000 && (
                     <button
                       type="button"
-                      onClick={() => setPaymentAmount(Math.round(payingDebt.remainingAmount / 2 / 1000) * 1000)}
+                      onClick={() => setPaymentAmount(currencyOf(payingDebt) === "USD" ? Math.round(payingDebt.remainingAmount * 50) / 100 : Math.round(payingDebt.remainingAmount / 2))}
                       className="px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-bold rounded-lg cursor-pointer"
                     >
                       50% to'lash
@@ -914,8 +914,8 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                   </label>
                   <input
                     type="number"
-                    min="1000"
-                    step="1000"
+                    min="1"
+                    step="1"
                     required
                     value={formData.totalDebt || ''}
                     onChange={(e) => setFormData({ ...formData, totalDebt: Number(e.target.value) })}
@@ -931,7 +931,7 @@ export const SupplierDebtsView: React.FC<SupplierDebtsViewProps> = ({
                     type="number"
                     min="0"
                     max={formData.totalDebt}
-                    step="1000"
+                    step="1"
                     value={formData.paidAmount || ''}
                     onChange={(e) => setFormData({ ...formData, paidAmount: Number(e.target.value) })}
                     className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-amber-400"

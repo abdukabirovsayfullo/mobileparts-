@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Product, PaymentMethod } from '../types';
 import { formatMoney } from '../utils/formatters';
 import { searchProducts } from '../utils/productSearch';
+import { miniAppPrice, isAccessoryCategory } from '../utils/miniAppPrice';
 import { 
   ShoppingBag, 
   Search, 
@@ -26,8 +27,10 @@ import {
   Check
 } from 'lucide-react';
 
+type ShopProduct = Product & { retailPrice?: number };
+
 interface CartItem {
-  product: Product;
+  product: ShopProduct;
   quantity: number;
 }
 
@@ -47,7 +50,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const tgUser = tg?.initDataUnsafe?.user;
 
   // Local state
-  const [products, setProducts] = useState<Product[]>(() => {
+  const [products, setProducts] = useState<ShopProduct[]>(() => {
     if (initialProducts && initialProducts.length > 0) return initialProducts;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('pb_beeline_products_v2');
@@ -155,7 +158,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   }, [products]);
 
   // Filtered products list
-  const filteredProducts = useMemo(() => {
+  const filteredProducts = useMemo<ShopProduct[]>(() => {
     const categoryProducts = products.filter(p => {
       const matchCat = selectedCategory === 'Barchasi' || p.category.toLowerCase() === selectedCategory.toLowerCase();
       return matchCat;
@@ -204,7 +207,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   // Cart calculations
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = cart.reduce((sum, item) => sum + item.product.sellingPrice * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => sum + miniAppPrice(item.product) * item.quantity, 0);
   const deliveryFee = deliveryType === 'yetkazib_berish' ? 15000 : 0;
   const grandTotal = subtotal + deliveryFee;
 
@@ -244,7 +247,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           category: item.product.category,
           barcode: item.product.barcode,
           quantity: item.quantity,
-          unitPrice: item.product.sellingPrice
+          unitPrice: miniAppPrice(item.product)
         })),
         customerName: customerName.trim() || (tgUser?.first_name || 'Mijoz'),
         customerPhone: customerPhone.trim(),
@@ -387,8 +390,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-sky-400 shrink-0" />
             <div>
-              <p className="font-bold text-sky-200">Onlayn Buyurtma & Kassaga Integratsiya</p>
-              <p className="text-[11px] text-stone-400">Zakaz tushishi bilan do'kon printeridan chek chiqadi</p>
+              <p className="font-bold text-sky-200">Optom narxlarda buyurtma bering</p>
+              <p className="text-[11px] text-stone-400">Tovarni tanlang va savatga qo‘shing</p>
             </div>
           </div>
           <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full text-[10px] font-bold border border-emerald-500/30">
@@ -418,10 +421,10 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                       : 'border-stone-800 hover:border-stone-700'
                   }`}
                 >
-                  {/* Brand & Stock badges */}
-                  <div className="flex items-center justify-between gap-1 mb-1.5">
-                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20 truncate max-w-[80px]">
-                      {product.brand || 'Original'}
+                  {/* Category and stock */}
+                  <div className="flex flex-col items-start gap-2 mb-2">
+                    <span className="w-full break-words rounded-lg border border-amber-400/30 bg-amber-400/10 px-2 py-1.5 text-sm font-black uppercase leading-tight text-amber-400 sm:text-base">
+                      {product.category?.trim() || 'Boshqa tovarlar'}
                     </span>
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                       isOutOfStock
@@ -439,18 +442,21 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                     <h3 className="text-xs font-bold text-stone-100 line-clamp-2 leading-snug" title={product.name}>
                       {product.name}
                     </h3>
-                    <p className="text-[10px] text-stone-500 mt-0.5 truncate">
-                      {product.category}
-                    </p>
                   </div>
 
                   {/* Price & Action Button */}
                   <div className="pt-2 border-t border-stone-800/80 mt-auto flex items-center justify-between gap-1">
-                    <div>
-                      <p className="text-[10px] text-stone-400">Narxi:</p>
+                    <div className="min-w-0 space-y-1.5">
+                      <p className="text-[10px] text-stone-400">Optom narxi:</p>
                       <p className="text-xs font-black text-amber-400 font-mono leading-tight">
-                        {formatMoney(product.sellingPrice)}
+                        {formatMoney(miniAppPrice(product))}
                       </p>
+                      {isAccessoryCategory(product.category) && Number.isFinite(product.retailPrice) && (
+                        <div>
+                          <p className="text-[10px] text-stone-400">Chakana narxi:</p>
+                          <p className="text-xs font-bold text-stone-100 font-mono leading-tight">{formatMoney(product.retailPrice!)}</p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Quantity controls or Add button */}
@@ -566,7 +572,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                           {item.product.name}
                         </h4>
                         <p className="text-[11px] font-mono text-amber-400 mt-0.5">
-                          {formatMoney(item.product.sellingPrice)} x {item.quantity} = {formatMoney(item.product.sellingPrice * item.quantity)}
+                          {formatMoney(miniAppPrice(item.product))} x {item.quantity} = {formatMoney(miniAppPrice(item.product) * item.quantity)}
                         </p>
                       </div>
 

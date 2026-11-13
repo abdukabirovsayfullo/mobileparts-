@@ -3,8 +3,7 @@ import { Currency, Product, StockMovement } from '../types';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { CategoryManagerModal } from './CategoryManagerModal';
 import { KirimProductPicker } from './KirimProductPicker';
-import { displayDay, toLocalDay } from '../utils/debtStatementReceipt';
-import { addDraftItem, costChangePercent, lastKirimByProduct, marginInfo, recentKirimProductIds } from '../utils/kirimHelpers';
+import { addDraftItem, lastKirimByProduct } from '../utils/kirimHelpers';
 import { categoryCurrency, currencyOf, roundMoney } from '../utils/money';
 import { 
   ArrowDownLeft, 
@@ -24,12 +23,15 @@ import {
   Calendar,
   Banknote,
   FileSpreadsheet,
-  Camera
+  Camera,
+  X
 } from 'lucide-react';
 
 interface KirimFormViewProps {
+  onClose: () => void;
   products: Product[];
   categories?: string[];
+  supplierNames?: string[];
   recentKirimMovements: StockMovement[];
   onConfirmKirim: (
     items: {
@@ -50,7 +52,11 @@ interface KirimFormViewProps {
       dueDate?: string;
     }
   ) => void;
-  onAddNewProductDirect: (product: Product) => void;
+  onSubmitWorkerKirim?: (payload: {
+    supplier: string; supplierPhone: string; notes: string; dueDate: string;
+    groups: { paidAmount: number; items: { productId: string; quantity: number; unitCost: number; sellingPrice: number; wholesalePrice?: number; name: string; category: string }[] }[];
+  }) => Promise<void>;
+  onAddNewProductDirect?: (product: Product) => void;
   onAddCategory?: (categoryName: string) => boolean;
   onEditCategory?: (oldName: string, newName: string) => boolean;
   onDeleteCategory?: (categoryName: string) => boolean;
@@ -70,6 +76,7 @@ interface KirimDraftItem {
 }
 
 export const KirimFormView: React.FC<KirimFormViewProps> = ({
+  onClose,
   products,
   categories = [
     'Chexollar',
@@ -83,7 +90,9 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     'Gadjetlar'
   ],
   recentKirimMovements,
+  supplierNames = [],
   onConfirmKirim,
+  onSubmitWorkerKirim,
   onAddNewProductDirect,
   onAddCategory,
   onEditCategory,
@@ -92,25 +101,18 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   onOpenExcelImport,
   onOpenPhotoKirim
 }) => {
-  const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id || '');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
-  const [quantity, setQuantity] = useState<number>(10);
-  const [unitCost, setUnitCost] = useState<number>(
-    products[0]?.purchasePrice || 45000
-  );
-  const [wholesalePrice, setWholesalePrice] = useState<number>(
-    products[0]?.wholesalePrice || Math.round((products[0]?.sellingPrice || 85000) * 0.8)
-  );
-  const [unitPrice, setUnitPrice] = useState<number>(
-    products[0]?.sellingPrice || 85000
-  );
-  const [supplier, setSupplier] = useState<string>('Andijon Ulgurji Baza');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [markedProducts, setMarkedProducts] = useState<Product[]>([]);
+  const [unitCost, setUnitCost] = useState(0);
+  const [wholesalePrice, setWholesalePrice] = useState(0);
+  const [unitPrice, setUnitPrice] = useState(0);
+  const [supplier, setSupplier] = useState<string>('');
   const [supplierPhone, setSupplierPhone] = useState<string>('');
-  const [notes, setNotes] = useState<string>('Yangi partiya tovar');
+  const [notes, setNotes] = useState<string>('');
 
   // Supplier Payment terms
   const [paymentType, setPaymentType] = useState<'paid' | 'partial' | 'debt'>('paid');
-  const [paidAmount, setPaidAmount] = useState<number>(0);
+  const [paidAmount, setPaidAmount] = useState<Partial<Record<Currency, number>>>({});
   const [debtDueDate, setDebtDueDate] = useState<string>(
     new Date(Date.now() + 86400000 * 7).toISOString().slice(0, 10)
   );
@@ -121,9 +123,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   // Search filter for dropdown
   const [productSearch, setProductSearch] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const quantityInputRef = useRef<HTMLInputElement>(null);
   const lastKirim = useMemo(() => lastKirimByProduct(recentKirimMovements), [recentKirimMovements]);
-  const recentIds = useMemo(() => recentKirimProductIds(recentKirimMovements, 12), [recentKirimMovements]);
   // Import qilingan tovarlarning kataloglari (TELEFON, KNOPKALI, EKRAN...) boshqariladigan ro'yxatda bo'lmasligi mumkin.
   const categoryOptions = useMemo(
     () => Array.from(new Set([...categories, ...products.map((p) => p.category)].filter(Boolean))).sort((a, b) => a.localeCompare(b)),
@@ -132,9 +132,11 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
   // New product inline creation
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [currencyChoice, setCurrencyChoice] = useState<Currency>();
   const [newProductName, setNewProductName] = useState('');
   const [newProductCategory, setNewProductCategory] = useState(categories[0] || 'Chexollar');
   const [newProductBrand, setNewProductBrand] = useState('Universal');
+  const [newProductQuantity, setNewProductQuantity] = useState('');
 
   // Category modal & inline management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -148,6 +150,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
       const ok = onAddCategory(trimmed);
       if (ok) {
         setNewProductCategory(trimmed);
+        setCurrencyChoice(undefined);
         setInlineCatName('');
         setIsInlineAddingCat(false);
       } else {
@@ -155,6 +158,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
       }
     } else {
       setNewProductCategory(trimmed);
+      setCurrencyChoice(undefined);
       setInlineCatName('');
       setIsInlineAddingCat(false);
     }
@@ -164,17 +168,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
   const effectiveWholesale = Number(wholesalePrice);
   const effectiveRetail = Number(unitPrice);
 
-  const selectedProduct = products.find((p) => p.id === selectedProductId);
-  const selectedLast = selectedProduct ? lastKirim.get(selectedProduct.id) : undefined;
-  const costChange = costChangePercent(selectedLast?.movement.unitCost, effectiveUnitCost);
-  const margin = marginInfo(effectiveUnitCost, effectiveRetail);
-
-  // Valyutani katalog belgilaydi: TELEFON va KNOPKALI dollarda, qolganlari so'mda. Tugma yo'q.
-  const priceCurrency: Currency = isCreatingNew
-    ? categoryCurrency(newProductCategory)
-    : selectedProduct
-    ? currencyOf(selectedProduct)
-    : 'UZS';
+  const priceCurrency: Currency = currencyChoice ?? (isCreatingNew ? categoryCurrency(newProductCategory) : 'UZS');
 
   // Yangi tovarda katalog o'zgarib valyuta almashsa, eski raqamlar ma'nosini yo'qotadi: tozalanadi.
   const previousCurrency = useRef(priceCurrency);
@@ -195,10 +189,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     return (
       <input
         type="number"
-        min={usd ? '0.01' : '1000'}
-        step={usd ? 'any' : '1000'}
+        min={usd ? '0.01' : '1'}
+        step={usd ? 'any' : '1'}
         required
-        placeholder={usd ? '$' : ''}
+        placeholder={usd ? '$' : "so'm"}
         value={value || ''}
         onChange={(e) => setValue(Number(e.target.value))}
         className={inputClass}
@@ -206,81 +200,46 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     );
   };
 
-  // Faqat dollarli tovarda ko'rinadi; so'mli tovarlarda ortiqcha belgi yo'q.
-  const currencyBar = () =>
-    priceCurrency === 'USD' ? (
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="px-2.5 py-1 rounded-lg bg-emerald-700 text-white font-black">Narxlar dollarda ($)</span>
-        <span className="text-stone-500">Telefon katalogi: dollarda kiradi va dollarda sotiladi</span>
-      </div>
-    ) : null;
-
-  // When selected product changes
-  const handleSelectProduct = (prodId: string) => {
-    setSelectedProductId(prodId);
-    const found = products.find((p) => p.id === prodId);
-    if (found) {
-      setUnitCost(found.purchasePrice);
-      setWholesalePrice(found.wholesalePrice || Math.round(found.sellingPrice * 0.8));
-      setUnitPrice(found.sellingPrice);
-      // Tovar tanlangach darhol miqdorga o'tamiz: qidiruv -> Enter -> miqdor -> Enter
-      window.setTimeout(() => {
-        quantityInputRef.current?.focus();
-        quantityInputRef.current?.select();
-      }, 0);
-    }
-  };
-
-  const handleFormEnter = (e: React.KeyboardEvent) => {
-    const target = e.target as HTMLInputElement;
-    if (e.key === 'Enter' && target.tagName === 'INPUT' && target.type === 'number') {
-      e.preventDefault();
-      handleAddDraftItem(e as unknown as React.FormEvent);
-    }
-  };
+  const currencyBar = () => (
+    <div className="flex flex-wrap items-center gap-2 text-[11px] lg:col-span-2">
+      <span className="px-2.5 py-1 rounded-lg bg-emerald-700 text-white font-black">
+        Narx birligi: {priceCurrency === 'USD' ? 'AQSH dollari ($)' : "so'm (UZS)"}
+      </span>
+      <span className="text-stone-500">Narxlarni bitta dona uchun kiriting.</span>
+    </div>
+  );
 
   const handleChangeDraftQuantity = (index: number, value: number) => {
-    const quantityValue = Math.max(1, Math.floor(value) || 1);
+    const quantityValue = Number.isSafeInteger(value) && value > 0 ? value : 0;
     setDraftItems((prev) => prev.map((item, i) => (i === index ? { ...item, quantity: quantityValue } : item)));
   };
 
   const handleClearDraft = () => {
-    if (draftItems.length > 0 && window.confirm("Nakladnoydagi barcha tovarlar o'chirilsinmi?")) setDraftItems([]);
+    if (draftItems.length > 0 && window.confirm("Kirim ro'yxatidagi barcha tovarlar o'chirilsinmi?")) setDraftItems([]);
   };
 
-  const handleAddDraftItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    const found = products.find((p) => p.id === selectedProductId);
-    if (!found) return;
-    if (draftItems.length > 0 && draftItems[0].currency !== priceCurrency) {
-      alert("Bitta nakladnoyda faqat bitta valyuta bo'lishi mumkin. So'mli va dollarli tovarlar uchun alohida nakladnoy tuzing.");
-      return;
-    }
-    if (quantity <= 0 || effectiveUnitCost <= 0) {
-      alert('Miqdor va tan narxini to\'g\'ri kiriting!');
-      return;
-    }
+  const handleClose = () => {
+    if (isSubmitting) return;
+    if ((draftItems.length > 0 || markedProducts.length > 0) && !window.confirm("Kirim ro'yxati saqlanmagan. Oynani yopsangiz, kiritilgan ro'yxat bekor bo'ladi. Baribir yopilsinmi?")) return;
+    onClose();
+  };
 
-    if (
-      effectiveRetail < effectiveUnitCost &&
-      !window.confirm(`Chakana narx (${formatMoney(effectiveRetail, priceCurrency)}) tan narxdan (${formatMoney(effectiveUnitCost, priceCurrency)}) past. Baribir qo'shilsinmi?`)
-    ) {
-      return;
-    }
+  const handleCloseNewProduct = () => {
+    if (newProductName.trim() && !window.confirm("Yangi tovar ma'lumotlari saqlanmagan. Oynani yopaymi?")) return;
+    setIsCreatingNew(false);
+  };
 
-    setDraftItems((prev) =>
-      addDraftItem<KirimDraftItem>(prev, {
-        product: found,
-        quantity: Number(quantity),
-        unitCost: effectiveUnitCost,
-        currency: priceCurrency,
-        wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
-        unitPrice: effectiveRetail
-      })
-    );
-
-    // Keyingi tovar uchun tayyorlash: qidiruvni tozalab, unga qaytamiz
-    setQuantity(10);
+  const handleAddProducts = (selected: Product[]) => {
+    setDraftItems((prev) => selected.reduce((items, product) => {
+      const currency = currencyOf(product);
+      return addDraftItem(items, {
+        product, currency, quantity: 1,
+        unitCost: product.purchasePrice,
+        wholesalePrice: product.wholesalePrice ?? roundMoney(product.sellingPrice * 0.8, currency),
+        unitPrice: product.sellingPrice
+      });
+    }, prev));
+    setMarkedProducts([]);
     setProductSearch('');
     searchInputRef.current?.focus();
   };
@@ -289,87 +248,85 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     setDraftItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  const invoiceCurrency: Currency = draftItems[0]?.currency ?? priceCurrency;
-  const grandTotalCost = roundMoney(
-    draftItems.reduce((sum, item) => sum + item.quantity * item.unitCost, 0),
-    invoiceCurrency
-  );
-  const halfOfTotal = () => (invoiceCurrency === 'USD' ? roundMoney(grandTotalCost / 2, 'USD') : Math.round(grandTotalCost / 2 / 1000) * 1000);
+  const currencyGroups = (['UZS', 'USD'] as const).flatMap((currency) => {
+    const items = draftItems.filter((item) => item.currency === currency);
+    if (!items.length) return [];
+    const total = roundMoney(items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0), currency);
+    const paid = paymentType === 'paid' ? total
+      : paymentType === 'debt' ? 0
+      : roundMoney(Math.min(total, Math.max(0, paidAmount[currency] ?? 0)), currency);
+    return [{ currency, items, total, paid, remaining: roundMoney(total - paid, currency) }];
+  });
+  const formattedTotals = currencyGroups.map(({ currency, total }) => formatMoney(total, currency)).join(' + ')
+    || formatMoney(0, priceCurrency);
+  const formattedDebt = currencyGroups.filter(({ remaining }) => remaining > 0)
+    .map(({ currency, remaining }) => formatMoney(remaining, currency)).join(' + ');
   const totalItemsCount = draftItems.reduce((sum, item) => sum + item.quantity, 0);
 
-  const effectivePaidAmount = useMemo(() => {
-    if (paymentType === 'paid') return grandTotalCost;
-    if (paymentType === 'debt') return 0;
-    return Math.min(grandTotalCost, Math.max(0, paidAmount));
-  }, [paymentType, grandTotalCost, paidAmount]);
+  const hasMissingQuantity = draftItems.some((item) => item.quantity < 1);
+  const hasMissingDetails = draftItems.some(({ product }) => !product.name.trim() || !product.category.trim());
+  const canSubmit = !hasMissingDetails && !isSubmitting && draftItems.length > 0 && !!supplier.trim() && !markedProducts.length && !hasMissingQuantity;
 
-  const effectiveDebtRemaining = useMemo(() => {
-    return Math.max(0, grandTotalCost - effectivePaidAmount);
-  }, [grandTotalCost, effectivePaidAmount]);
-
-  const handleSubmitInvoice = () => {
-    if (draftItems.length === 0) {
-      alert('Iltimos, avval kirim qilinadigan tovarlarni ro\'yxatga qo\'shing!');
+  const handleSubmitInvoice = async () => {
+    if (!canSubmit) return;
+    if (draftItems.some(({ unitCost, unitPrice }) => unitCost <= 0 || unitPrice <= 0)) {
+      alert('Ro‘yxatdagi barcha tovarlarning kirim va chakana narxini kiriting.');
       return;
     }
+    if (draftItems.some(({ unitCost, unitPrice }) => unitPrice < unitCost) &&
+      !window.confirm('Ayrim tovarlarning chakana narxi kirim narxidan past. Kirimni tasdiqlaysizmi?')) return;
 
-    const isDebtCase = paymentType !== 'paid' && effectiveDebtRemaining > 0;
-
-    onConfirmKirim(
-      draftItems, 
-      supplier.trim() || 'Ulgurji Ta\'minotchi', 
-      notes.trim(),
-      isDebtCase
-        ? {
-            isDebt: true,
-            paidAmount: effectivePaidAmount,
-            remainingAmount: effectiveDebtRemaining,
-            supplierPhone: supplierPhone.trim() || undefined,
-            dueDate: debtDueDate || undefined
-          }
-        : undefined
-    );
+    if (onSubmitWorkerKirim) {
+      setIsSubmitting(true);
+      try {
+        await onSubmitWorkerKirim({
+          supplier: supplier.trim(),
+          supplierPhone: supplierPhone.trim(),
+          notes: notes.trim(),
+          dueDate: debtDueDate,
+          groups: currencyGroups.map(({ items, paid }) => ({
+            paidAmount: paid,
+            items: items.map(({ product, quantity, unitCost, unitPrice, wholesalePrice }) => ({
+              productId: product.id, name: product.name.trim(), category: product.category.trim(), quantity, unitCost, sellingPrice: unitPrice, wholesalePrice
+            }))
+          }))
+        });
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Kirim saqlanmadi.');
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else {
+      for (const { items, paid, remaining } of currencyGroups) {
+        onConfirmKirim(items, supplier.trim(), notes.trim(), remaining > 0 ? {
+          isDebt: true,
+          paidAmount: paid,
+          remainingAmount: remaining,
+          supplierPhone: supplierPhone.trim() || undefined,
+          dueDate: debtDueDate || undefined
+        } : undefined);
+      }
+    }
 
     setDraftItems([]);
-    setPaidAmount(0);
+    setNotes('');
+    setPaidAmount({});
     setPaymentType('paid');
-
-    if (isDebtCase) {
-      alert(
-        `Tovar kirimi omborga qabul qilindi! Ta'minotchidan ${formatMoney(effectiveDebtRemaining, invoiceCurrency)} qarzga olingani Ta'minotchi Qarz Daftariga kiritildi.`
-      );
-    } else {
-      alert('Tovar kirimi muvaffaqiyatli qabul qilindi va omborga qo\'shildi!');
-    }
-  };
-
-  // Direct quick single item receive
-  const handleQuickSingleReceive = () => {
-    const found = products.find((p) => p.id === selectedProductId);
-    if (!found || quantity <= 0 || effectiveUnitCost <= 0) return;
-
-    onConfirmKirim(
-      [
-        {
-          product: found,
-          quantity: Number(quantity),
-          unitCost: effectiveUnitCost,
-          currency: priceCurrency,
-          wholesalePrice: effectiveWholesale || Math.round(effectiveRetail * 0.8),
-          unitPrice: effectiveRetail
-        }
-      ],
-      supplier.trim() || 'Ulgurji Ta\'minotchi',
-      notes.trim()
-    );
-
-    alert(`"${found.name}" dan ${quantity} dona omborga kiritildi!`);
+    alert(formattedDebt
+      ? `Kirim omborga qo‘shildi. Ta’minotchi qarzi: ${formattedDebt}.`
+      : 'Tovarlar omborga qo‘shildi!');
   };
 
   // Handle new accessory creation
   const handleCreateNewProduct = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProductName.trim()) return;
+    if (!onAddNewProductDirect || !newProductName.trim()) return;
+    const quantity = Number(newProductQuantity);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      alert('Tovar sonini musbat butun raqam bilan kiriting.');
+      return;
+    }
     if (effectiveUnitCost <= 0 || effectiveRetail <= 0) {
       alert('Tan narxi va chakana narxni kiriting!');
       return;
@@ -390,25 +347,45 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     };
 
     onAddNewProductDirect(newProd);
-    setSelectedProductId(newProd.id);
+    setDraftItems((prev) => addDraftItem(prev, {
+      product: newProd, currency: priceCurrency, quantity,
+      unitCost: effectiveUnitCost, wholesalePrice: newProd.wholesalePrice, unitPrice: effectiveRetail
+    }));
     setIsCreatingNew(false);
     setNewProductName('');
+    setNewProductQuantity('');
   };
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* Header Banner */}
-      <div className="bg-emerald-900 text-white rounded-3xl p-4 sm:p-8 shadow-lg border border-emerald-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
+    <div className="fixed inset-0 z-[120] bg-stone-950/70 backdrop-blur-sm p-0 sm:p-3 lg:p-5" role="dialog" aria-modal="true" aria-labelledby="kirim-modal-title">
+      <div className="mx-auto flex h-full w-full max-w-[1700px] flex-col overflow-hidden bg-stone-50 shadow-2xl sm:rounded-3xl">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-stone-200 bg-white px-4 py-3 sm:px-6">
+          <div className="min-w-0">
+            <h1 id="kirim-modal-title" className="text-lg font-black text-stone-950 sm:text-xl">Tovar kirimini rasmiylashtirish</h1>
+            <p className="mt-0.5 text-xs text-stone-500">Tovarlarni belgilang → ro‘yxatga qo‘shing → miqdor va narxlarni tekshiring.</p>
+          </div>
+          <button type="button" onClick={handleClose} aria-label="Tovar kirimi oynasini yopish" className="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-stone-300 px-3 text-sm font-bold text-stone-700 hover:bg-stone-100">
+            <X className="h-4 w-4" /> <span className="hidden sm:inline">Yopish</span>
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
+        <div className="mx-auto max-w-[1600px] space-y-5 pb-8">
+      {!onSubmitWorkerKirim && <details className="group">
+        <summary className="w-fit cursor-pointer rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100">
+          Qo‘shimcha amallar
+        </summary>
+        <div className="mt-2">
+      <div className="bg-emerald-900 text-white rounded-3xl p-4 sm:p-6 shadow-lg border border-emerald-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
         <div className="space-y-1 z-10">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/30 text-emerald-200 text-xs font-bold uppercase tracking-wider">
             <ArrowDownLeft className="w-3.5 h-3.5" />
-            <span>Omborga Tovar Qabul Qilish (Prikhod)</span>
+            <span>Omborga tovar qabul qilish</span>
           </div>
           <h2 className="text-2xl font-black tracking-tight text-white">
-            Yangi Tovar Kirimi
+            Omborga yangi tovar qo‘shish
           </h2>
           <p className="hidden sm:block text-xs sm:text-sm text-emerald-200/90 max-w-xl">
-            Ta'minotchidan yoki ulgurji bazadan yangi aksessuarlar kelganda kirim qiling. Tan narxi, sotish narxi va miqdori darhol omborga yoziladi.
+            Tovarni ro‘yxatga kiriting, miqdor va narxlarini belgilang. Ombor qoldig‘i faqat yakuniy tasdiqdan keyin o‘zgaradi.
           </p>
           <div className="pt-2 flex flex-wrap items-center gap-2">
             {onOpenPhotoKirim && (
@@ -416,10 +393,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                 type="button"
                 onClick={onOpenPhotoKirim}
                 className="px-3.5 py-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:from-amber-300 hover:to-amber-400 text-stone-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md hover:shadow-lg cursor-pointer transition-all hover:scale-[1.02] border border-amber-300/80"
-                title="AI Agent (Gemini) orqali Nakladnoy yoki daftar yozuvini rasmga olib avtomatik kirim qilish"
+                title="Hisob-faktura yoki daftar rasmini AI bilan o‘qib kirim qilish"
               >
                 <Camera className="w-4 h-4 text-stone-950" />
-                <span>📸 AI Foto Kirim (Kamera)</span>
+                <span>📸 Hujjatdan kirim (AI)</span>
               </button>
             )}
 
@@ -459,15 +436,52 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
         <div className="bg-emerald-950/80 p-4 rounded-2xl border border-emerald-700/60 z-10 text-right min-w-[200px]">
           <div className="text-[11px] text-emerald-300 font-semibold uppercase">
-            Joriy Nakladnoy Summasi:
+            Kiritilayotgan tovarlar qiymati:
           </div>
           <div className="text-2xl font-black text-emerald-400 mt-1">
-            {formatMoney(grandTotalCost, invoiceCurrency)}
+            {formattedTotals}
           </div>
           <div className="text-[11px] text-emerald-300/80 mt-0.5">
             {totalItemsCount} dona aksessuar
           </div>
         </div>
+      </div>
+
+        </div>
+      </details>}
+
+      <div className="grid gap-3 rounded-2xl border border-stone-200 bg-white p-4 sm:grid-cols-2">
+        <label className="block text-sm font-bold">
+          Ta’minotchi *
+          <input
+            list="kirim-suppliers"
+            value={supplier}
+            onChange={(e) => { setSupplier(e.target.value); setSupplierPhone(''); }}
+            placeholder="Ro‘yxatdan tanlang yoki yangi nom yozing"
+            className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2"
+          />
+          <datalist id="kirim-suppliers">
+            {supplierNames.map((name) => <option key={name} value={name} />)}
+          </datalist>
+        </label>
+        <label className="block text-sm font-bold">
+          Tovar valyutasi
+          <select
+            value={currencyChoice ?? ""}
+            onChange={(e) => {
+              setCurrencyChoice(e.target.value ? e.target.value as Currency : undefined);
+
+            }}
+            className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2"
+          >
+            <option value="">Tovarga qarab avtomatik</option>
+            <option value="UZS">So‘m (UZS)</option>
+            <option value="USD">Dollar (USD)</option>
+          </select>
+          <span className="mt-1 block text-xs font-normal text-stone-500">
+            Valyutani tanlasangiz, qidiruv shu valyutadagi tovarlarni ko‘rsatadi.
+          </span>
+        </label>
       </div>
 
       {/* Main Grid: Add Item Form + Invoice List */}
@@ -477,27 +491,34 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
           <div className="flex items-center justify-between border-b border-stone-100 pb-3">
             <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
               <Package className="w-4 h-4 text-emerald-600" />
-              <span>1. Tovarni Tanlash &amp; Narxlari</span>
+              <span>1-qadam · Tovar, miqdor va narx</span>
             </h3>
+            {onAddNewProductDirect && (
             <button
               type="button"
               onClick={() => setIsCreatingNew(!isCreatingNew)}
-              className="text-xs text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 cursor-pointer"
+              className="text-xs sm:text-sm text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{isCreatingNew ? 'Ro\'yxatdan tanlash' : 'Yangi tovar yaratish'}</span>
             </button>
+            )}
           </div>
 
           {/* If creating new product */}
           {isCreatingNew ? (
-            <form onSubmit={handleCreateNewProduct} className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-3 text-xs">
-              <div className="font-bold text-emerald-950 text-xs flex items-center justify-between">
-                <span>Yangi Aksessuar Kartochkasi:</span>
-                <span className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-bold">Katalogga kiritish</span>
+            <div className="fixed inset-0 z-[140] flex items-center justify-center overflow-y-auto bg-stone-950/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-labelledby="new-product-title">
+            <form onSubmit={handleCreateNewProduct} className="my-auto w-full max-w-5xl space-y-6 rounded-3xl border border-emerald-200 bg-white p-5 shadow-2xl sm:p-8 lg:p-10">
+              <div className="flex items-start justify-between gap-4 border-b border-stone-200 pb-5">
+                <div>
+                  <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">1-QADAM · KATALOG</span>
+                  <h2 id="new-product-title" className="mt-3 text-2xl font-black text-stone-950 sm:text-3xl">Yangi tovar kartochkasi</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-stone-600">Tovar nomi, katalogi, soni va bir dona narxlarini kiriting. Saqlangach, tovar belgilangan miqdorda kirim ro‘yxatiga qo‘shiladi.</p>
+                </div>
+                <button type="button" onClick={handleCloseNewProduct} aria-label="Yangi tovar oynasini yopish" className="shrink-0 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100">✕ <span className="hidden sm:inline">Yopish</span></button>
               </div>
               <div>
-                <label className="block font-semibold text-stone-700 mb-1">
+                <label className="mb-2 block text-sm font-bold text-stone-800">
                   Tovar to'liq nomi *
                 </label>
                 <input
@@ -506,19 +527,19 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                   placeholder="Masalan: iPhone 16 Pro Max Maxfiy Oyna"
                   value={newProductName}
                   onChange={(e) => setNewProductName(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-semibold text-stone-700">Kategoriya / Katalog *</label>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <label className="text-sm font-bold text-stone-800">Kategoriya / Katalog *</label>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setIsInlineAddingCat(!isInlineAddingCat)}
-                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-0.5 cursor-pointer"
+                        className="flex cursor-pointer items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"
                       >
                         <Plus className="w-3 h-3" />
                         <span>+ Yangi katalog</span>
@@ -526,7 +547,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setIsCategoryModalOpen(true)}
-                        className="text-[11px] font-bold text-stone-500 hover:text-stone-800 flex items-center gap-0.5 cursor-pointer"
+                        className="flex cursor-pointer items-center gap-1 text-xs font-bold text-stone-500 hover:text-stone-800"
                         title="Kataloglarni boshqarish & tahrirlash"
                       >
                         <Edit3 className="w-3 h-3" />
@@ -582,9 +603,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                           setIsCategoryModalOpen(true);
                         } else {
                           setNewProductCategory(e.target.value);
+                          setCurrencyChoice(undefined);
                         }
                       }}
-                      className="w-full px-2.5 py-2 bg-white border border-stone-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-stone-900"
+                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     >
                       {categoryOptions.map((cat) => (
                         <option key={cat} value={cat}>
@@ -599,184 +621,90 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-stone-700 mb-1">Brend</label>
+                  <label className="mb-2 block text-sm font-bold text-stone-800">Brend</label>
                   <input
                     type="text"
                     placeholder="Remax, Hoco, Baseus, Universal..."
                     value={newProductBrand}
                     onChange={(e) => setNewProductBrand(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-white border border-stone-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
-                {currencyBar()}
-                <div className="grid grid-cols-3 gap-2 pt-1">
-                  <div>
-                    <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
-                      Tan narxi *
-                    </label>
-                    {priceField('cost', 'w-full px-2 py-1.5 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-blue-700 mb-1 text-[11px]">
-                      Optom narx *
-                    </label>
-                    {priceField('wholesale', 'w-full px-2 py-1.5 bg-blue-50/60 border border-blue-300 rounded-xl font-bold text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
-                      Chakana narx *
-                    </label>
-                    {priceField('retail', 'w-full px-2 py-1.5 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-colors cursor-pointer"
-              >
-                Katalogga Saqlash va Kirimga Olish
-              </button>
-            </form>
-          ) : (
-            <div className="space-y-3.5 text-xs" onKeyDown={handleFormEnter}>
-              <KirimProductPicker
-                products={products}
-                categories={categoryOptions}
-                selectedId={selectedProductId}
-                query={productSearch}
-                onQueryChange={setProductSearch}
-                category={selectedCategoryFilter}
-                onCategoryChange={setSelectedCategoryFilter}
-                lastKirim={lastKirim}
-                recentIds={recentIds}
-                onSelect={(p) => handleSelectProduct(p.id)}
-                inputRef={searchInputRef}
-              />
-
-              {selectedProduct && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5 text-[11px] space-y-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <strong className="text-emerald-950 truncate">{selectedProduct.name}</strong>
-                    <span className="shrink-0 text-stone-600">Hozirgi qoldiq: <strong>{selectedProduct.stock}</strong> ta</span>
-                  </div>
-                  {selectedLast ? (
-                    <div className="text-stone-600 flex flex-wrap items-center gap-x-1.5">
-                      <span>
-                        Oxirgi kirim: {displayDay(toLocalDay(selectedLast.movement.timestamp))} · {selectedLast.movement.quantity} dona · tan{' '}
-                        <strong>{formatMoney(selectedLast.movement.unitCost, currencyOf(selectedLast.movement))}</strong> · {selectedLast.movement.counterparty}
-                      </span>
-                      {costChange !== undefined && costChange !== 0 && (
-                        <span className={`px-1.5 py-0.5 rounded font-black ${costChange > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}`}>
-                          {costChange > 0 ? '▲' : '▼'} {Math.abs(costChange)}%
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-stone-500">Bu tovar hali kirim qilinmagan (birinchi kirim).</div>
-                  )}
-                  {effectiveUnitCost > 0 && (
-                    <div className={margin.profit < 0 ? 'text-rose-700 font-bold' : 'text-stone-600'}>
-                      Chakana foyda: <strong>{formatMoney(margin.profit, priceCurrency)}</strong> ({margin.percent}%)
-                      {margin.profit < 0 ? ' — chakana narx tan narxdan past!' : ''}
-                    </div>
-                  )}
-                </div>
-              )}
-              {currencyBar()}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
-                    Miqdori (dona) *
-                  </label>
+                <label className="block text-sm font-bold text-stone-800">
+                  Soni (dona) *
                   <input
                     type="number"
-                    min="1"
                     required
-                    ref={quantityInputRef}
-                    value={quantity}
-                    onChange={(e) => setQuantity(Number(e.target.value))}
-                    className="w-full px-2.5 py-2 bg-stone-50 border border-stone-300 rounded-xl font-black text-center text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={newProductQuantity}
+                    onChange={(e) => setNewProductQuantity(e.target.value)}
+                    placeholder="Nechta tovar keldi?"
+                    className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
-                    Tan Narxi *
+                </label>
+                  <label className="block text-sm font-bold">
+                    Narx valyutasi
+                    <select
+                      value={priceCurrency}
+                      onChange={(e) => setCurrencyChoice(e.target.value as Currency)}
+                      className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2"
+                    >
+                      <option value="UZS">So‘m (UZS)</option>
+                      <option value="USD">Dollar (USD)</option>
+                    </select>
                   </label>
-                  {priceField('cost', 'w-full px-2 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-blue-700 mb-1 text-[11px]">
-                    Optom Narx *
-                  </label>
-                  {priceField('wholesale', 'w-full px-2 py-2 bg-blue-50/60 border border-blue-300 rounded-xl font-bold text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-stone-700 mb-1 text-[11px]">
-                    Chakana Narx *
-                  </label>
-                  {priceField('retail', 'w-full px-2 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-stone-950 focus:outline-none focus:ring-1 focus:ring-emerald-500')}
+                {currencyBar()}
+                <div className="grid grid-cols-1 gap-4 border-t border-stone-200 pt-5 sm:grid-cols-3 lg:col-span-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-bold text-stone-700">
+                      1 dona kirim narxi *
+                    </label>
+                    {priceField('cost', 'w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500')}
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-bold text-blue-700">
+                      1 dona ulgurji narxi *
+                    </label>
+                    {priceField('wholesale', 'w-full rounded-xl border border-blue-300 bg-blue-50/60 px-4 py-3 text-base font-bold text-blue-950 focus:outline-none focus:ring-2 focus:ring-blue-500')}
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-bold text-stone-700">
+                      1 dona chakana narxi *
+                    </label>
+                    {priceField('retail', 'w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500')}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-stone-500">Tez miqdor:</span>
-                {[1, 5, 10, 20, 50, 100].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setQuantity(n)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
-                      quantity === n ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
+              <div className="flex flex-col-reverse gap-3 border-t border-stone-200 pt-5 sm:flex-row sm:justify-end">
+                <button type="button" onClick={handleCloseNewProduct} className="rounded-xl border border-stone-300 px-6 py-3 text-sm font-bold text-stone-700 hover:bg-stone-100">Bekor qilish</button>
+                <button type="submit" className="rounded-xl bg-emerald-700 px-8 py-3 text-sm font-black text-white shadow-md hover:bg-emerald-800">Saqlash va kirim ro‘yxatiga qo‘shish</button>
               </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={handleAddDraftItem}
-                  className="flex-1 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Nakladnoyga qo'shish</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleQuickSingleReceive}
-                  className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-colors cursor-pointer text-xs"
-                  title="Nakladnoy tuzmasdan darhol omborga kiritish"
-                >
-                  Tezkor Kirim
-                </button>
-              </div>
+            </form>
             </div>
+          ) : (
+            <KirimProductPicker
+              products={currencyChoice ? products.filter((p) => currencyOf(p) === currencyChoice) : products}
+              query={productSearch}
+              onQueryChange={setProductSearch}
+              lastKirim={lastKirim}
+              marked={markedProducts}
+              onToggle={(product) => setMarkedProducts((prev) => prev.some((p) => p.id === product.id)
+                ? prev.filter((p) => p.id !== product.id)
+                : [...prev, product])}
+              onAddMarked={() => handleAddProducts(markedProducts)}
+              inputRef={searchInputRef}
+            />
           )}
 
           {/* Supplier and Notes */}
           <div className="border-t border-stone-100 pt-3 space-y-2 text-xs">
+            <div className="font-black text-stone-900">Ta’minotchi haqida</div>
+            <p className="text-[11px] text-stone-500">Kirim qayerdan kelganini qayd eting. Telefon va izoh ixtiyoriy.</p>
             <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block font-semibold text-stone-700 mb-1">
-                  Ta'minotchi / Baza nomi:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Masalan: Toshkent Abu Saxiy..."
-                  value={supplier}
-                  onChange={(e) => setSupplier(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 font-bold"
-                />
-              </div>
-
               <div>
                 <label className="block font-semibold text-stone-700 mb-1">
                   Telefon raqami (Ixtiyoriy):
@@ -812,7 +740,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
             <div>
               <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>2. Qabul Qilinayotgan Nakladnoy Ro'yxati</span>
+                <span>2-qadam · Kirim ro‘yxati</span>
               </h3>
               <p className="text-[11px] text-stone-400">
                 Ta'minotchi: <strong className="text-stone-700">{supplier}</strong>
@@ -829,37 +757,82 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
           </div>
 
           {/* Items list */}
-          <div className="flex-1 min-h-[220px] max-h-[350px] overflow-y-auto divide-y divide-stone-100">
+          <div className="flex-1 min-h-[220px] max-h-[55vh] overflow-y-auto divide-y divide-stone-100">
             {draftItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-8 text-stone-400 space-y-2">
                 <Package className="w-10 h-10 stroke-1 text-stone-300" />
                 <div className="text-xs font-semibold text-stone-600">
-                  Hozircha nakladnoyga tovar qo'shilmadi
+                  Hozircha ro‘yxat bo‘sh
                 </div>
                 <div className="text-[11px] text-stone-400 max-w-xs">
-                  Chap tarafdan tovar, miqdor va tan narxini tanlab "Nakladnoyga qo'shish" tugmasini bosing.
+                  Chapda tovarlarni qidiring, belgilang va birgalikda ro‘yxatga qo‘shing. Ombor qoldig‘i tasdiqlamaguningizcha o‘zgarmaydi.
                 </div>
               </div>
             ) : (
               draftItems.map((item, index) => (
-                <div key={index} className="py-2.5 flex items-center justify-between text-xs gap-3">
+                <div key={index} className="py-2.5 flex flex-wrap items-center justify-between text-xs gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-stone-900 truncate">
-                      {item.product.name}
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <label className="text-[11px] text-stone-600">
+                        Tovar nomi
+                        <input
+                          type="text"
+                          value={item.product.name}
+                          onChange={(e) => {
+                            const name = e.target.value;
+                            setDraftItems((prev) => prev.map((row, i) => i === index
+                              ? { ...row, product: { ...row.product, name } }
+                              : row));
+                          }}
+                          className="mt-1 block w-full min-w-0 rounded-lg border border-stone-300 px-2 py-1.5 font-bold text-stone-900 focus:border-emerald-500 focus:outline-none"
+                        />
+                      </label>
+                      <label className="text-[11px] text-stone-600">
+                        Katalog
+                        <select
+                          value={item.product.category}
+                          onChange={(e) => {
+                            const category = e.target.value;
+                            setDraftItems((prev) => prev.map((row, i) => i === index
+                              ? { ...row, product: { ...row.product, category } }
+                              : row));
+                          }}
+                          className="mt-1 block w-full min-w-0 rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-semibold text-stone-900"
+                        >
+                          {[...new Set([item.product.category, ...categories])].filter(Boolean).map(category => (
+                            <option key={category} value={category}>{category}</option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
-                    <div className="text-[11px] text-stone-500 flex flex-wrap items-center gap-1.5 mt-0.5">
-                      <span>{item.quantity} dona × Tan: <strong className="text-stone-700">{formatMoney(item.unitCost, item.currency)}</strong></span>
-                      <span>•</span>
-                      <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Optom: {formatMoney(item.wholesalePrice || Math.round(item.unitPrice * 0.8), item.currency)}</span>
-                      <span>•</span>
-                      <span className="text-stone-700 font-bold bg-stone-100 px-1.5 py-0.5 rounded">Chakana: {formatMoney(item.unitPrice, item.currency)}</span>
+                    <div className="mt-1 grid grid-cols-3 gap-1.5">
+                      {([
+                        ['unitCost', 'Kirim'],
+                        ['wholesalePrice', 'Ulgurji'],
+                        ['unitPrice', 'Chakana']
+                      ] as const).map(([field, label]) => (
+                        <label key={field} className="text-[11px] text-stone-600">
+                          {label} ({item.currency === 'USD' ? '$' : 'so‘m'})
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={item[field] || ''}
+                            onChange={(e) => {
+                              const value = Math.max(0, Number(e.target.value));
+                              setDraftItems((prev) => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
+                            }}
+                            className="block w-full min-w-0 rounded-lg border border-stone-300 px-1.5 py-1 font-semibold"
+                          />
+                        </label>
+                      ))}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={() => handleChangeDraftQuantity(index, item.quantity - 1)}
+                      onClick={() => handleChangeDraftQuantity(index, Math.max(1, item.quantity - 1))}
                       className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-stone-200 font-black text-stone-700 cursor-pointer"
                       aria-label="Miqdorni kamaytirish"
                     >
@@ -868,7 +841,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     <input
                       type="number"
                       min="1"
-                      value={item.quantity}
+                      value={item.quantity || ''}
+                      inputMode="numeric"
+                      aria-invalid={!item.quantity}
+                      onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => handleChangeDraftQuantity(index, Number(e.target.value))}
                       className="w-14 px-1 py-1 text-center text-xs font-black border border-stone-300 rounded-lg"
                       aria-label="Miqdor"
@@ -905,7 +881,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               <div>
                 <span className="text-xs text-stone-500 font-medium">Jami Kirim Qiymati:</span>
                 <div className="text-xl font-black text-stone-900">
-                  {formatMoney(grandTotalCost, invoiceCurrency)}
+                  {formattedTotals}
                 </div>
               </div>
               <div className="text-right">
@@ -921,7 +897,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900">
                   <Truck className="w-4 h-4 text-amber-600" />
-                  <span>Ta'minotchi To'lov Holati (Qarz / Nasiya)</span>
+                  <span>3-qadam · Ta’minotchiga to‘lov</span>
                 </div>
                 {paymentType !== 'paid' && (
                   <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-red-100 text-red-700">
@@ -930,6 +906,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                 )}
               </div>
 
+              <p className="text-[11px] text-stone-500">Kirim pulini to‘liq, qisman yoki keyin to‘lashni tanlang.</p>
               {/* Payment Type Selector */}
               <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
                 <button
@@ -947,12 +924,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setPaymentType('partial');
-                    if (paidAmount === 0 && grandTotalCost > 0) {
-                      setPaidAmount(halfOfTotal());
-                    }
-                  }}
+                  onClick={() => setPaymentType('partial')}
                   className={`py-2 px-1.5 rounded-xl border text-center cursor-pointer transition-all ${
                     paymentType === 'partial'
                       ? 'bg-amber-400 text-stone-950 border-amber-400 shadow-2xs font-black'
@@ -967,7 +939,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                   type="button"
                   onClick={() => {
                     setPaymentType('debt');
-                    setPaidAmount(0);
+                    setPaidAmount({});
                   }}
                   className={`py-2 px-1.5 rounded-xl border text-center cursor-pointer transition-all ${
                     paymentType === 'debt'
@@ -981,32 +953,20 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               </div>
 
               {/* Partial payment amount input */}
-              {paymentType === 'partial' && (
-                <div className="pt-1">
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="font-semibold text-stone-700 text-[11px]">
-                      Hozir berilgan avans summasi ({invoiceCurrency === 'USD' ? '$' : "so'm"}):
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setPaidAmount(halfOfTotal())}
-                      className="text-[10px] text-amber-800 font-bold hover:underline"
-                    >
-                      50% berildi
-                    </button>
-                  </div>
+              {paymentType === 'partial' && currencyGroups.map(({ currency, total }) => (
+                <label key={currency} className="block space-y-1 font-semibold text-stone-700">
+                  To‘langan summa ({currency === 'USD' ? '$' : 'so‘m'})
                   <input
                     type="number"
                     min="0"
-                    max={grandTotalCost}
-                    step={invoiceCurrency === 'USD' ? 'any' : '1000'}
-                    value={paidAmount || ''}
-                    onChange={(e) => setPaidAmount(Number(e.target.value))}
-                    placeholder="Masalan: 500000"
-                    className="w-full px-3 py-1.5 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    max={total}
+                    step={currency === 'USD' ? '0.01' : '1'}
+                    value={paidAmount[currency] ?? ''}
+                    onChange={(e) => setPaidAmount((prev) => ({ ...prev, [currency]: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl"
                   />
-                </div>
-              )}
+                </label>
+              ))}
 
               {/* Debt Due Date if partial or full debt */}
               {paymentType !== 'paid' && (
@@ -1026,7 +986,7 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
                     <div className="bg-red-50 p-2 rounded-xl border border-red-200 flex flex-col justify-center">
                       <span className="text-[10px] text-red-600 font-medium">Ta'minotchiga qarz:</span>
                       <span className="text-xs font-black text-red-700 truncate">
-                        {formatMoney(effectiveDebtRemaining, invoiceCurrency)}
+                        {formattedDebt || formatMoney(0, priceCurrency)}
                       </span>
                     </div>
                   </div>
@@ -1034,20 +994,21 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
               )}
             </div>
 
+            {hasMissingQuantity && (
+              <p className="text-xs font-semibold text-red-700">Har bir tovar uchun miqdorni kiriting.</p>
+            )}
             <button
               onClick={handleSubmitInvoice}
-              disabled={draftItems.length === 0}
+              disabled={!canSubmit}
               className={`w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                draftItems.length > 0
+                canSubmit
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md'
                   : 'bg-stone-200 text-stone-400 cursor-not-allowed'
               }`}
             >
               <CheckCircle2 className="w-5 h-5" />
               <span>
-                {paymentType === 'paid' 
-                  ? "Kirimni Tasdiqlash va Omborga Qo'shish"
-                  : `Kirimni Qabul Qilish (Qarz: ${formatMoney(effectiveDebtRemaining, invoiceCurrency)})`}
+                {formattedDebt ? `Kirimni tasdiqlash · qarz ${formattedDebt}` : "Kirimni tasdiqlab omborga qo‘shish"}
               </span>
             </button>
           </div>
@@ -1116,10 +1077,13 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
           onClose={() => setIsCategoryModalOpen(false)}
           onSelectCategory={(cat) => {
             setNewProductCategory(cat);
-            setSelectedCategoryFilter(cat);
+            setCurrencyChoice(undefined);
           }}
         />
       )}
+      </div>
+        </div>
+      </div>
     </div>
   );
 };

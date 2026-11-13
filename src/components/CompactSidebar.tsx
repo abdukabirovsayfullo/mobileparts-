@@ -122,6 +122,7 @@ export const CompactSidebar: React.FC<Props> = ({
           </button>
         </div>
         {navItem('chiqim', 'Sotuv va qidiruv', ShoppingCart)}
+        {navItem('kirim', 'Tovar kirimi', PackagePlus)}
         {navItem('customers', 'Doimiy mijozlar', Users)}
         {navItem('debts', 'Nasiya', BookOpen)}
         <button

@@ -46,8 +46,16 @@ export default defineConfig(() => {
         workbox: {
           cleanupOutdatedCaches: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallback: null,
           runtimeCaching: [
+            {
+              urlPattern: ({ request, url, sameOrigin }) =>
+                sameOrigin && request.mode === 'navigate' && !url.pathname.startsWith('/api/'),
+              handler: 'NetworkOnly',
+              options: {
+                precacheFallback: { fallbackURL: '/index.html' }
+              }
+            },
             {
               urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
               handler: 'NetworkOnly',

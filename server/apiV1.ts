@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { miniAppPrice, isAccessoryCategory } from '../src/utils/miniAppPrice';
 import { currencyOf, roundMoney } from '../src/utils/money';
 import crypto from 'node:crypto';
 import { dataStore, OwnerApprovalRequiredError } from './dataStore';
@@ -24,10 +25,15 @@ import {
 
 export const apiV1Router = express.Router();
 
+function escapeTelegramHtml(value: unknown): string {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // Middleware: API Key Authentication
 function requireApiKey(req: Request, res: Response, next: NextFunction) {
-  // Allow public access to Telegram Mini App customer endpoints & POS order polling
-  if (req.path.startsWith('/telegram/miniapp') || req.path.startsWith('/miniapp')) {
+  // Only the customer-facing catalog and order submission are public.
+  if ((req.method === 'GET' && req.path === '/telegram/miniapp/products') ||
+      (req.method === 'POST' && req.path === '/telegram/miniapp/order')) {
     return next();
   }
 
@@ -286,6 +292,33 @@ apiV1Router.post('/sync', requireOwner, (req: Request, res: Response) => {
 // -----------------------------------------------------------------------------
 // Authenticated Endpoints (Require API Key)
 // -----------------------------------------------------------------------------
+apiV1Router.post('/worker/kirim', requireSession, (req: Request, res: Response) => {
+  if (getRequestUser(req)?.role !== 'worker') {
+    return res.status(403).json({ success: false, error: 'Faqat ishchi uchun.' });
+  }
+  try {
+    const { supplier, supplierPhone, notes, dueDate, groups } = req.body;
+    if (typeof supplier !== 'string' || !supplier.trim() || !Array.isArray(groups) ||
+        !groups.length || groups.length > 2) {
+      throw new Error('Ta’minotchi va tovarlarni kiriting.');
+    }
+    dataStore.recordWorkerKirim(groups.map((group) => ({
+      paidAmount: group.paidAmount,
+      items: group.items.map(({ productId, name, category, quantity, unitCost, sellingPrice, wholesalePrice }: {
+        productId: string; name?: string; category?: string; quantity: number; unitCost: number; sellingPrice: number; wholesalePrice?: number;
+      }) => ({ productId, name, category, quantity, unitCost, sellingPrice, wholesalePrice }))
+    })), {
+      supplier: supplier.trim(),
+      supplierPhone: typeof supplierPhone === 'string' ? supplierPhone.trim() : '',
+      notes: typeof notes === 'string' ? notes.trim() : '',
+      dueDate: typeof dueDate === 'string' ? dueDate : ''
+    });
+    return res.status(201).json({ success: true });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Kirim saqlanmadi.' });
+  }
+});
+
 apiV1Router.use(requireApiKey);
 
 const requireRepairRole = (req: Request, res: Response, next: NextFunction) => {
@@ -338,7 +371,10 @@ apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
   const canUseDebts = ((req.path === '/debts/lookup' || req.path === '/debts/period') && req.method === 'GET') || (/^\/debts\/[^/]+\/pay$/.test(req.path) && req.method === 'POST');
   // Ishchi: doimiy mijozlarni ko'rish, qidirish va yangisini qo'shish (o'chirish va ommaviy import yo'q)
   const canUseCustomers = req.path === '/customers' && (req.method === 'GET' || req.method === 'POST');
-  if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift || canReturn || canUseDebts || canUseCustomers) return next();
+  const canUseOnlineOrders = req.path === '/telegram/miniapp/orders' || req.path === '/telegram/miniapp/pending-orders' ||
+    (/^\/telegram\/miniapp\/orders\/[^/]+\/mark-printed$/.test(req.path) && req.method === 'POST') ||
+    (/^\/telegram\/miniapp\/orders\/[^/]+\/status$/.test(req.path) && req.method === 'PATCH');
+  if (canReadProducts || canCreateSale || canUseExpenses || canUseCashShift || canReturn || canUseDebts || canUseCustomers || canUseOnlineOrders) return next();
   return res.status(403).json({ success: false, error: 'Kassir uchun bu bo\'lim yopiq.' });
 });
 
@@ -587,7 +623,7 @@ apiV1Router.delete('/products/:id', (req: Request, res: Response) => {
 // --- Sales (Chiqim) ---
 apiV1Router.post('/sales', (req: Request, res: Response) => {
   try {
-    const { items, customerName, customerPhone, customerAddress, paymentMethod, discount, paidNow, receiptNumber, notes, dueDate } = req.body;
+    const { items, customerName, customerPhone, customerAddress, paymentMethod, discount, paidNow, receiptNumber, notes } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -610,7 +646,6 @@ apiV1Router.post('/sales', (req: Request, res: Response) => {
       paidNow,
       receiptNumber,
       notes,
-      dueDate,
       employeeId: employee?.id,
       employeeName: employee?.name
     });
@@ -1204,9 +1239,10 @@ apiV1Router.get('/telegram/miniapp/products', (req: Request, res: Response) => {
       category: p.category,
       brand: p.brand,
       barcode: p.barcode,
-      price: p.sellingPrice,
-      sellingPrice: p.sellingPrice,
-      wholesalePrice: p.wholesalePrice,
+      price: miniAppPrice(p),
+      sellingPrice: miniAppPrice(p),
+      wholesalePrice: miniAppPrice(p),
+      ...(isAccessoryCategory(p.category) ? { retailPrice: p.sellingPrice } : {}),
       stock: p.stock,
       inStock: p.stock > 0
     }))
@@ -1258,17 +1294,17 @@ apiV1Router.post('/telegram/miniapp/order', async (req: Request, res: Response) 
     const telegramConfig = dataStore.getTelegramConfig();
     if (telegramConfig.enabled && telegramConfig.botToken && telegramConfig.chatId) {
       const itemsText = order.items
-        .map(i => `• ${i.productName} (${i.quantity} dona x ${i.unitPrice.toLocaleString('uz-UZ')} so'm) = <b>${i.totalPrice.toLocaleString('uz-UZ')} so'm</b>`)
+        .map(i => `• ${escapeTelegramHtml(i.productName)} (${i.quantity} dona x ${i.unitPrice.toLocaleString('uz-UZ')} so'm) = <b>${i.totalPrice.toLocaleString('uz-UZ')} so'm</b>`)
         .join('\n');
 
       const tgMessage = `🔔 <b>YANGI TELEGRAM MINI APP BUYURTMASI!</b>\n\n` +
         `🧾 <b>Buyurtma:</b> #${order.orderNumber}\n` +
         `🏷️ <b>Kassa Cheki:</b> #${receipt.receiptNumber}\n` +
-        `👤 <b>Mijoz:</b> ${order.customerName}\n` +
-        `📞 <b>Telefon:</b> ${order.customerPhone}\n` +
-        `📍 <b>Manzil:</b> ${order.customerAddress || "Do'kondan olib ketish"}\n` +
+        `👤 <b>Mijoz:</b> ${escapeTelegramHtml(order.customerName)}\n` +
+        `📞 <b>Telefon:</b> ${escapeTelegramHtml(order.customerPhone)}\n` +
+        `📍 <b>Manzil:</b> ${escapeTelegramHtml(order.customerAddress || "Do'kondan olib ketish")}\n` +
         `🚚 <b>Yetkazish:</b> ${order.deliveryType === 'yetkazib_berish' ? 'Yetkazib berish (15 000 so\'m)' : 'Olib ketish'}\n` +
-        `💳 <b>To'lov turi:</b> ${order.paymentMethod.toUpperCase()}\n\n` +
+        `💳 <b>To'lov turi:</b> ${escapeTelegramHtml(order.paymentMethod.toUpperCase())}\n\n` +
         `📦 <b>Tovarlar:</b>\n${itemsText}\n\n` +
         `💰 <b>JAMI SUMMA: ${order.totalAmount.toLocaleString('uz-UZ')} SO'M</b>\n\n` +
         `🖨️ <i>Buyurtma kassa dasturiga tushdi va avtomatik printerga chiqarilmoqda...</i>`;
@@ -1298,7 +1334,7 @@ apiV1Router.post('/telegram/miniapp/order', async (req: Request, res: Response) 
 });
 
 // 3. Get Online Orders (Live Feed for POS Cashier)
-apiV1Router.get('/telegram/miniapp/orders', (req: Request, res: Response) => {
+apiV1Router.get('/telegram/miniapp/orders', requireSession, (req: Request, res: Response) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
   const status = typeof req.query.status === 'string' ? req.query.status.trim() : undefined;
   
@@ -1311,7 +1347,7 @@ apiV1Router.get('/telegram/miniapp/orders', (req: Request, res: Response) => {
 });
 
 // 4. Pending Unprinted Orders for POS Auto-Print
-apiV1Router.get('/telegram/miniapp/pending-orders', (_req: Request, res: Response) => {
+apiV1Router.get('/telegram/miniapp/pending-orders', requireSession, (_req: Request, res: Response) => {
   const pendingOrders = dataStore.getUnprintedOnlineOrders();
   res.json({
     success: true,
@@ -1321,7 +1357,7 @@ apiV1Router.get('/telegram/miniapp/pending-orders', (_req: Request, res: Respons
 });
 
 // 5. Mark Order as Printed
-apiV1Router.post('/telegram/miniapp/orders/:id/mark-printed', (req: Request, res: Response) => {
+apiV1Router.post('/telegram/miniapp/orders/:id/mark-printed', requireSession, (req: Request, res: Response) => {
   const { id } = req.params;
   const updated = dataStore.markOnlineOrderPrinted(id);
   if (!updated) {
@@ -1338,7 +1374,7 @@ apiV1Router.post('/telegram/miniapp/orders/:id/mark-printed', (req: Request, res
 });
 
 // 6. Update Order Status
-apiV1Router.patch('/telegram/miniapp/orders/:id/status', (req: Request, res: Response) => {
+apiV1Router.patch('/telegram/miniapp/orders/:id/status', requireSession, (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
   
@@ -1349,6 +1385,8 @@ apiV1Router.patch('/telegram/miniapp/orders/:id/status', (req: Request, res: Res
     });
   }
 
+  const allowedStatuses = new Set(['yangi', 'qabul_qilindi', 'chiqarildi', 'yetkazilmoqda', 'bajarildi', 'bekor_qilindi']);
+  if (!allowedStatuses.has(status)) return res.status(400).json({ success: false, error: 'Buyurtma holati noto‘g‘ri.' });
   const updated = dataStore.updateOnlineOrderStatus(id, status);
   if (!updated) {
     return res.status(404).json({

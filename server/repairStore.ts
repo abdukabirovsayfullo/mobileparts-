@@ -33,7 +33,7 @@ const REPAIR_FILE = path.join(process.cwd(), 'data', 'repairs.json');
 const allowedStatuses = new Set<RepairStatus>(['received', 'repairing', 'ready', 'delivered', 'cancelled']);
 
 function emptyDatabase(): RepairDatabase {
-  return { nextOrderNumber: 1, orders: [], updatedAt: new Date().toISOString() };
+  return { nextOrderNumber: 1, orders: [], updatedAt: new Date(0).toISOString() };
 }
 
 function loadDatabase(): RepairDatabase {
@@ -50,13 +50,18 @@ function loadDatabase(): RepairDatabase {
 
 let database = loadDatabase();
 
-function saveDatabase(): void {
-  database.updatedAt = new Date().toISOString();
+function saveDatabase(next = { ...database, updatedAt: new Date().toISOString() }): void {
   fs.mkdirSync(path.dirname(REPAIR_FILE), { recursive: true });
   const tempFile = `${REPAIR_FILE}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(database, null, 2), { encoding: 'utf8', mode: 0o600 });
+  fs.writeFileSync(tempFile, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
   fs.renameSync(tempFile, REPAIR_FILE);
+  database = next;
 }
+
+export const repairReplica = {
+  read: () => database,
+  write: (next: RepairDatabase) => saveDatabase(next)
+};
 
 function cleanText(value: unknown, maxLength: number): string {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength);

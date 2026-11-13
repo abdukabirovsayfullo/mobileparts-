@@ -17,6 +17,8 @@ test('PIN login, server lockout and owner-only user management', async (context)
 
   const { authRouter } = await import(`./auth.ts?test=${Date.now()}`);
   const app = express();
+  // The fixture supplies distinct client addresses through a trusted local proxy.
+  app.set("trust proxy", "loopback");
   app.use(express.json());
   app.use('/auth', authRouter);
   const server = app.listen(0);

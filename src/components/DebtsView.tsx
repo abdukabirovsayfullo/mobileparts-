@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { CustomerProfile, DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
+import { DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
 import { DebtPeriodReport } from './DebtPeriodReport';
 import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
 import { DebtStatementParams, toLocalDay } from '../utils/debtStatementReceipt';
@@ -31,7 +31,6 @@ interface DebtsViewProps {
   storeInfo?: StoreSettings;
   onAddDebtPayment: (debtId: string, amount: number, method: 'naqd' | 'click_payme') => void;
   onAddNewDebt: (debt: DebtRecord) => void;
-  customers?: CustomerProfile[];
 }
 
 export const DebtsView: React.FC<DebtsViewProps> = ({
@@ -39,8 +38,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   movements,
   storeInfo,
   onAddDebtPayment,
-  onAddNewDebt,
-  customers = []
+  onAddNewDebt
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'barchasi' | 'faol' | 'yopildi'>('faol');
@@ -59,62 +57,11 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
     customerPhone: '+998 ',
     totalDebt: 100000,
     paidAmount: 0,
-    dueDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+    dueDate: '',
     notes: ''
   });
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Yangi nasiya oynasi uchun doimiy mijozlar: mijozlar bazasi + avvalgi nasiyalar.
-  // Bir xil ism bitta bo'lib birlashtiriladi, eng oxirgi faollik bo'yicha tartiblanadi.
-  const regularCustomers = useMemo(() => {
-    const map = new Map<string, { name: string; phone: string; last: number; activeDebts: DebtRecord[] }>();
-    const key = (n: string) => n.trim().toLowerCase();
-    const ts = (v?: string) => (v ? new Date(v).getTime() || 0 : 0);
-    const hasPhone = (p?: string) => !!p && p.replace(/\D/g, '').length > 3;
-
-    customers.forEach((c) => {
-      if (!c.name?.trim()) return;
-      const k = key(c.name);
-      const prev = map.get(k);
-      map.set(k, {
-        name: prev?.name || c.name.trim(),
-        phone: hasPhone(prev?.phone) ? prev!.phone : c.phone || '',
-        last: Math.max(prev?.last || 0, ts(c.lastVisit) || ts(c.createdAt)),
-        activeDebts: prev?.activeDebts || []
-      });
-    });
-
-    debts.forEach((d) => {
-      if (!d.customerName?.trim()) return;
-      const k = key(d.customerName);
-      const prev = map.get(k) || { name: d.customerName.trim(), phone: '', last: 0, activeDebts: [] as DebtRecord[] };
-      if (!hasPhone(prev.phone) && hasPhone(d.customerPhone)) prev.phone = d.customerPhone;
-      prev.last = Math.max(prev.last, ts(d.createdAt));
-      if (d.status !== 'yopildi') prev.activeDebts = [...prev.activeDebts, d];
-      map.set(k, prev);
-    });
-
-    return Array.from(map.values())
-      .filter((c) => key(c.name) !== "do'kon mijozi")
-      .sort((a, b) => b.last - a.last);
-  }, [customers, debts]);
-
-  const customerQuery = newDebtData.customerName.trim().toLowerCase();
-  const exactCustomerPicked = regularCustomers.some((c) => c.name.trim().toLowerCase() === customerQuery);
-  const visibleRegularCustomers = useMemo(() => {
-    const list = customerQuery && !exactCustomerPicked
-      ? regularCustomers.filter(
-          (c) => c.name.toLowerCase().includes(customerQuery) || c.phone.replace(/\s/g, '').includes(customerQuery.replace(/\s/g, ''))
-        )
-      : regularCustomers;
-    return list.slice(0, 12);
-  }, [regularCustomers, customerQuery, exactCustomerPicked]);
-
-  const debtTotalLabel = (list: DebtRecord[]) => {
-    const totals = sumByCurrency(list, (d) => d.remainingAmount);
-    return [totals.UZS > 0 ? formatMoney(totals.UZS) : '', totals.USD > 0 ? formatMoney(totals.USD, 'USD') : ''].filter(Boolean).join(' + ');
-  };
 
   // Metrics
   // So'm va dollar alohida jamlanadi; hech qachon qo'shilmaydi.
@@ -195,7 +142,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   const handleCopyReminder = (debt: DebtRecord) => {
     const customerTotal = customerDebtTotal(debts, debt.customerName, debt.customerPhone, currencyOf(debt));
     const totalLine = customerTotal > debt.remainingAmount ? ` Umumiy qarzdorligingiz: ${formatMoney(customerTotal, currencyOf(debt))}.` : '';
-    const text = `Assalomu alaykum, ${debt.customerName}! ${STORE_INFO.name} do'konidan olingan mahsulotlar bo'yicha ${formatMoney(debt.remainingAmount, currencyOf(debt))} miqdoridagi nasiya to'lovini eslatib o'tamiz.${totalLine} To'lov muddati: ${debt.dueDate}. Murojaat uchun: ${STORE_INFO.phone}`;
+    const text = `Assalomu alaykum, ${debt.customerName}! ${STORE_INFO.name} do'konidan olingan mahsulotlar bo'yicha ${formatMoney(debt.remainingAmount, currencyOf(debt))} miqdoridagi nasiya to'lovini eslatib o'tamiz.${totalLine} ${debt.dueDate ? `To'lov muddati: ${debt.dueDate}.` : ''} Murojaat uchun: ${STORE_INFO.phone}`;
     navigator.clipboard.writeText(text);
     setCopiedId(debt.id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -537,7 +484,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
                 {/* Due Date & Notes */}
                 <div className="flex items-center justify-between text-[11px] text-stone-500">
-                  <span>Muddat: <strong className={isOverdue ? 'text-red-600' : 'text-stone-700'}>{debt.dueDate}</strong></span>
+                  <span>Muddat: <strong className={isOverdue ? 'text-red-600' : 'text-stone-700'}>{debt.dueDate || '—'}</strong></span>
                   {debt.notes && (
                     <span className="truncate max-w-[160px] text-stone-400">"{debt.notes}"</span>
                   )}
@@ -655,7 +602,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                         <div className="flex items-center gap-1.5">
                           <Clock className={`w-3.5 h-3.5 ${isOverdue ? 'text-red-500' : 'text-stone-400'}`} />
                           <span className={isOverdue ? 'text-red-600 font-bold' : 'text-stone-700'}>
-                            {debt.dueDate}
+                            {debt.dueDate || '—'}
                           </span>
                         </div>
                         {isOverdue && (
@@ -860,54 +807,6 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
             </div>
 
             <form onSubmit={handleCreateManualDebt} className="p-6 space-y-3.5 text-xs">
-              {regularCustomers.length > 0 && (
-                <div>
-                  <div className="text-[10px] font-bold text-stone-500 mb-1.5 flex items-center justify-between gap-2">
-                    <span>Doimiy mijozlar (tezkor tanlash):</span>
-                    {customerQuery && !exactCustomerPicked && (
-                      <span className="text-stone-400 font-semibold">{visibleRegularCustomers.length} ta topildi</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
-                    {visibleRegularCustomers.map((c) => {
-                      const isSelected = c.name.trim().toLowerCase() === customerQuery;
-                      const debtText = c.activeDebts.length > 0 ? debtTotalLabel(c.activeDebts) : '';
-                      return (
-                        <button
-                          key={c.name}
-                          type="button"
-                          onClick={() =>
-                            setNewDebtData({
-                              ...newDebtData,
-                              customerName: c.name,
-                              customerPhone: c.phone && c.phone.replace(/\D/g, '').length > 3 ? c.phone : newDebtData.customerPhone
-                            })
-                          }
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                            isSelected
-                              ? 'bg-amber-400 text-stone-950 ring-2 ring-amber-500'
-                              : debtText
-                              ? 'bg-red-50 hover:bg-red-100 text-red-800 border border-red-200'
-                              : 'bg-white hover:bg-stone-100 text-stone-800 border border-stone-200'
-                          }`}
-                          title={c.phone || ''}
-                        >
-                          <span>{c.name}</span>
-                          {debtText ? (
-                            <span className="px-1.5 bg-red-200 text-red-900 text-[10px] rounded font-black">⚠️ {debtText}</span>
-                          ) : (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          )}
-                        </button>
-                      );
-                    })}
-                    {visibleRegularCustomers.length === 0 && (
-                      <span className="text-[11px] text-stone-400">Mos mijoz topilmadi — yangi mijoz sifatida qo'shiladi</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
               <div>
                 <label className="block font-semibold text-stone-700 mb-1">
                   Mijoz to'liq ismi *
@@ -944,8 +843,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   <input
                     type="number"
                     required
-                    min="1000"
-                    step="1000"
+                    min="1"
+                    step="1"
                     value={newDebtData.totalDebt}
                     onChange={(e) => setNewDebtData({ ...newDebtData, totalDebt: Number(e.target.value) })}
                     className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-amber-400"
@@ -959,7 +858,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="1"
                     value={newDebtData.paidAmount}
                     onChange={(e) => setNewDebtData({ ...newDebtData, paidAmount: Number(e.target.value) })}
                     className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-amber-400"

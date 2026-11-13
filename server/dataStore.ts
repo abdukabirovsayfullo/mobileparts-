@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { miniAppPrice } from '../src/utils/miniAppPrice';
 import { 
   Product, 
   StockMovement, 
@@ -61,6 +62,7 @@ export interface PosDatabaseState {
   customers: CustomerProfile[];
   telegramConfig?: TelegramConfig;
   lastUpdated: string;
+  deviceLastMerge?: string;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -121,7 +123,8 @@ class DataStore {
             autoAlertLowStock: true,
             autoPrintOnlineOrders: true
           },
-          lastUpdated: parsed.lastUpdated || new Date().toISOString()
+          lastUpdated: parsed.lastUpdated || new Date().toISOString(),
+          ...(typeof parsed.deviceLastMerge === 'string' ? { deviceLastMerge: parsed.deviceLastMerge } : {})
         };
       }
     } catch (err) {
@@ -154,7 +157,7 @@ class DataStore {
     return initialState;
   }
 
-  private saveDatabaseSync(state: PosDatabaseState) {
+  private saveDatabaseSync(state: PosDatabaseState, throwOnError = false) {
     try {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -164,11 +167,16 @@ class DataStore {
       fs.writeFileSync(tempFile, JSON.stringify(safeState, null, 2), { encoding: 'utf-8', mode: 0o600 });
       fs.renameSync(tempFile, DB_FILE);
     } catch (err) {
+      if (throwOnError) throw err;
       console.error('[DataStore] Failed to write database file:', err);
     }
   }
 
   private scheduleSave() {
+    if (process.env.POS_LOCAL_DEVICE === '1') {
+      this.saveDatabaseSync(this.state, true);
+      return;
+    }
     if (this.isSaving) return;
     this.isSaving = true;
     setTimeout(() => {
@@ -178,6 +186,11 @@ class DataStore {
         this.isSaving = false;
       }
     }, 200);
+  }
+
+  public replaceReplicaState(state: PosDatabaseState) {
+    this.saveDatabaseSync(state, true);
+    this.state = state;
   }
 
   public getState(): PosDatabaseState {
@@ -482,7 +495,6 @@ class DataStore {
     paidNow?: number;
     receiptNumber?: string;
     notes?: string;
-    dueDate?: string;
     employeeId?: string;
     employeeName?: string;
   }): {
@@ -516,7 +528,7 @@ class DataStore {
         };
       }
     }
-    const batchSaleId = `batch-${Date.now()}`;
+    const batchSaleId = `batch-${crypto.randomUUID()}`;
     const timestamp = new Date().toISOString();
 
     let totalRevenue = 0;
@@ -571,7 +583,7 @@ class DataStore {
       product.stock -= qty;
 
       const mov: StockMovement = {
-        id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        id: `mov-${crypto.randomUUID()}`,
         type: 'chiqim',
         productId: product.id,
         productName: product.name,
@@ -613,7 +625,6 @@ class DataStore {
       movement.debtRemaining = line.debt;
       movement.previousCustomerDebt = previousCustomerDebt;
       movement.customerTotalDebt = roundMoney(previousCustomerDebt + accounting.remaining, saleCurrency);
-      movement.debtDueDate = accounting.remaining > 0 ? salePayload.dueDate : undefined;
       movement.paymentMethod = accounting.remaining > 0 ? 'nasiya' : paymentMethod;
       movement.profit = roundMoney(movement.totalRevenue - movement.totalCost, saleCurrency);
     });
@@ -623,7 +634,7 @@ class DataStore {
     let debtRecord: DebtRecord | undefined;
     if (accounting.remaining > 0) {
       debtRecord = {
-        id: `debt-${Date.now()}`,
+        id: `debt-${crypto.randomUUID()}`,
         movementId: movements[0]?.id,
         customerName,
         customerPhone: customerPhone || '+998',
@@ -631,7 +642,7 @@ class DataStore {
         totalDebt: totalRevenue,
         paidAmount: accounting.paid,
         remainingAmount: accounting.remaining,
-        dueDate: salePayload.dueDate || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+        dueDate: '',
         createdAt: timestamp,
         status: accounting.paid > 0 ? 'qisman_tolandi' : 'faol',
         notes: `Chek raqami: ${receiptNumber}. ${salePayload.notes || ''}`.trim(),
@@ -653,11 +664,41 @@ class DataStore {
     };
   }
 
+  public recordWorkerKirim(
+    groups: { paidAmount: number; items: Parameters<DataStore['recordKirim']>[0]['items'] }[],
+    details: { supplier: string; supplierPhone: string; notes: string; dueDate: string }
+  ): void {
+    const backup = structuredClone(this.state);
+    try {
+      for (const group of groups) {
+        if (!group.items.length || !Number.isFinite(group.paidAmount) || group.paidAmount < 0) {
+          throw new Error('Kirim to‘lovi yoki tovarlar noto‘g‘ri.');
+        }
+        for (const item of group.items) {
+          if (!this.state.products.some((product) => product.id === item.productId) ||
+              !Number.isSafeInteger(item.quantity) || item.quantity < 1 ||
+              !Number.isFinite(item.unitCost) || item.unitCost <= 0 ||
+              !Number.isFinite(item.sellingPrice) || item.sellingPrice! <= 0 ||
+              (item.wholesalePrice !== undefined && (!Number.isFinite(item.wholesalePrice) || item.wholesalePrice < 0))) {
+            throw new Error('Tovar, miqdor yoki narx noto‘g‘ri.');
+          }
+        }
+        this.recordKirim({ ...details, items: group.items, isDebt: true, paidAmount: group.paidAmount }, false);
+      }
+      this.saveDatabaseSync(this.state, true);
+    } catch (error) {
+      this.state = backup;
+      throw error;
+    }
+  }
+
   public recordKirim(kirimPayload: {
     supplier?: string;
     supplierPhone?: string;
     isDebt?: boolean;
     dueDate?: string;
+    paidAmount?: number;
+    notes?: string;
     items: Array<{
       productId?: string;
       barcode?: string;
@@ -670,7 +711,7 @@ class DataStore {
       wholesalePrice?: number;
       currency?: Currency;
     }>;
-  }): {
+  }, scheduleSave = true): {
     success: boolean;
     totalCost: number;
     movements: StockMovement[];
@@ -697,6 +738,12 @@ class DataStore {
       if (existing && item.currency !== undefined && currencyOf(existing) !== currencyOf({ currency: item.currency })) {
         throw new Error(`${existing.name}: tovar valyutasi o'zgarmaydi. Boshqa valyutada kirim uchun yangi tovar yarating.`);
       }
+      if (item.name !== undefined && (typeof item.name !== 'string' || !item.name.trim())) {
+        throw new Error('Tovar nomini kiriting.');
+      }
+      if (item.category !== undefined && (typeof item.category !== 'string' || !item.category.trim())) {
+        throw new Error('Tovar katalogini tanlang.');
+      }
       batchCurrencies.add(existing ? currencyOf(existing) : currencyOf({ currency: item.currency, category: item.category }));
     }
     if (batchCurrencies.size > 1) throw new Error("Bitta kirimda faqat bitta valyuta bo'lishi mumkin.");
@@ -711,6 +758,8 @@ class DataStore {
       let product: Product | undefined = findKirimProduct(item);
 
       if (product) {
+        if (item.name !== undefined) product.name = item.name.trim();
+        if (item.category !== undefined) product.category = item.category.trim();
         product.stock += qty;
         product.purchasePrice = unitCost;
         product.costPrice = unitCost;
@@ -740,7 +789,7 @@ class DataStore {
       itemNames.push(`${product.name} (${qty} dona)`);
 
       const mov: StockMovement = {
-        id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        id: `mov-${crypto.randomUUID()}`,
         type: 'kirim',
         ...(batchCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         productId: product.id,
@@ -753,7 +802,8 @@ class DataStore {
         totalRevenue: itemCostTotal,
         profit: 0,
         timestamp,
-        counterparty: supplier
+        counterparty: supplier,
+        notes: kirimPayload.notes
       };
 
       movements.push(mov);
@@ -761,26 +811,29 @@ class DataStore {
     }
 
     let supplierDebt: SupplierDebtRecord | undefined;
-    if (kirimPayload.isDebt) {
+    const paidAmount = roundMoney(Math.min(totalKirimCost, kirimPayload.paidAmount ?? 0), batchCurrency);
+    const remainingAmount = roundMoney(totalKirimCost - paidAmount, batchCurrency);
+    if (kirimPayload.isDebt && remainingAmount > 0) {
       supplierDebt = {
-        id: `sdebt-${Date.now()}`,
+        id: `sdebt-${crypto.randomUUID()}`,
         supplierName: supplier,
         supplierPhone: kirimPayload.supplierPhone || '',
         ...(batchCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         productSummary: itemNames.slice(0, 5).join(', ') + (itemNames.length > 5 ? ` va yana ${itemNames.length - 5} ta tovar` : ''),
         totalDebt: totalKirimCost,
-        paidAmount: 0,
-        remainingAmount: totalKirimCost,
+        paidAmount,
+        remainingAmount,
         dueDate: kirimPayload.dueDate || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
         createdAt: timestamp,
-        status: 'faol',
+        status: paidAmount > 0 ? 'qisman_tolandi' : 'faol',
+        notes: kirimPayload.notes,
         paymentHistory: []
       };
       this.state.supplierDebts.unshift(supplierDebt);
     }
 
     this.state.lastUpdated = timestamp;
-    this.scheduleSave();
+    if (scheduleSave) this.scheduleSave();
 
     return {
       success: true,
@@ -1002,6 +1055,7 @@ class DataStore {
     if (!Array.isArray(payload.items) || payload.items.length === 0) {
       throw new Error("Buyurtma uchun kamida 1 ta tovar tanlanishi shart");
     }
+    if (payload.items.length > 100) throw new Error("Buyurtmada 100 tadan ortiq tovar qatori bo‘lishi mumkin emas.");
     // Onlayn do'kon faqat so'mda ishlaydi. Tekshiruv hech narsa yozilmasdan oldin bajariladi.
     const hasUsdItem = payload.items.some(item => {
       const found = (item.productId && this.getProductById(item.productId)) || (item.barcode && this.getProductById(item.barcode)) || undefined;
@@ -1020,16 +1074,15 @@ class DataStore {
     let subtotal = 0;
     let totalCost = 0;
 
-    for (const item of payload.items) {
-      const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
+    // Resolve and validate the full cart before changing stock or writing movements.
+    const preparedItems = payload.items.map(item => {
+      const qty = Number(item.quantity);
+      if (!Number.isSafeInteger(qty) || qty < 1 || qty > 1000) {
+        throw new Error("Tovar miqdori 1 dan 1000 gacha butun son bo‘lishi kerak.");
+      }
       let product: Product | undefined;
-
       if (item.productId) product = this.getProductById(item.productId);
       if (!product && item.barcode) product = this.getProductById(item.barcode);
-
-      // A cart can remain open while another device refreshes the catalog. In
-      // that case the generated id may change, but the exact product name is
-      // still enough to reconnect the order to a single server-side product.
       if (!product && item.productName) {
         const normalizedName = item.productName.toLowerCase().trim();
         const sameName = this.state.products.filter(p =>
@@ -1038,14 +1091,25 @@ class DataStore {
         );
         if (sameName.length === 1) product = sameName[0];
       }
-
-      if (!product) {
-        // Never invent stock during checkout. A stale cart must be refreshed
-        // instead of silently creating a duplicate product with fake quantity.
-        throw new Error("Savatdagi tovar eskirgan. Mini App'ni yangilang va tovarni qayta tanlang.");
+      if (!product) throw new Error("Savatdagi tovar eskirgan. Mini App'ni yangilang va tovarni qayta tanlang.");
+      if (currencyOf(product) !== 'UZS') throw new Error("Dollarli tovarlar onlayn buyurtmada mavjud emas. Do'konga murojaat qiling.");
+        if (!Number.isFinite(miniAppPrice(product)) || miniAppPrice(product) <= 0) throw new Error(`“${product.name}” uchun sotish narxi belgilanmagan.`);
+      return { product, qty };
+    });
+    const requestedByProduct = new Map<string, number>();
+    for (const { product, qty } of preparedItems) {
+      requestedByProduct.set(product.id, (requestedByProduct.get(product.id) || 0) + qty);
+    }
+    for (const [productId, requested] of requestedByProduct) {
+      const product = this.getProductById(productId)!;
+      if (!Number.isFinite(product.stock) || requested > product.stock) {
+        throw new Error(`“${product.name}” uchun zaxira yetarli emas. Mavjud: ${Math.max(0, product.stock)} dona.`);
       }
+    }
 
-      const unitPrice = Number(item.unitPrice || product.sellingPrice);
+    for (const { product, qty } of preparedItems) {
+      // Price is always sourced from the current server catalog.
+        const unitPrice = miniAppPrice(product);
       const unitCost = Number(product.purchasePrice || product.costPrice || 0);
       const lineTotal = unitPrice * qty;
       const lineCost = unitCost * qty;
@@ -1055,7 +1119,7 @@ class DataStore {
       totalCost += lineCost;
 
       // Decrement stock immediately in POS
-      product.stock = Math.max(0, product.stock - qty);
+      product.stock -= qty;
 
       orderItems.push({
         productId: product.id,
@@ -1069,7 +1133,7 @@ class DataStore {
 
       // Create cashier movement
       const mov: StockMovement = {
-        id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        id: `mov-${crypto.randomUUID()}`,
         type: 'chiqim',
         productId: product.id,
         productName: product.name,
@@ -1160,7 +1224,15 @@ class DataStore {
   // --- Sync with frontend ---
   public syncFromClient(clientData: Partial<PosDatabaseState>): PosDatabaseState {
     if (Array.isArray(clientData.products)) {
-      this.state.products = clientData.products;
+      const previousProducts = new Map(this.state.products.map(product => [product.id, product]));
+      this.state.products = clientData.products.map(product => {
+        const previous = previousProducts.get(product.id);
+        // A stale or masked browser snapshot must not erase an established cost.
+        if (previous && previous.purchasePrice > 0 && !(product.purchasePrice > 0)) {
+          return { ...product, purchasePrice: previous.purchasePrice, costPrice: previous.purchasePrice };
+        }
+        return product;
+      });
     }
     if (Array.isArray(clientData.movements)) {
       this.state.movements = removeDemoMovements(clientData.movements);
@@ -1197,6 +1269,11 @@ class DataStore {
     debtsAdded: number;
     supplierDebtsAdded: number;
   } {
+    // A fresh start must not re-import data left in an older browser.
+    if (fs.existsSync(path.join(DATA_DIR, 'legacy-import.disabled'))) {
+      return { movementsAdded: 0, debtsAdded: 0, supplierDebtsAdded: 0 };
+    }
+
     const mergeById = <T extends { id: string }>(current: T[], incoming: T[] | undefined): number => {
       if (!Array.isArray(incoming)) return 0;
       const known = new Set(current.map(item => item.id));

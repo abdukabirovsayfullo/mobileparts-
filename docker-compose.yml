@@ -11,5 +11,6 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - POS_OWNER_PIN=${POS_OWNER_PIN:-}
     volumes:
       - ./data:/app/data

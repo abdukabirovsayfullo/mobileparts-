@@ -12,3 +12,5 @@ services:
         sync: false
       - key: POS_API_KEY
         generateValue: true
+      - key: POS_OWNER_PIN
+        sync: false

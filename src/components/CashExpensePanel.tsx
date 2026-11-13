@@ -71,7 +71,7 @@ export const CashExpensePanel: React.FC<Props> = ({ user, cashRevenue }) => {
 
   return (
     <section className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
-      <button type="button" onClick={() => setExpanded(value => !value)} className="w-full p-3 sm:p-4 flex items-center gap-3 text-left">
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="w-full p-3 sm:p-4 flex items-center gap-3 text-left">
         <span className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center"><BanknoteArrowDown className="w-5 h-5" /></span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-black">Kassadan chiqim</span>
@@ -81,16 +81,16 @@ export const CashExpensePanel: React.FC<Props> = ({ user, cashRevenue }) => {
         {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
       </button>
 
-      {expanded && <div className="border-t border-stone-100 p-3 sm:p-4 grid lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)] gap-4">
-        <form onSubmit={submit} className="grid sm:grid-cols-2 gap-2.5">
-          <input value={recipient} onChange={event => setRecipient(event.target.value)} required placeholder="Kim oldi?" className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
-          <input value={amount} onChange={event => setAmount(event.target.value)} required min="1" step="1" type="number" placeholder="Summa (so‘m)" className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
-          <select value={category} onChange={event => setCategory(event.target.value as CashExpenseCategory)} className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
+      {expanded && <div className="border-t border-stone-100 p-3 sm:p-4 grid min-w-0 gap-4">
+        <form onSubmit={submit} className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-2.5">
+          <input value={recipient} onChange={event => setRecipient(event.target.value)} required aria-label="Kim oldi?" placeholder="Kim oldi?" className="w-full min-w-0 rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+          <input value={amount} onChange={event => setAmount(event.target.value)} required min="1" step="1" type="number" aria-label="Summa (so‘m)" placeholder="Summa (so‘m)" className="w-full min-w-0 rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+          <select aria-label="Chiqim turi" value={category} onChange={event => setCategory(event.target.value as CashExpenseCategory)} className="w-full min-w-0 rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
             <option value="tushlik">Tushlik</option><option value="taminotchi">Ta’minotchiga to‘lov</option><option value="transport">Transport</option><option value="boshqa">Boshqa</option>
           </select>
-          <input value={reason} onChange={event => setReason(event.target.value)} required minLength={3} placeholder="Nima uchun?" className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
-          {error && <p className="sm:col-span-2 text-xs font-bold text-rose-600">{error}</p>}
-          <button disabled={saving} className="sm:col-span-2 rounded-xl bg-stone-950 text-white px-4 py-2.5 text-sm font-black flex items-center justify-center gap-2 disabled:opacity-50"><Plus className="w-4 h-4" />{saving ? 'Saqlanmoqda…' : 'Chiqimni saqlash'}</button>
+          <input value={reason} onChange={event => setReason(event.target.value)} required minLength={3} aria-label="Chiqim sababi" placeholder="Nima uchun?" className="w-full min-w-0 rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+          {error && <p className="col-span-full text-xs font-bold text-rose-600">{error}</p>}
+          <button disabled={saving} className="col-span-full rounded-xl bg-stone-950 text-white px-4 py-2.5 text-sm font-black flex items-center justify-center gap-2 disabled:opacity-50"><Plus className="w-4 h-4" />{saving ? 'Saqlanmoqda…' : 'Chiqimni saqlash'}</button>
         </form>
 
         <div className="max-h-56 overflow-y-auto space-y-2">
