@@ -25,6 +25,13 @@ cd "$BUILD_DIR/src"
 SHA="$(git rev-parse --short HEAD)"
 echo "Versiya: $SHA — $(git log -1 --pretty=%s)"
 
+# Himoya: serverdagi versiyada repoda yo'q funksiyalar bo'lsa, eski kod ustiga yozilmasin.
+if [[ -f "$APP_DIR/data/customer-telegram.json" ]] && ! grep -rqs "customer-telegram" server server.ts src; then
+  echo "TO'XTATILDI: serverda GitHub'dagidan yangiroq versiya ishlayapti (customer-telegram)."
+  echo "Avval yangi versiya kodini GitHub'ga yuklash kerak. Hech narsa o'zgartirilmadi."
+  exit 1
+fi
+
 log "2/6 Build qilinmoqda (bir necha daqiqa)"
 npm install --no-audit --no-fund --loglevel=error
 npm run build
