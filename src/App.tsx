@@ -1807,6 +1807,7 @@ export default function App() {
               setPresetCustomer({ name: customer.name, phone: customer.phone, address: customer.address, nonce: Date.now() });
               setActiveTab('chiqim');
             }}
+            onChanged={() => { void fetchLatestStateFromServer(undefined, true); }}
           />
         )}
 

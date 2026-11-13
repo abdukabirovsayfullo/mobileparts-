@@ -803,6 +803,16 @@ apiV1Router.post('/customers/import', requireOwner, (req: Request, res: Response
   res.json({ success: true, data: { added, skipped, total: dataStore.listCustomers('', 100000).length } });
 });
 
+apiV1Router.put('/customers/:id', requireOwner, (req: Request, res: Response) => {
+  try {
+    const { name, phone, address, notes, updateDebts } = req.body || {};
+    const result = dataStore.updateCustomer(req.params.id, { name, phone, address, notes }, { updateDebts: updateDebts !== false });
+    res.json({ success: true, data: result.customer, debtsUpdated: result.debtsUpdated });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || 'Mijoz saqlanmadi.' });
+  }
+});
+
 apiV1Router.delete('/customers/:id', requireOwner, (req: Request, res: Response) => {
   if (!dataStore.deleteCustomer(req.params.id)) return res.status(404).json({ success: false, error: 'Mijoz topilmadi.' });
   res.json({ success: true });

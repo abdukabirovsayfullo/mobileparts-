@@ -1,6 +1,6 @@
 import { CustomerTelegramPanel } from './CustomerTelegramPanel';
 import React, { useCallback, useEffect, useState } from 'react';
-import { MapPin, Phone, Plus, Search, ShoppingCart, Trash2, Upload, Users } from 'lucide-react';
+import { MapPin, Pencil, Phone, Plus, Search, ShoppingCart, Trash2, Upload, Users, X } from 'lucide-react';
 import type { CustomerProfile } from '../types';
 
 interface Props {
@@ -8,13 +8,20 @@ interface Props {
   /** Shu qurilmada (brauzerda) oldin saqlangan mijozlar: Rahbar ularni serverga ko'chira oladi. */
   localCustomers?: CustomerProfile[];
   onPick: (customer: CustomerProfile) => void;
+  /** Mijoz tahrirlangandan keyin (nasiyalar ham o'zgargan bo'lishi mumkin) server holatini qayta yuklash. */
+  onChanged?: () => void;
 }
 
 const dateLabel = (iso?: string) =>
   iso ? new Date(iso).toLocaleDateString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
 
 /** Doimiy mijozlar: tez qidirish, sotuvga tanlash, yangisini qo'shish. */
-export const CustomersPanel: React.FC<Props> = ({ isOwner, localCustomers = [], onPick }) => {
+export const CustomersPanel: React.FC<Props> = ({ isOwner, localCustomers = [], onPick, onChanged }) => {
+  const [editing, setEditing] = useState<CustomerProfile | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', phone: '', address: '', notes: '' });
+  const [updateDebts, setUpdateDebts] = useState(true);
+  const [editError, setEditError] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const [query, setQuery] = useState('');
   const [list, setList] = useState<CustomerProfile[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -53,6 +60,34 @@ export const CustomersPanel: React.FC<Props> = ({ isOwner, localCustomers = [], 
       await load(query);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Mijoz saqlanmadi.');
+    }
+  };
+
+  const openEdit = (customer: CustomerProfile) => {
+    setEditing(customer);
+    setEditError('');
+    setUpdateDebts(true);
+    setEditForm({ name: customer.name, phone: customer.phone || '', address: customer.address || '', notes: customer.notes || '' });
+  };
+
+  const saveEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editing) return;
+    setEditError(''); setSavingEdit(true);
+    try {
+      const response = await fetch(`/api/v1/customers/${encodeURIComponent(editing.id)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...editForm, updateDebts })
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Mijoz saqlanmadi.');
+      setMessage(`${body.data.name} saqlandi.${body.debtsUpdated ? ` ${body.debtsUpdated} ta nasiyadagi ism/telefon ham yangilandi.` : ''}`);
+      setEditing(null);
+      await load(query);
+      onChanged?.();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Mijoz saqlanmadi.');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -143,7 +178,10 @@ export const CustomersPanel: React.FC<Props> = ({ isOwner, localCustomers = [], 
                 {customer.notes && <div className="text-xs text-stone-500 truncate">{customer.notes}</div>}
               </div>
               {isOwner && (
-                <button type="button" onClick={() => remove(customer)} title="Ro'yxatdan o'chirish" className="text-stone-300 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button type="button" onClick={() => openEdit(customer)} title="Tahrirlash" className="text-stone-400 hover:text-amber-700 p-1"><Pencil className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => remove(customer)} title="Ro'yxatdan o'chirish" className="text-stone-300 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button>
+                </div>
               )}
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -155,6 +193,46 @@ export const CustomersPanel: React.FC<Props> = ({ isOwner, localCustomers = [], 
           </div>
         ))}
       </div>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditing(null)}>
+          <form onSubmit={saveEdit} onClick={e => e.stopPropagation()} className="bg-white rounded-2xl max-w-md w-full p-5 space-y-3 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-base">Mijozni tahrirlash</h3>
+              <button type="button" onClick={() => setEditing(null)} className="text-stone-400 hover:text-stone-900"><X className="w-5 h-5" /></button>
+            </div>
+            {([
+              ['name', "Ism / do'kon nomi", 'text'],
+              ['phone', 'Telefon', 'tel'],
+              ['address', 'Manzil', 'text'],
+              ['notes', 'Izoh', 'text']
+            ] as const).map(([key, label, type]) => (
+              <label key={key} className="block">
+                <span className="text-xs font-bold text-stone-700">{label}</span>
+                <input
+                  required={key === 'name'}
+                  type={type}
+                  inputMode={key === 'phone' ? 'tel' : undefined}
+                  value={editForm[key]}
+                  onChange={e => setEditForm({ ...editForm, [key]: e.target.value })}
+                  className="mt-1 w-full px-3 py-2.5 border-2 border-stone-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400"
+                />
+              </label>
+            ))}
+            {(editForm.name.trim() !== editing.name || editForm.phone.trim() !== (editing.phone || '')) && (
+              <label className="flex items-start gap-2 text-xs text-stone-700 bg-amber-50 border border-amber-200 rounded-xl p-2.5 cursor-pointer">
+                <input type="checkbox" className="mt-0.5" checked={updateDebts} onChange={e => setUpdateDebts(e.target.checked)} />
+                <span>Shu mijozning nasiyalaridagi ism va telefonni ham yangilash <span className="text-stone-500">(tavsiya etiladi — aks holda eski nasiyalar yangi nom bilan topilmaydi)</span></span>
+              </label>
+            )}
+            {editError && <div className="rounded-xl bg-red-50 text-red-700 text-sm font-bold px-3 py-2">{editError}</div>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 rounded-xl bg-stone-100 text-sm font-bold">Bekor</button>
+              <button type="submit" disabled={savingEdit} className="px-5 py-2 rounded-xl bg-amber-400 text-stone-950 text-sm font-black disabled:opacity-50">{savingEdit ? 'Saqlanmoqda…' : 'Saqlash'}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

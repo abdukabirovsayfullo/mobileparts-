@@ -272,6 +272,46 @@ class DataStore {
     return customer;
   }
 
+  /** Rahbar: doimiy mijoz ma'lumotini tahrirlash. Ism/telefon o'zgarsa, shu mijozning nasiyalari ham yangilanadi. */
+  public updateCustomer(
+    id: string,
+    input: { name: string; phone?: string; address?: string; notes?: string },
+    options: { updateDebts?: boolean } = {}
+  ): { customer: CustomerProfile; debtsUpdated: number } {
+    const customer = (this.state.customers || []).find(c => c.id === id);
+    if (!customer) throw new Error('Mijoz topilmadi.');
+    const name = String(input.name || '').trim().slice(0, 80);
+    const phone = String(input.phone ?? '').trim().slice(0, 30);
+    if (name.length < 2) throw new Error("Mijoz ismi kamida 2 ta belgidan iborat bo'lishi kerak.");
+    if (DataStore.isGenericCustomer(name)) throw new Error("Umumiy nom (Do'kon mijozi) doimiy mijoz bo'la olmaydi.");
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length > 0 && digits.length < 9 && phone !== '+998') throw new Error("Telefon raqami to'liq emas.");
+    const newKey = DataStore.customerKey(name, phone);
+    const clash = this.state.customers.find(c => c.id !== id && DataStore.customerKey(c.name, c.phone) === newKey);
+    if (clash) throw new Error(`Bu telefon/ism bilan boshqa mijoz bor: ${clash.name}.`);
+
+    const oldName = customer.name;
+    const oldPhone = customer.phone;
+    const oldKey = DataStore.customerKey(oldName, oldPhone);
+    let debtsUpdated = 0;
+    if (options.updateDebts !== false && (oldName !== name || oldPhone !== phone)) {
+      for (const debt of this.state.debts) {
+        if (DataStore.customerKey(debt.customerName, debt.customerPhone) !== oldKey) continue;
+        debt.customerName = name;
+        if (digits.length >= 9) debt.customerPhone = phone;
+        debtsUpdated++;
+      }
+    }
+    customer.name = name;
+    customer.phone = phone;
+    customer.address = String(input.address ?? customer.address ?? '').trim().slice(0, 160);
+    const notes = String(input.notes ?? '').trim().slice(0, 300);
+    customer.notes = notes || undefined;
+    this.state.lastUpdated = new Date().toISOString();
+    this.scheduleSave();
+    return { customer, debtsUpdated };
+  }
+
   public deleteCustomer(id: string): boolean {
     const before = (this.state.customers || []).length;
     this.state.customers = (this.state.customers || []).filter(c => c.id !== id);
