@@ -1200,6 +1200,7 @@ export default function App() {
           product,
           quantity: Number(qty),
           unitCost: product.purchasePrice,
+          currency: currencyOf(product),
           unitPrice: product.sellingPrice
         }
       ],

@@ -195,8 +195,8 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     return (
       <input
         type="number"
-        min={usd ? '0.01' : '1000'}
-        step={usd ? 'any' : '1000'}
+        min={usd ? '0.01' : '1'}
+        step={usd ? 'any' : '1'}
         required
         placeholder={usd ? '$' : ''}
         value={value || ''}
@@ -393,6 +393,10 @@ export const KirimFormView: React.FC<KirimFormViewProps> = ({
     setSelectedProductId(newProd.id);
     setIsCreatingNew(false);
     setNewProductName('');
+    window.setTimeout(() => {
+      quantityInputRef.current?.focus();
+      quantityInputRef.current?.select();
+    }, 0);
   };
 
   return (
