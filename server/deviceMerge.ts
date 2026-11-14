@@ -76,6 +76,13 @@ export function mergeDeviceState(base: DeviceSnapshot | undefined, local: Device
         const value = merge(prior?.[key], l[key], r[key], path ? path + '.' + key : key);
         if (value !== undefined) merged[key] = value;
       }
+      if (/^pos\.debts\.id:[^.]+$/.test(path)) {
+        const owner = prior ?? r;
+        for (const key of ['customerName', 'customerPhone', 'movementId', 'currency']) {
+          if (!equal(l[key], owner[key])) report(path + '.' + key + ' (owner protected)', l[key], owner[key]);
+          if (owner[key] === undefined) delete merged[key]; else merged[key] = owner[key];
+        }
+      }
       if (product && typeof l.stock === 'number' && typeof r.stock === 'number') {
         if (typeof prior?.stock === 'number') {
           const localDelta = localStockChanges.get(String(l.id)) ?? 0;

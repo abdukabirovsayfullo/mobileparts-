@@ -1,3 +1,4 @@
+import { protectDebtOwnership } from '../src/utils/debtOwnership';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,6 +60,10 @@ function apply(next: Snapshot) {
 }
 
 function install(next: Snapshot) {
+  const protectedDebts = protectDebtOwnership(next.pos.debts, dataStore.getState().debts, next.pos.movements);
+  if (protectedDebts.some((d, i) => ['customerName', 'customerPhone', 'movementId', 'currency'].some(k => (d as any)[k] !== (next.pos.debts[i] as any)[k]))) {
+    throw new Error('Nasiya egasi o‘zgargan nusxa qabul qilinmadi. Qurilmani yangilang.');
+  }
   write(path.join(directory, 'before-device-sync.json'), JSON.stringify(snapshot()));
   write(journal, JSON.stringify(next));
   apply(next);

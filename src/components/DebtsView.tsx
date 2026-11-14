@@ -1,3 +1,4 @@
+import { CustomerDebtHistory } from './CustomerDebtHistory';
 import React, { useState, useMemo } from 'react';
 import { DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
 import { DebtPeriodReport } from './DebtPeriodReport';
@@ -43,7 +44,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'barchasi' | 'faol' | 'yopildi'>('faol');
   const [sortBy, setSortBy] = useState<'muddat' | 'summa' | 'yangi'>('muddat');
-  const [viewMode, setViewMode] = useState<'qarzlar' | 'mijozlar' | 'davr'>('qarzlar');
+  const [viewMode, setViewMode] = useState<'qarzlar' | 'mijozlar' | 'davr' | 'tarix'>('tarix');
   
   // Payment modal state
   const [paymentModalDebt, setPaymentModalDebt] = useState<DebtRecord | null>(null);
@@ -224,13 +225,13 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
             {remainingByCurrency.USD > 0 && <span className="block text-sm sm:text-base">+ {formatMoney(remainingByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-xs text-stone-500 mt-1">
-            {activeDebtorsCount} nafar mijozning qarz summasi
+            {activeDebtorsCount} ta faol qarz yozuvi
           </div>
         </div>
 
         <div className="bg-white rounded-2xl border border-stone-200 p-3 sm:p-5 shadow-xs">
           <div className="flex justify-between items-center text-stone-500 text-xs font-bold uppercase">
-            <span>Qaytarilgan / To'langan Qarzlar</span>
+            <span>To‘lov va qaytarishlar</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="text-lg sm:text-2xl font-black text-emerald-600 mt-2">
@@ -238,7 +239,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
             {collectedByCurrency.USD > 0 && <span className="block text-sm sm:text-base">+ {formatMoney(collectedByCurrency.USD, 'USD')}</span>}
           </div>
           <div className="text-xs text-stone-500 mt-1">
-            Muvaffaqiyatli undirilgan tushum
+            Pul to‘lovi va tovar qaytarish jami
           </div>
         </div>
 
@@ -301,6 +302,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl text-xs font-bold">
+            <button type="button" onClick={() => setViewMode('tarix')} className={`px-3 py-1 rounded-lg ${viewMode === 'tarix' ? 'bg-stone-950 text-white' : 'text-stone-700'}`}>Mijoz tarixi</button>
             <button
               onClick={() => setViewMode('qarzlar')}
               className={`px-3 py-1 rounded-lg cursor-pointer transition-colors ${viewMode === 'qarzlar' ? 'bg-stone-950 text-white' : 'text-stone-700'}`}
@@ -349,6 +351,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {viewMode === 'tarix' && <CustomerDebtHistory debts={debts} movements={movements} query={searchQuery} onPay={handleOpenPayment} />}
 
       {viewMode === 'davr' && <DebtPeriodReport debts={debts} movements={movements} store={storeInfo ?? STORE_INFO} query={searchQuery} />}
 

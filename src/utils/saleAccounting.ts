@@ -5,7 +5,7 @@ const cleanName = (name: string) => name.trim().replace(/\s+/g, ' ').toLocaleLow
 
 const customerKey = (name: string, phone?: string) => {
   const digits = String(phone || '').replace(/\D/g, '');
-  return digits.length >= 9 ? `phone:${digits.slice(-9)}` : `name:${cleanName(name)}`;
+  return digits.length >= 9 ? `name:${cleanName(name)}|phone:${digits.slice(-9)}` : `name:${cleanName(name)}`;
 };
 
 export function customerDebtTotal(debts: DebtRecord[], name: string, phone?: string, currency: Currency = 'UZS'): number {

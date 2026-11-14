@@ -8,6 +8,7 @@ const phone = (value = '') => value.replace(/\D/g, '').slice(-9);
 export function debtsForCustomer(customer: CustomerProfile, customers: CustomerProfile[], debts: DebtRecord[]) {
   return debts.filter(debt => {
     const a = phone(customer.phone), b = phone(debt.customerPhone);
+    if (hashIdentity(debt.customerName) !== hashIdentity(customer.name)) return false;
     if (a.length === 9 && b.length === 9) return a === b;
     return hashIdentity(debt.customerName) === hashIdentity(customer.name) &&
       customers.filter(c => hashIdentity(c.name) === hashIdentity(customer.name)).length === 1;

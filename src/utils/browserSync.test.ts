@@ -35,3 +35,12 @@ test('a shared debt refund is not deducted twice during a conflict', () => {
   assert.equal(merged.debts[0].paidAmount, 2000);
   assert.equal(merged.debts[0].remainingAmount, 8000);
 });
+
+test('sync conflict cannot transfer an existing debt to another customer', () => {
+  const b: any = state(1); b.debts=[{id:'d',customerName:'ALI',customerPhone:'901234567',movementId:'sale',paidAmount:0,remainingAmount:1000,totalDebt:1000,paymentHistory:[]}];
+  const l=structuredClone(b), r=structuredClone(b);
+  l.debts[0].customerName='VALI';l.debts[0].customerPhone='999999999';
+  l.debts[0].paidAmount=100;l.debts[0].remainingAmount=900;
+  const result=mergeBrowserSnapshot(b,l,r).debts[0];
+  assert.equal(result.customerName,'ALI');assert.equal(result.customerPhone,'901234567');assert.equal(result.paidAmount,100);
+});

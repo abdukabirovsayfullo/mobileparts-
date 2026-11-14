@@ -1,3 +1,5 @@
+import { sameCustomer as matchesCustomer } from './utils/customerIdentity';
+import { dailyCashFlow } from './utils/cashFlow';
 import { OfflineDevicePanel } from './components/OfflineDevicePanel';
 import { browserSnapshot, mergeBrowserSnapshot } from './utils/browserSync';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -1117,6 +1119,8 @@ export default function App() {
       productName: data.productName,
       category: data.category,
       type: 'vazvrat',
+      employeeId: authUser?.id,
+      employeeName: authUser?.name,
       ...(returnCurrency === 'USD' ? { currency: 'USD' as const } : {}),
       quantity: data.quantity,
       unitCost: data.unitCost,
@@ -1147,8 +1151,7 @@ export default function App() {
         return prevDebts.map((debt) => {
           if (remainingRefundToDeduct <= 0) return debt;
           const isSameCustomer = 
-            (debt.customerName.toLowerCase().trim() === data.customerName.toLowerCase().trim()) ||
-            (data.customerPhone && debt.customerPhone === data.customerPhone);
+            matchesCustomer(data.customerName, data.customerPhone, debt.customerName, debt.customerPhone);
 
           // Faqat shu valyutadagi nasiya kamayadi (dollarli qaytarish so'mli qarzga tegmaydi).
           if (isSameCustomer && currencyOf(debt) === returnCurrency && debt.status !== 'yopildi' && debt.remainingAmount > 0) {
@@ -1167,7 +1170,9 @@ export default function App() {
                 {
                   date: nowISO,
                   amount: deduction,
-                  method: 'naqd'
+                  method: 'vazvrat',
+                  employeeId: authUser?.id,
+                  employeeName: authUser?.name
                 }
               ]
             };
@@ -1364,6 +1369,8 @@ export default function App() {
               {
                 date: new Date().toISOString(),
                 amount: accepted,
+                employeeId: authUser?.id,
+                employeeName: authUser?.name,
                 method
               }
             ]
@@ -1696,13 +1703,14 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-3 items-start">
             <CashExpensePanel
               user={authUser}
-              cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
+              cashRevenue={dailyCashFlow(movements, debts).netCash}
             />
             <CashShiftPanel user={authUser} />
             </div>
               }
               products={products}
               recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}
+              historyMovements={movements}
               customers={customers}
               debts={debts}
               onConfirmChiqim={handleConfirmChiqimServer}

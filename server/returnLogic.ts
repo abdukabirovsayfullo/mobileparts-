@@ -13,6 +13,7 @@ const phoneKey = (value?: string): string => String(value || '').replace(/\D/g, 
 export const sameCustomer = (nameA: string, phoneA: string | undefined, nameB: string, phoneB: string | undefined): boolean => {
   const aPhone = phoneKey(phoneA);
   const bPhone = phoneKey(phoneB);
+  if (normalizeName(nameA) !== normalizeName(nameB)) return false;
   if (aPhone.length >= 9 && bPhone.length >= 9) return aPhone === bPhone;
   return normalizeName(nameA) === normalizeName(nameB);
 };
