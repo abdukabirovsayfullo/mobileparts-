@@ -24,7 +24,9 @@ export const calculateShiftTotals = (
   const refunds = movements.filter(item => item.type === 'vazvrat' && currencyOf(item) === 'UZS' && item.employeeId === employeeId && tashkentDate(item.timestamp) === date);
   const sum = (method: string) => sales.filter(item => item.paymentMethod === method).reduce((total, item) => total + item.totalRevenue, 0);
   const activeExpenses = activeExpensesForDate(expenses, date).filter(item => item.createdById === employeeId);
-  const cashRevenue = sum('naqd');
+  // Nasiyali sotuvda mijoz shu zahoti bergan naqd qism ham kassaga tushadi.
+  // (Bu qism nasiya to'lovlari tarixida xodim belgisisiz yoziladi, shuning uchun u yerda ikki marta sanalmaydi.)
+  const cashRevenue = sum('naqd') + sales.filter(item => item.paymentMethod === 'nasiya').reduce((total, item) => total + Math.max(0, item.paidAmount || 0), 0);
   const expensesTotal = expenseTotal(activeExpenses);
   const refundTotal = refunds.filter(item => item.paymentMethod === 'naqd').reduce((total, item) => total + item.totalRevenue, 0);
   const debtCashReceived = debts

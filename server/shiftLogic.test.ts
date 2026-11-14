@@ -37,3 +37,16 @@ test('naqd qaytarish kassadan ayriladi, naqd nasiya to‘lovi qo‘shiladi; bosh
   // 10 000 ochilish + 100 000 naqd savdo + 25 000 nasiya − 30 000 qaytarish − 20 000 chiqim
   assert.equal(totals.expectedCash, 85_000);
 });
+
+test('nasiyali sotuvda darhol berilgan naqd qism kassaga qo‘shiladi, sotuvdagi qarz to‘lovi ikki marta sanalmaydi', () => {
+  const partial = { ...sale('nasiya', 450_000), paidAmount: 200_000 };
+  const debt: DebtRecord = {
+    id: 'd1', movementId: partial.id, customerName: 'Mijoz', customerPhone: '', totalDebt: 450_000, paidAmount: 200_000, remainingAmount: 250_000,
+    dueDate: '', createdAt: partial.timestamp, status: 'qisman_tolandi',
+    paymentHistory: [{ date: partial.timestamp, amount: 200_000, method: 'naqd' }]
+  };
+  const totals = calculateShiftTotals([sale('naqd', 100_000), partial], [], 'w1', '2026-10-02', 0, [debt]);
+  assert.equal(totals.cashRevenue, 300_000);
+  assert.equal(totals.debtCashReceived, 0);
+  assert.equal(totals.expectedCash, 300_000);
+});
