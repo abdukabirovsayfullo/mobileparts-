@@ -50,3 +50,54 @@ test('nasiyali sotuvda darhol berilgan naqd qism kassaga qo‘shiladi, sotuvdagi
   assert.equal(totals.debtCashReceived, 0);
   assert.equal(totals.expectedCash, 300_000);
 });
+
+test('shared drawer includes worker and unattributed refunds and debt receipts', () => {
+  const timestamp = '2026-10-02T10:00:00.000Z';
+  const movements: StockMovement[] = [
+    { ...sale('naqd', 698_000), employeeId: 'owner' },
+    { ...sale('naqd', 244_000), type: 'vazvrat', employeeId: 'worker' },
+    { ...sale('naqd', 330_000), type: 'vazvrat', employeeId: undefined },
+    { ...sale('nasiya', 15_000), type: 'vazvrat', employeeId: 'worker' },
+    { ...sale('naqd', 100), type: 'vazvrat', currency: 'USD' },
+    { ...sale('naqd', 999_000), type: 'vazvrat', timestamp: '2026-10-01T10:00:00.000Z' }
+  ];
+  const debts: DebtRecord[] = [{
+    id: 'd', customerName: 'Test', customerPhone: '', totalDebt: 1_000_000,
+    paidAmount: 915_100, remainingAmount: 84_900, status: 'qisman_tolandi',
+    dueDate: '2026-10-20', createdAt: timestamp,
+    paymentHistory: [
+      { date: timestamp, method: 'naqd', amount: 900_100, employeeId: 'owner' },
+      { date: timestamp, method: 'naqd', amount: 15_000 },
+      { date: timestamp, method: 'vazvrat', amount: 15_000, employeeId: 'worker' }
+    ]
+  }];
+  const shared = calculateShiftTotals(movements, [], null, '2026-10-02', 0, debts);
+  assert.equal(shared.refundTotal, 574_000);
+  assert.equal(shared.debtCashReceived, 915_100);
+  assert.equal(shared.expectedCash, 1_039_100);
+  const personal = calculateShiftTotals(movements, [], 'owner', '2026-10-02', 0, debts);
+  assert.equal(personal.refundTotal, 0);
+  assert.equal(personal.expectedCash, 1_598_100);
+});
+
+test('shared cash applies opening balance and expenses from every employee once', () => {
+  const totals = calculateShiftTotals([sale('naqd', 100_000)], [
+    expense, { ...expense, id: 'e2', createdById: 'w2', amount: 5_000 },
+    { ...expense, id: 'cancelled', amount: 999_000, cancelledAt: '2026-10-02T12:00:00.000Z' }
+  ], null, '2026-10-02', 10_000);
+  assert.equal(totals.expenseTotal, 25_000);
+  assert.equal(totals.expectedCash, 85_000);
+});
+
+test('umumiy kassada nasiyali sotuvdagi darhol to‘lov bir marta sanaladi', () => {
+  const partial = { ...sale('nasiya', 450_000), paidAmount: 200_000, employeeId: 'w2' };
+  const debt: DebtRecord = {
+    id: 'd1', movementId: partial.id, customerName: 'Mijoz', customerPhone: '', totalDebt: 450_000, paidAmount: 200_000, remainingAmount: 250_000,
+    dueDate: '', createdAt: partial.timestamp, status: 'qisman_tolandi',
+    paymentHistory: [{ date: partial.timestamp, amount: 200_000, method: 'naqd' }]
+  };
+  const shared = calculateShiftTotals([partial], [], null, '2026-10-02', 0, [debt]);
+  assert.equal(shared.cashRevenue, 200_000);
+  assert.equal(shared.debtCashReceived, 0);
+  assert.equal(shared.expectedCash, 200_000);
+});
