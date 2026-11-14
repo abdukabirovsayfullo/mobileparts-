@@ -1,45 +1,221 @@
 import React, { useMemo, useState } from 'react';
-import type { DebtRecord, StockMovement } from '../types';
+import type { Currency, DebtRecord, StockMovement, StoreSettings } from '../types';
 import { currencyOf } from '../utils/money';
 import { formatMoney } from '../utils/formatters';
+import { customerResolver } from '../utils/saleAccounting';
+import { buildCustomerStatement } from '../utils/customerStatement';
 import { tashkentDate } from '../../server/expenseLogic';
+import { FileDown, Wallet, RotateCcw, Loader2 } from 'lucide-react';
 
-const identity = (d: DebtRecord) => {
-  const name = d.customerName.trim().toLowerCase().replace(/\s+/g,' ');
-  const phone = (d.customerPhone || '').replace(/\D/g,'').slice(-9);
-  return `${name}|${phone.length===9 ? phone : ''}|${currencyOf(d)}${!name || name.includes('mijozi') ? '|'+d.id : ''}`;
+const METHOD: Record<string, string> = { naqd: 'Naqd', click_payme: 'Click / Payme', uzum: 'Uzum', vazvrat: 'Tovar qaytarildi' };
+const dayLabel = (day: string) => {
+  const [y, m, d] = day.split('-');
+  return `${d}.${m}.${y}`;
 };
-const dateLabel = (s: string) => new Date(s).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString('uz-UZ', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit' });
+const dateTimeLabel = (iso: string) => new Date(iso).toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-export function CustomerDebtHistory({debts, movements, query, onPay}: {debts: DebtRecord[]; movements: StockMovement[]; query: string; onPay: (d: DebtRecord)=>void}) {
+const monthStart = () => `${tashkentDate().slice(0, 8)}01`;
+
+interface Props {
+  debts: DebtRecord[];
+  movements: StockMovement[];
+  query: string;
+  store: StoreSettings;
+  /** "Mijoz to'lovi" panelini ochadi — to'lov mijozning umumiy qarzidan ayriladi. */
+  onRequestPayment?: (customer: { name: string; phone?: string; currency: Currency }) => void;
+}
+
+/** Mijoz tarixi: nima olgani (kun bo'yicha), to'lovlari va umumiy qarzi. Xaridlar "yopilgan" deb belgilanmaydi. */
+export function CustomerDebtHistory({ debts, movements, query, store, onRequestPayment }: Props) {
   const [selected, setSelected] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [onlyActive, setOnlyActive] = useState(true);
+  const [pdfBusy, setPdfBusy] = useState(false);
+
   const groups = useMemo(() => {
+    const live = debts.filter((d) => !d.cancelledAt);
+    const keyOf = customerResolver(live);
     const map = new Map<string, DebtRecord[]>();
-    for(const d of debts) { const key=identity(d); map.set(key,[...(map.get(key)||[]),d]); }
-    return [...map].map(([key,items])=>({key,items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),remaining:items.reduce((s,d)=>s+d.remainingAmount,0)})).sort((a,b)=>b.remaining-a.remaining);
-  },[debts]);
-  const visible = groups.filter(g=>(!onlyActive||g.remaining>0)&&`${g.items[0].customerName} ${g.items[0].customerPhone}`.toLowerCase().includes(query.trim().toLowerCase()));
-  const chosen = visible.find(g=>g.key===selected)||visible[0];
-  const d=chosen?.items[0];
-  const money=(n:number)=>formatMoney(n,d ? currencyOf(d) : 'UZS');
-  const records=chosen?.items.filter(r=>(!from||tashkentDate(r.createdAt)>=from)&&(!to||tashkentDate(r.createdAt)<=to))||[];
-  const sums=chosen?.items.reduce((s,r)=>({total:s.total+r.totalDebt,paid:s.paid+r.paidAmount,returned:s.returned+(r.paymentHistory||[]).filter(p=>p.method==='vazvrat').reduce((a,p)=>a+p.amount,0)}),{total:0,paid:0,returned:0});
-  const phone=d?.customerPhone.replace(/\D/g,'').slice(-9);
-  const shared=phone?.length===9&&groups.some(g=>g.key!==chosen?.key&&g.items[0].customerName.toLowerCase()!==d?.customerName.toLowerCase()&&g.items[0].customerPhone.replace(/\D/g,'').slice(-9)===phone);
-  return <section className="grid lg:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
-    <aside className="bg-white rounded-2xl border p-3 space-y-3"><h3 className="font-black">Mijozlar · {visible.length}</h3><label className="flex gap-2 text-xs"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)}/>Faqat qarzi bor mijozlar</label><div className="max-h-[600px] overflow-y-auto space-y-2">{visible.map(g=><button type="button" key={g.key} onClick={()=>{setSelected(g.key);setFrom('');setTo('');}} className={`w-full text-left border rounded-xl p-3 ${g.key===chosen?.key?'bg-amber-50 border-amber-400':'bg-white'}`}><strong className="block text-sm">{g.items[0].customerName}</strong><span className="text-xs text-stone-500">{g.items[0].customerPhone || 'Telefon kiritilmagan'}</span><strong className="block text-rose-700 mt-1">{formatMoney(g.remaining,currencyOf(g.items[0]))}</strong><span className="text-xs">{g.items.length} ta xarid / yozuv</span></button>)}{!visible.length&&<p className="p-4 text-sm text-stone-500">Mijoz topilmadi.</p>}</div></aside>
-    {d&&chosen&&sums&&<div className="min-w-0 space-y-4"><header className="rounded-2xl bg-stone-950 text-white p-5"><p className="text-xs text-amber-300">MIJOZNING NASIYA TARIXI</p><h2 className="text-xl font-black mt-1">{d.customerName}</h2><p className="text-sm text-stone-300">{d.customerPhone || 'Telefon kiritilmagan'} · {currencyOf(d)}</p><p className="mt-3 text-xs text-stone-300">Hozirgi qarz</p><strong className="text-3xl text-amber-400">{money(chosen.remaining)}</strong></header>
-      {shared&&<p className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs">Bu telefon boshqa ismda ham yozilgan. Hisoblar alohida saqlanmoqda. Mijozning haqiqiy telefonini aniqlashtiring.</p>}
-      <div className="grid sm:grid-cols-3 gap-2">{[['Jami nasiya xaridlari',sums.total],['Pul bilan to‘langan',sums.paid-sums.returned],['Qaytarish bilan ayrilgan',sums.returned]].map(([label,value])=><div key={label} className="bg-white border rounded-xl p-3 text-xs text-stone-500">{label}<strong className="block text-base text-stone-900 mt-1">{money(Number(value))}</strong></div>)}</div>
-      <div className="bg-white border rounded-xl p-3 flex flex-wrap gap-3 items-end"><label className="text-xs font-bold">Xarid sanasidan<input type="date" value={from} onChange={e=>setFrom(e.target.value)} className="block border rounded-lg p-2 mt-1"/></label><label className="text-xs font-bold">Sanagacha<input type="date" value={to} onChange={e=>setTo(e.target.value)} className="block border rounded-lg p-2 mt-1"/></label><button type="button" onClick={()=>{setFrom('');setTo('');}} className="border rounded-lg p-2 text-xs">Butun tarix</button><span className="text-xs text-stone-500">{records.length} ta yozuv · Jami qarz sana filtridan qat’i nazar ko‘rsatiladi.</span></div>
-      {records.map(r=>{const first=movements.find(m=>m.id===r.movementId);const items=first?movements.filter(m=>m.type==='chiqim'&&(first.batchSaleId?m.batchSaleId===first.batchSaleId:m.id===first.id)):[];return <article key={r.id} className="bg-white border rounded-2xl overflow-hidden"><div className="bg-stone-50 border-b p-4 flex flex-wrap justify-between gap-2"><div><strong>{dateLabel(r.createdAt)}</strong><p className="text-xs text-stone-500">{first?.receiptNumber||'Qo‘lda yozilgan nasiya'} · {first?.employeeName||'Xodim ko‘rsatilmagan'}</p></div><span className={`text-xs font-bold rounded-lg p-2 ${r.remainingAmount>0?'bg-rose-100 text-rose-700':'bg-emerald-100 text-emerald-700'}`}>{r.remainingAmount>0?'Qarz bor':'Yopilgan'}</span></div>
-      <div className="p-4 space-y-4">{items.length?<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs text-stone-500"><tr><th className="pb-2">Olingan tovar</th><th>Soni</th><th>Dona narxi</th><th>Jami</th></tr></thead><tbody className="divide-y">{items.map(m=><tr key={m.id}><td className="py-3 pr-3 font-bold">{m.productName}<span className="block text-xs text-stone-500 font-normal">{m.category}</span></td><td className="pr-3 whitespace-nowrap">{m.quantity} ta</td><td className="pr-3 whitespace-nowrap">{money(m.unitPrice)}</td><td className="whitespace-nowrap font-bold">{money(m.totalRevenue)}</td></tr>)}</tbody></table></div>:<p className="text-sm bg-amber-50 p-3 rounded-xl">Tovar tafsiloti bu yozuvga bog‘lanmagan. {r.notes||'Eski yoki qo‘lda kiritilgan qarz.'}</p>}
-      <div className="grid grid-cols-3 gap-2 text-xs"><div>Xarid summasi<strong className="block text-sm">{money(r.totalDebt)}</strong></div><div>To‘lov va qaytarish<strong className="block text-sm">{money(r.paidAmount)}</strong></div><div>Qolgan qarz<strong className="block text-sm text-rose-700">{money(r.remainingAmount)}</strong></div></div>
-      <details><summary className="cursor-pointer text-sm font-bold">To‘lov va qaytarish tarixi ({r.paymentHistory?.length||0})</summary><div className="divide-y mt-2">{(r.paymentHistory||[]).map((p,i)=><div key={i} className="py-2 text-xs flex flex-wrap justify-between gap-2"><span>{dateLabel(p.date)} · {p.method==='vazvrat'?'Tovar qaytarilgan':p.method==='naqd'?'Naqd to‘lov':'Click / Payme'}{p.employeeName&&` · ${p.employeeName}`}</span><strong>{money(p.amount)}</strong></div>)}{!r.paymentHistory?.length&&<p className="text-xs p-2 text-stone-500">To‘lov yozilmagan.</p>}</div></details>
-      {r.remainingAmount>0&&<button type="button" onClick={()=>onPay(r)} className="bg-emerald-600 text-white rounded-xl px-4 py-2 text-sm font-bold">Shu qarzga to‘lov kiritish</button>}</div></article>})}{!records.length&&<p className="bg-white border rounded-xl p-6 text-center">Bu davrda xarid yo‘q.</p>}
-    </div>}
-  </section>;
+    for (const d of live) {
+      const name = d.customerName.trim().toLowerCase();
+      const anonymous = !name || name.includes('mijozi');
+      const key = `${keyOf(d.customerName, d.customerPhone)}|${currencyOf(d)}${anonymous ? `|${d.id}` : ''}`;
+      map.set(key, [...(map.get(key) || []), d]);
+    }
+    return [...map].map(([key, items]) => {
+      const sorted = items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const withPhone = sorted.find((d) => d.customerPhone.replace(/\D/g, '').length >= 9);
+      return {
+        key,
+        name: sorted[0].customerName,
+        phone: withPhone?.customerPhone || sorted[0].customerPhone || '',
+        currency: currencyOf(sorted[0]),
+        count: sorted.length,
+        remaining: sorted.filter((d) => d.status !== 'yopildi').reduce((s, d) => s + Math.max(0, d.remainingAmount), 0)
+      };
+    }).sort((a, b) => b.remaining - a.remaining);
+  }, [debts]);
+
+  const q = query.trim().toLowerCase();
+  const visible = groups.filter((g) => (!onlyActive || g.remaining > 0) && `${g.name} ${g.phone}`.toLowerCase().includes(q));
+  const chosen = visible.find((g) => g.key === selected) || visible[0];
+
+  const statement = useMemo(
+    () => (chosen ? buildCustomerStatement(debts, movements, chosen.name, chosen.phone, chosen.currency, from, to) : null),
+    [debts, movements, chosen?.key, chosen?.name, chosen?.phone, chosen?.currency, from, to]
+  );
+  const money = (n: number) => formatMoney(n, chosen?.currency || 'UZS');
+  const phoneTail = chosen?.phone.replace(/\D/g, '').slice(-9);
+  const shared = !!phoneTail && phoneTail.length === 9 && groups.some((g) => g.key !== chosen?.key && g.phone.replace(/\D/g, '').slice(-9) === phoneTail);
+
+  const savePdf = async () => {
+    if (!statement) return;
+    setPdfBusy(true);
+    try {
+      const [{ createCustomerStatementPdf, customerStatementFileName }, { triggerPdfDownload }] = await Promise.all([
+        import('../utils/customerStatementPdf'),
+        import('../utils/pdfGenerator')
+      ]);
+      const doc = createCustomerStatementPdf(statement, store);
+      if (!triggerPdfDownload(doc, customerStatementFileName(statement.name, from, to))) {
+        alert('PDF saqlanmadi. Brauzerda yuklab olishga ruxsat berilganini tekshiring.');
+      }
+    } catch (error) {
+      console.error('[PDF] Mijoz hisobi:', error);
+      alert("PDF tayyorlanmadi. Qayta urinib ko'ring.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const quick = (kind: 'bugun' | 'oy' | 'hammasi') => {
+    if (kind === 'hammasi') { setFrom(''); setTo(''); return; }
+    setFrom(kind === 'bugun' ? tashkentDate() : monthStart());
+    setTo(tashkentDate());
+  };
+
+  return (
+    <section className="grid lg:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
+      <aside className="bg-white rounded-2xl border p-3 space-y-3">
+        <h3 className="font-black">Mijozlar · {visible.length}</h3>
+        <label className="flex gap-2 text-xs"><input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />Faqat qarzi bor mijozlar</label>
+        <div className="max-h-[600px] overflow-y-auto space-y-2">
+          {visible.map((g) => (
+            <button type="button" key={g.key} onClick={() => setSelected(g.key)}
+              className={`w-full text-left border rounded-xl p-3 cursor-pointer ${g.key === chosen?.key ? 'bg-amber-50 border-amber-400' : 'bg-white hover:bg-stone-50'}`}>
+              <strong className="block text-sm">{g.name}</strong>
+              <span className="text-xs text-stone-500">{g.phone || 'Telefon kiritilmagan'}</span>
+              <strong className={`block mt-1 ${g.remaining > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{g.remaining > 0 ? formatMoney(g.remaining, g.currency) : 'Qarzi yo‘q'}</strong>
+            </button>
+          ))}
+          {!visible.length && <p className="p-4 text-sm text-stone-500">Mijoz topilmadi.</p>}
+        </div>
+      </aside>
+
+      {chosen && statement && (
+        <div className="min-w-0 space-y-4">
+          <header className="rounded-2xl bg-stone-950 text-white p-5 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs text-amber-300 font-bold">MIJOZ HISOBI</p>
+              <h2 className="text-xl font-black mt-1">{chosen.name}</h2>
+              <p className="text-sm text-stone-300">{chosen.phone || 'Telefon kiritilmagan'} · {chosen.currency === 'USD' ? 'Dollar' : "So'm"}</p>
+              <p className="mt-3 text-xs text-stone-300">Umumiy qarz</p>
+              <strong className={`text-3xl ${statement.currentDebt > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>{statement.currentDebt > 0 ? money(statement.currentDebt) : "Qarzi yo'q"}</strong>
+            </div>
+            {onRequestPayment && statement.currentDebt > 0 && (
+              <button type="button" onClick={() => onRequestPayment({ name: chosen.name, phone: chosen.phone, currency: chosen.currency })}
+                className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-black inline-flex items-center gap-2 cursor-pointer">
+                <Wallet className="w-5 h-5" /> To'lov qabul qilish
+              </button>
+            )}
+          </header>
+
+          {shared && <p className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs">Bu telefon boshqa ismda ham yozilgan. Hisoblar alohida saqlanmoqda. Mijozning haqiqiy telefonini aniqlashtiring.</p>}
+
+          <div className="bg-white border rounded-xl p-3 flex flex-wrap gap-3 items-end">
+            <label className="text-xs font-bold">Sanadan<input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="block border rounded-lg p-2 mt-1" /></label>
+            <label className="text-xs font-bold">Sanagacha<input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="block border rounded-lg p-2 mt-1" /></label>
+            <div className="flex gap-1.5">
+              <button type="button" onClick={() => quick('bugun')} className="border rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-stone-50 cursor-pointer">Bugun</button>
+              <button type="button" onClick={() => quick('oy')} className="border rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-stone-50 cursor-pointer">Shu oy</button>
+              <button type="button" onClick={() => quick('hammasi')} className="border rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-stone-50 cursor-pointer">Butun tarix</button>
+            </div>
+            <button type="button" onClick={savePdf} disabled={pdfBusy}
+              className="ml-auto px-4 py-2 rounded-xl bg-stone-950 hover:bg-stone-800 disabled:opacity-50 text-amber-400 text-sm font-black inline-flex items-center gap-2 cursor-pointer">
+              {pdfBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} PDF saqlash
+            </button>
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-2">
+            {([
+              ['Davrdagi xaridlar', statement.period.purchases, 'text-stone-900'],
+              ["Davrdagi to'lovlar", statement.period.payments, 'text-emerald-700'],
+              ['Qaytarilgan tovarlar', statement.period.returns, 'text-sky-700']
+            ] as const).map(([label, value, cls]) => (
+              <div key={label} className="bg-white border rounded-xl p-3 text-xs text-stone-500">{label}<strong className={`block text-base mt-1 ${cls}`}>{money(value)}</strong></div>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="font-black text-sm text-stone-800">Nima olgan {from || to ? '(tanlangan davr)' : '(butun tarix)'}</h3>
+            {statement.days.slice().reverse().map((day) => (
+              <article key={day.day} className="bg-white border rounded-2xl overflow-hidden">
+                <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex justify-between items-center">
+                  <strong className="text-sm">{dayLabel(day.day)}</strong>
+                  <strong className="text-sm">{money(day.total)}</strong>
+                </div>
+                <div className="p-4 overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-xs text-stone-500"><tr><th className="pb-2">Tovar</th><th className="pb-2">Soni</th><th className="pb-2">Narxi</th><th className="pb-2 text-right">Jami</th></tr></thead>
+                    <tbody className="divide-y">
+                      {day.purchases.flatMap((p, pi) =>
+                        p.items.length
+                          ? p.items.map((it, ii) => (
+                              <tr key={`${pi}-${ii}`}>
+                                <td className="py-2 pr-3 font-bold">
+                                  {it.name}
+                                  {ii === 0 && day.purchases.length > 1 && <span className="ml-2 text-[10px] font-normal text-stone-400">{timeLabel(p.time)}</span>}
+                                  {it.returnedQty > 0 && <span className="ml-2 inline-flex items-center gap-0.5 text-[11px] text-sky-700 font-bold"><RotateCcw className="w-3 h-3" />{it.returnedQty} ta qaytarilgan</span>}
+                                </td>
+                                <td className="pr-3 whitespace-nowrap">{it.quantity} ta</td>
+                                <td className="pr-3 whitespace-nowrap">{money(it.unitPrice)}</td>
+                                <td className="whitespace-nowrap font-bold text-right">{money(it.total)}</td>
+                              </tr>
+                            ))
+                          : [
+                              <tr key={`${pi}-n`}>
+                                <td colSpan={3} className="py-2 pr-3 text-stone-700 italic">{p.note}</td>
+                                <td className="whitespace-nowrap font-bold text-right">{money(p.amount)}</td>
+                              </tr>
+                            ]
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            ))}
+            {!statement.days.length && <p className="bg-white border rounded-xl p-6 text-center text-sm text-stone-500">Bu davrda xarid yo'q.</p>}
+          </div>
+
+          <div className="bg-white border rounded-2xl overflow-hidden">
+            <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2.5 flex justify-between">
+              <strong className="text-sm text-emerald-900">To'lovlar</strong>
+              <strong className="text-sm text-emerald-900">{money(statement.period.payments + statement.period.returns)}</strong>
+            </div>
+            <div className="divide-y">
+              {[...statement.payments, ...statement.returns].sort((a, b) => b.date.localeCompare(a.date)).map((p, i) => (
+                <div key={i} className="px-4 py-2.5 text-sm flex flex-wrap justify-between gap-2">
+                  <span className="text-stone-600">{dateTimeLabel(p.date)} · {METHOD[p.method] || p.method}{p.employeeName ? ` · ${p.employeeName}` : ''}</span>
+                  <strong className={p.method === 'vazvrat' ? 'text-sky-700' : 'text-emerald-700'}>−{money(p.amount)}</strong>
+                </div>
+              ))}
+              {!statement.payments.length && !statement.returns.length && <p className="px-4 py-4 text-sm text-stone-500">Bu davrda to'lov yo'q.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }

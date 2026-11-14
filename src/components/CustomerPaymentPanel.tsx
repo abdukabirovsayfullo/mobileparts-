@@ -234,13 +234,8 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
                   <div className="text-red-600 font-bold">Summa qarzdan {formatMoney(plan.leftover, selected.currency)} ko'p.</div>
                 ) : (
                   <>
-                    <div className="font-bold text-stone-600">Qarzdan ayriladi:</div>
-                    {plan.allocations.map((a) => (
-                      <div key={a.debtId} className="flex justify-between gap-2">
-                        <span className="text-stone-600 truncate">{formatDate(a.createdAt)}{labels.get(a.debtId) ? ` · ${labels.get(a.debtId)}` : ''}</span>
-                        <b className="whitespace-nowrap">{formatMoney(a.amount, selected.currency)}{a.amount >= a.remainingBefore ? ' ✓' : ''}</b>
-                      </div>
-                    ))}
+                    <div className="flex justify-between"><span className="text-stone-600">Umumiy qarz</span><b>{formatMoney(plan.totalRemaining, selected.currency)}</b></div>
+                    <div className="flex justify-between text-emerald-700"><span>To'lov</span><b>−{formatMoney(plan.applied, selected.currency)}</b></div>
                     <div className="flex justify-between border-t border-stone-200 pt-1 font-black">
                       <span>Qoladi</span>
                       <span className="text-red-600">{formatMoney(plan.totalRemaining - plan.applied, selected.currency)}</span>

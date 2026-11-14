@@ -14,7 +14,7 @@ test("paymentReceiptHtml: to'lov, taqsimot va qolgan qarz chekda", () => {
   assert.match(html, /TL-261113-210509/);
   assert.match(html, /130 000 so&#39;m/);
   assert.match(html, /165 000 so&#39;m/);
-  assert.match(html, /YOPILDI/);
+  assert.doesNotMatch(html, /YOPILDI/); // chekda xaridlar yopilmaydi — faqat umumiy qarz
   assert.match(html, /35 000 so&#39;m/);
   assert.match(html, /Nurullo &lt;usta&gt;/);
   assert.doesNotMatch(html, /<usta>/);

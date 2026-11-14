@@ -28,13 +28,6 @@ export function paymentReceiptHtml(r: PaymentReceiptData): string {
   const row = (label: string, value: string, cls = '') =>
     `<div class="summary ${cls}"><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`;
   const phones = String(r.store.phone || '').split(/[,;\n]+/).filter(Boolean);
-  const parts = r.allocations
-    .map((a) => `<div class="part">
-        <div class="item">${escapeHtml(formatDateTime(a.createdAt))} nasiyasi${a.label ? ` — ${escapeHtml(a.label)}` : ''}</div>
-        ${row("To'landi", som(a.amount))}
-        ${row('Qoldi', a.remainingAfter <= 0 ? 'YOPILDI' : som(a.remainingAfter))}
-      </div>`)
-    .join('');
 
   return `<!doctype html><html lang="uz"><head><meta charset="utf-8"><title>To'lov cheki ${escapeHtml(r.receiptNumber)}</title>
     <style>
@@ -68,7 +61,6 @@ export function paymentReceiptHtml(r: PaymentReceiptData): string {
       ${r.cashier ? `<div class="detail"><strong>Qabul qildi:</strong> ${escapeHtml(r.cashier)}</div>` : ''}
       ${row('Avvalgi qarz', som(r.debtBefore), 'bold')}
       <div class="paid">${row(`TO'LANDI (${r.method === 'click_payme' ? 'Click/Payme' : 'Naqd'})`, som(r.amount))}</div>
-      ${parts}
       <div class="grand">${row('QOLGAN QARZ', r.debtAfter <= 0 ? "0 — to'liq yopildi" : som(r.debtAfter))}</div>
       <div class="sign"><span>Kassir: ________</span><span>Mijoz: ________</span></div>
       <div class="footer">To'lovingiz uchun rahmat!</div>

@@ -489,7 +489,15 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           )}
         </div>
       )}
-      {viewMode === 'tarix' && <CustomerDebtHistory debts={debts} movements={movements} query={searchQuery} onPay={handleOpenPayment} />}
+      {viewMode === 'tarix' && (
+        <CustomerDebtHistory
+          debts={debts}
+          movements={movements}
+          query={searchQuery}
+          store={storeInfo ?? STORE_INFO}
+          onRequestPayment={onAddCustomerPayment ? (c) => setPaymentPanel({ initial: c }) : undefined}
+        />
+      )}
 
       {viewMode === 'davr' && <DebtPeriodReport debts={debts} movements={movements} store={storeInfo ?? STORE_INFO} query={searchQuery} />}
 
