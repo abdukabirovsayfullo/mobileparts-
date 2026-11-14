@@ -2,7 +2,7 @@ import type { Currency, DebtRecord, StockMovement } from '../src/types';
 import { currencyOf, roundMoney } from '../src/utils/money';
 import { tashkentDate } from './expenseLogic';
 import { normalizeSearchText } from '../src/utils/customerSearch';
-import { sameCustomerDebts } from '../src/utils/saleAccounting';
+import { firstNameToken, sameCustomerDebts } from '../src/utils/saleAccounting';
 
 export const WORKER_RETURN_WINDOW_DAYS = 7;
 export const RETURN_FLAG_DAILY_COUNT = Number(process.env.POS_RETURN_FLAG_COUNT) > 0 ? Number(process.env.POS_RETURN_FLAG_COUNT) : 3;
@@ -15,7 +15,7 @@ const phoneKey = (value?: string): string => String(value || '').replace(/\D/g, 
 export const sameCustomer = (nameA: string, phoneA: string | undefined, nameB: string, phoneB: string | undefined): boolean => {
   const aPhone = phoneKey(phoneA);
   const bPhone = phoneKey(phoneB);
-  if (aPhone.length >= 9 && bPhone.length >= 9) return aPhone === bPhone;
+  if (aPhone.length >= 9 && bPhone.length >= 9) return aPhone === bPhone && firstNameToken(nameA) === firstNameToken(nameB);
   return normalizeSearchText(nameA) === normalizeSearchText(nameB);
 };
 

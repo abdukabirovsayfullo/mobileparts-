@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { miniAppPrice, isAccessoryCategory } from '../src/utils/miniAppPrice';
 import { currencyOf, roundMoney } from '../src/utils/money';
+import { customerDebtTotal } from '../src/utils/saleAccounting';
 import crypto from 'node:crypto';
 import { dataStore, OwnerApprovalRequiredError } from './dataStore';
 import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession, verifyOwnerApproval } from './auth';
@@ -368,7 +369,8 @@ apiV1Router.use((req: Request, res: Response, next: NextFunction) => {
   const canUseCashShift = (req.path === '/cash-shifts/current' && req.method === 'GET') || (req.path === '/cash-shifts/close' && req.method === 'POST');
   // Ishchi: tovar qaytarish va nasiya (faqat qidirish + to'lov qabul qilish; ro'yxat/jami/o'chirish yo'q)
   const canReturn = (req.path === '/returns/search' && req.method === 'GET') || (req.path === '/returns' && req.method === 'POST');
-  const canUseDebts = ((req.path === '/debts/lookup' || req.path === '/debts/period') && req.method === 'GET') || (/^\/debts\/[^/]+\/pay$/.test(req.path) && req.method === 'POST');
+  const canUseDebts = ((req.path === '/debts/lookup' || req.path === '/debts/customer-lookup' || req.path === '/debts/period') && req.method === 'GET')
+    || ((/^\/debts\/[^/]+\/pay$/.test(req.path) || req.path === '/debts/customer-pay') && req.method === 'POST');
   // Ishchi: doimiy mijozlarni ko'rish, qidirish va yangisini qo'shish (o'chirish va ommaviy import yo'q)
   const canUseCustomers = req.path === '/customers' && (req.method === 'GET' || req.method === 'POST');
   const canUseOnlineOrders = req.path === '/telegram/miniapp/orders' || req.path === '/telegram/miniapp/pending-orders' ||
@@ -725,6 +727,14 @@ apiV1Router.get('/debts', (req: Request, res: Response) => {
 });
 
 // Ishchi (va Rahbar) uchun: mijoz nasiyasini ism/telefon bo'yicha qidirish. Minimal maydonlar, umumiy ro'yxat yo'q.
+// Mijoz bo'yicha nasiya: jami qoldiq, nima olgani va to'lovlari (kassir ham ko'radi).
+apiV1Router.get('/debts/customer-lookup', (req: Request, res: Response) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
+  const query = typeof req.query.q === 'string' ? req.query.q : '';
+  res.json({ success: true, data: dataStore.lookupCustomerLedgers(query) });
+});
+
 apiV1Router.get('/debts/lookup', (req: Request, res: Response) => {
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
@@ -824,9 +834,10 @@ apiV1Router.post('/debts/customer-pay', (req: Request, res: Response) => {
     return res.status(409).json({ success: false, error: 'Smena yopilgan. Davom etish uchun Rahbar qayta ochishi kerak.' });
   }
   try {
-    const { name, phone, currency, amount, method } = req.body || {};
-    const result = dataStore.recordCustomerPayment({ name, phone, currency, amount: Number(amount), method }, user ? { id: user.id, name: user.name } : undefined);
-    res.json({ success: true, message: "To'lov qabul qilindi", applied: result.applied, debtIds: result.debts.map(d => d.id) });
+    const { name, phone, currency, amount, method, debtId } = req.body || {};
+    const result = dataStore.recordCustomerPayment({ name, phone, currency, amount: Number(amount), method, debtId: typeof debtId === 'string' ? debtId : undefined }, user ? { id: user.id, name: user.name } : undefined);
+    const remaining = result.debts.length ? customerDebtTotal(dataStore.getState().debts, result.debts[0].customerName, result.debts[0].customerPhone, currencyOf(result.debts[0])) : 0;
+    res.json({ success: true, message: "To'lov qabul qilindi", applied: result.applied, remaining, debtIds: result.debts.map(d => d.id) });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err?.message || "To'lov qabul qilinmadi" });
   }

@@ -18,7 +18,7 @@ import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, Currency, C
 import { currencyOf, roundMoney } from '../src/utils/money';
 import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity, sameCustomer } from './returnLogic';
 import { tashkentDate } from './expenseLogic';
-import { customerDebtTotal, planCustomerPayment, saleAccounting, sameCustomerDebts } from '../src/utils/saleAccounting';
+import { customerDebtTotal, customerLedger, CustomerLedger, customerResolver, firstNameToken, planCustomerPayment, saleAccounting, sameCustomerDebts } from '../src/utils/saleAccounting';
 import { normalizeSearchText } from '../src/utils/customerSearch';
 
 export class OwnerApprovalRequiredError extends Error {
@@ -223,7 +223,8 @@ class DataStore {
   // --- Doimiy mijozlar reestri (serverda saqlanadi, Rahbar va ishchi uchun umumiy) ---
   private static customerKey(name: string, phone: string): string {
     const digits = (phone || '').replace(/\D/g, '');
-    return digits.length >= 9 ? `p:${digits.slice(-9)}` : `n:${normalizeSearchText(name)}`;
+    // Bir telefon + boshqa ism = boshqa odam (telefon adashib yozilgan bo'lishi mumkin).
+    return digits.length >= 9 ? `p:${digits.slice(-9)}|${firstNameToken(name)}` : `n:${normalizeSearchText(name)}`;
   }
 
   private static isGenericCustomer(name: string): boolean {
@@ -286,7 +287,16 @@ class DataStore {
       const tail = DataStore.phoneTail(c.phone);
       if (tail && !tails.has(tail)) tails.set(tail, c.phone.trim());
     }
-    return tails.size === 1 ? [...tails.values()][0] : given;
+    if (tails.size !== 1) return given;
+    // Shu telefon boshqa ismli odamda ham uchrasa, telefon adashib yozilgan bo'lishi mumkin:
+    // uni yangi yozuvlarga tarqatmaymiz.
+    const [tail, value] = [...tails.entries()][0];
+    const first = firstNameToken(name);
+    const shared = [
+      ...this.state.debts.map(d => ({ name: d.customerName, phone: d.customerPhone })),
+      ...(this.state.customers || []).map(c => ({ name: c.name, phone: c.phone }))
+    ].some(c => DataStore.phoneTail(c.phone) === tail && firstNameToken(c.name) !== first);
+    return shared ? given : value;
   }
 
   public upsertCustomer(input: { name: string; phone?: string; address?: string; notes?: string; visited?: boolean }, allowUpdate = true): CustomerProfile {
@@ -341,7 +351,10 @@ class DataStore {
     const oldPhone = customer.phone;
     let debtsUpdated = 0;
     if (options.updateDebts !== false && (oldName !== name || oldPhone !== phone)) {
+      const nowIso = new Date().toISOString();
       for (const debt of sameCustomerDebts(this.state.debts, oldName, oldPhone)) {
+        // Iz qoladi: nasiya qaysi ism/telefondan o'zgartirilgani keyin ko'rinadi.
+        debt.auditLog = [...(debt.auditLog || []), { date: nowIso, action: 'tahrir', details: `Mijoz tahriri: "${debt.customerName}" ${debt.customerPhone || ''} → "${name}" ${digits.length >= 9 ? phone : debt.customerPhone || ''}`.trim() }];
         debt.customerName = name;
         if (digits.length >= 9) debt.customerPhone = phone;
         debtsUpdated++;
@@ -1057,6 +1070,34 @@ class DataStore {
       }));
   }
 
+  /**
+   * Kassir uchun: mijoz bo'yicha nasiya hisobi (jami qoldiq, nima olgani, to'lovlari).
+   * Tannarx/foyda berilmaydi; telefon faqat oxirgi 4 raqam.
+   */
+  public lookupCustomerLedgers(query: string): Array<Omit<CustomerLedger, 'phone'> & { phoneTail: string }> {
+    const tokens = normalizeSearchText(query).split(' ').filter(Boolean);
+    if (!tokens.length || normalizeSearchText(query).length < 2) return [];
+    const debts = this.state.debts.filter(d => !d.cancelledAt);
+    const keyOf = customerResolver(debts);
+    const seen = new Set<string>();
+    const result: Array<Omit<CustomerLedger, 'phone'> & { phoneTail: string }> = [];
+    for (const debt of debts) {
+      if (debt.status === 'yopildi' || debt.remainingAmount <= 0) continue;
+      const text = normalizeSearchText(`${debt.customerName} ${(debt.customerPhone || '').replace(/\D/g, '')}`);
+      if (!tokens.every(t => text.includes(t))) continue;
+      const currency = currencyOf(debt);
+      const key = `${keyOf(debt.customerName, debt.customerPhone)}|${currency}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const ledger = customerLedger(debts, this.state.movements, debt.customerName, debt.customerPhone, currency);
+      if (!ledger) continue;
+      const { phone, ...rest } = ledger;
+      result.push({ ...rest, phoneTail: (phone || '').replace(/\D/g, '').slice(-4) });
+      if (result.length >= 10) break;
+    }
+    return result;
+  }
+
   public getDebts(status?: string): DebtRecord[] {
     if (status) {
       return this.state.debts.filter(d => d.status === status);
@@ -1096,9 +1137,15 @@ class DataStore {
 
   /** Mijoz bergan umumiy summani uning faol nasiyalariga eng eskisidan boshlab taqsimlaydi. */
   public recordCustomerPayment(
-    input: { name: string; phone?: string; currency?: Currency; amount: number; method?: 'naqd' | 'click_payme' },
+    input: { name: string; phone?: string; currency?: Currency; amount: number; method?: 'naqd' | 'click_payme'; debtId?: string },
     actor?: { id?: string; name?: string }
   ): { applied: number; leftover: number; debts: DebtRecord[] } {
+    // Kassir mijozni nasiyalaridan biri orqali ko'rsatadi (to'liq telefon unga berilmaydi).
+    if (input.debtId) {
+      const ref = this.state.debts.find(d => d.id === input.debtId);
+      if (!ref) throw new Error('Nasiya topilmadi.');
+      input = { ...input, name: ref.customerName, phone: ref.customerPhone, currency: currencyOf(ref) };
+    }
     const currency: Currency = input.currency === 'USD' ? 'USD' : 'UZS';
     const method = input.method === 'click_payme' ? 'click_payme' : 'naqd';
     if (!String(input.name || '').trim()) throw new Error('Mijoz ismi kerak.');
@@ -1139,6 +1186,7 @@ class DataStore {
       createdAt: now,
       status: remaining <= 0 ? 'yopildi' : paid > 0 ? 'qisman_tolandi' : 'faol',
       notes: String(input.notes || '').trim() || "Qo'lda kiritilgan nasiya",
+      createdByName: actor?.name,
       paymentHistory: paid > 0 ? [{ date: now, amount: paid, method: input.initialMethod === 'click_payme' ? 'click_payme' : 'naqd', employeeId: actor?.id, employeeName: actor?.name }] : []
     };
     this.state.debts.unshift(debt);

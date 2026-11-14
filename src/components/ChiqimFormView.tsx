@@ -182,6 +182,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   // CRM autocomplete & dropdown state
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  /** Telefon qaysi tanlangan mijozdan avtomatik to'ldirilgani (ism o'zgarsa tozalanadi). */
+  const [autoPhoneName, setAutoPhoneName] = useState('');
 
   // Quick Pay Modal for Past Debt
   const [selectedDebtToPay, setSelectedDebtToPay] = useState<DebtRecord | null>(null);
@@ -264,6 +266,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     if (!presetCustomer) return;
     setCustomerName(presetCustomer.name);
     setCustomerPhone(presetCustomer.phone || '+998 ');
+    setAutoPhoneName(normalizeSearchText(presetCustomer.name));
     setCustomerAddress(presetCustomer.address || 'Paxtaobod');
   }, [presetCustomer?.nonce]);
 
@@ -271,6 +274,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const handleSelectCustomer = (c: { name: string; phone?: string; address?: string }) => {
     setCustomerName(c.name);
     setCustomerPhone(c.phone || '+998 ');
+    setAutoPhoneName(normalizeSearchText(c.name));
     setCustomerAddress(c.address || 'Paxtaobod');
     setShowCustomerDropdown(false);
   };
@@ -1182,6 +1186,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     onChange={(e) => {
                       setCustomerName(e.target.value);
                       setShowCustomerDropdown(true);
+                      // Tanlangan mijozning telefoni boshqa ismga o'tib ketmasin
+                      // (aks holda yangi nasiya o'sha mijozning qarziga yozilib qoladi).
+                      if (autoPhoneName && normalizeSearchText(e.target.value) !== autoPhoneName) {
+                        setCustomerPhone('+998 ');
+                        setAutoPhoneName('');
+                      }
                     }}
                     className="w-full pl-8 pr-8 py-1.5 bg-white border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
@@ -1260,7 +1270,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       type="text"
                       placeholder="+998 90 123 45 67"
                       value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onChange={(e) => { setCustomerPhone(e.target.value); setAutoPhoneName(''); }}
                       className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-stone-300 rounded-lg text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
                     />
                   </div>
