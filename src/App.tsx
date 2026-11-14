@@ -45,7 +45,7 @@ import { CustomersPanel } from './components/CustomersPanel';
 
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment, applyDebtPayment, planCustomerPayment } from './utils/saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment, applyDebtPayment, planCustomerPayment, sameCustomerDebts } from './utils/saleAccounting';
 
 // Kamdan-kam ochiladigan og'ir bo'limlar faqat kerak bo'lganda yuklanadi.
 const lazyLoaders = {
@@ -1174,7 +1174,10 @@ export default function App() {
       batchSaleId: batchId,
       isReturn: true,
       returnReason: data.returnReason,
-      originalMovementId: data.originalMovementId
+      originalMovementId: data.originalMovementId,
+      // Smena (kassa yopish) qaytarishni shu xodimning kassasidan ayirishi uchun.
+      employeeId: authUser?.id,
+      employeeName: authUser?.name
     };
 
     setMovements((prev) => [newMovement, ...prev]);
@@ -1184,11 +1187,10 @@ export default function App() {
       const totalRefundSum = data.totalRefund;
       setDebts((prevDebts) => {
         let remainingRefundToDeduct = totalRefundSum;
+        const sameIds = new Set(sameCustomerDebts(prevDebts, data.customerName, data.customerPhone).map((d) => d.id));
         return prevDebts.map((debt) => {
           if (remainingRefundToDeduct <= 0) return debt;
-          const isSameCustomer = 
-            (debt.customerName.toLowerCase().trim() === data.customerName.toLowerCase().trim()) ||
-            (data.customerPhone && debt.customerPhone === data.customerPhone);
+          const isSameCustomer = sameIds.has(debt.id);
 
           // Faqat shu valyutadagi nasiya kamayadi (dollarli qaytarish so'mli qarzga tegmaydi).
           if (isSameCustomer && currencyOf(debt) === returnCurrency && debt.status !== 'yopildi' && debt.remainingAmount > 0) {
@@ -1207,7 +1209,10 @@ export default function App() {
                 {
                   date: nowISO,
                   amount: deduction,
-                  method: 'naqd'
+                  // Qarzdan ayirish naqd pul emas: kassaga kirim bo'lib hisoblanmasligi kerak.
+                  method: 'vazvrat' as const,
+                  employeeId: authUser?.id,
+                  employeeName: authUser?.name
                 }
               ]
             };
@@ -1782,7 +1787,8 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-3 items-start">
             <CashExpensePanel
               user={authUser}
-              cashRevenue={movements.filter(m => m.type === 'chiqim' && m.paymentMethod === 'naqd' && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(m.timestamp)) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date())).reduce((sum, m) => sum + m.totalRevenue, 0)}
+              movements={movements}
+              debts={debts}
             />
             <CashShiftPanel user={authUser} />
             </div>

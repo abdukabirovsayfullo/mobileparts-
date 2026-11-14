@@ -6,6 +6,7 @@ import { CustomerPaymentPanel } from './CustomerPaymentPanel';
 import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
 import { DebtStatementParams, toLocalDay } from '../utils/debtStatementReceipt';
 import { STORE_INFO } from '../data/initialData';
+import { normalizeSearchText } from '../utils/customerSearch';
 import { activeCustomerDebtReport, customerDebtTotal, debtOverdueDays, groupDebtsByCustomer } from '../utils/saleAccounting';
 import { currencyOf, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
@@ -79,7 +80,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   // Bir xil ism bitta bo'lib birlashtiriladi, eng oxirgi faollik bo'yicha tartiblanadi.
   const regularCustomers = useMemo(() => {
     const map = new Map<string, { name: string; phone: string; last: number; activeDebts: DebtRecord[] }>();
-    const key = (n: string) => n.trim().toLowerCase();
+    const key = (n: string) => normalizeSearchText(n);
     const ts = (v?: string) => (v ? new Date(v).getTime() || 0 : 0);
     const hasPhone = (p?: string) => !!p && p.replace(/\D/g, '').length > 3;
 
@@ -106,7 +107,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
     });
 
     return Array.from(map.values())
-      .filter((c) => key(c.name) !== "do'kon mijozi")
+      .filter((c) => key(c.name) !== 'dokon mijozi')
       .sort((a, b) => b.last - a.last);
   }, [customers, debts]);
 

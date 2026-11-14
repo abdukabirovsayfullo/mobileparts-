@@ -18,7 +18,8 @@ import type { AuthUser, CashExpense, CashExpenseCategory, CashShift, Currency, C
 import { currencyOf, roundMoney } from '../src/utils/money';
 import { applyRefundToDebts, isWithinWorkerWindow, normalizeName, refundAmount, returnableQuantity, returnedQuantity, sameCustomer } from './returnLogic';
 import { tashkentDate } from './expenseLogic';
-import { customerDebtTotal, planCustomerPayment, saleAccounting } from '../src/utils/saleAccounting';
+import { customerDebtTotal, planCustomerPayment, saleAccounting, sameCustomerDebts } from '../src/utils/saleAccounting';
+import { normalizeSearchText } from '../src/utils/customerSearch';
 
 export class OwnerApprovalRequiredError extends Error {
   constructor(message = "7 kundan eski sotuvni qaytarish uchun Rahbar PIN'i kerak.") { super(message); this.name = 'OwnerApprovalRequiredError'; }
@@ -222,7 +223,7 @@ class DataStore {
   // --- Doimiy mijozlar reestri (serverda saqlanadi, Rahbar va ishchi uchun umumiy) ---
   private static customerKey(name: string, phone: string): string {
     const digits = (phone || '').replace(/\D/g, '');
-    return digits.length >= 9 ? `p:${digits.slice(-9)}` : `n:${normalizeName(name)}`;
+    return digits.length >= 9 ? `p:${digits.slice(-9)}` : `n:${normalizeSearchText(name)}`;
   }
 
   private static isGenericCustomer(name: string): boolean {
@@ -243,6 +244,51 @@ class DataStore {
       .slice(0, limit);
   }
 
+  private static phoneTail(phone?: string): string {
+    const digits = String(phone || '').replace(/\D/g, '');
+    return digits.length >= 9 ? digits.slice(-9) : '';
+  }
+
+  /**
+   * Telefon va ism kaliti mos kelmaganda ham bir xil odamni topish:
+   * - telefon berilgan, reestrda shu ismli TELEFONSIZ yozuv bor → o'sha (telefon qo'shiladi);
+   * - telefon berilmagan, shu ismli yozuv faqat BITTA → o'sha.
+   * Bir ism bir nechta telefon bilan bo'lsa taxmin qilinmaydi.
+   */
+  private findCustomerByNameAcrossPhone(name: string, phone?: string): CustomerProfile | undefined {
+    const clean = normalizeSearchText(name);
+    if (!clean) return undefined;
+    const sameName = (this.state.customers || []).filter(c => normalizeSearchText(c.name) === clean);
+    if (DataStore.phoneTail(phone)) {
+      const withoutPhone = sameName.filter(c => !DataStore.phoneTail(c.phone));
+      const withOtherPhone = sameName.filter(c => DataStore.phoneTail(c.phone));
+      return withOtherPhone.length === 0 && withoutPhone.length === 1 ? withoutPhone[0] : undefined;
+    }
+    const phones = new Set(sameName.map(c => DataStore.phoneTail(c.phone)).filter(Boolean));
+    return sameName.length === 1 || phones.size === 1 ? sameName.find(c => DataStore.phoneTail(c.phone)) || sameName[0] : undefined;
+  }
+
+  /**
+   * Savdo/nasiyada telefon yozilmagan bo'lsa, shu ismli mijozning yagona telefoni olinadi
+   * (avvalgi nasiyalar yoki doimiy mijozlar reestridan). Shunda yangi nasiya eski qarzga qo'shiladi.
+   */
+  public resolveCustomerPhone(name: string, phone?: string): string {
+    const given = String(phone || '').trim();
+    if (DataStore.phoneTail(given) || DataStore.isGenericCustomer(name)) return given;
+    const clean = normalizeSearchText(name);
+    if (!clean) return given;
+    const candidates = [
+      ...this.state.debts.map(d => ({ name: d.customerName, phone: d.customerPhone })),
+      ...(this.state.customers || []).map(c => ({ name: c.name, phone: c.phone }))
+    ].filter(c => normalizeSearchText(c.name) === clean);
+    const tails = new Map<string, string>();
+    for (const c of candidates) {
+      const tail = DataStore.phoneTail(c.phone);
+      if (tail && !tails.has(tail)) tails.set(tail, c.phone.trim());
+    }
+    return tails.size === 1 ? [...tails.values()][0] : given;
+  }
+
   public upsertCustomer(input: { name: string; phone?: string; address?: string; notes?: string; visited?: boolean }, allowUpdate = true): CustomerProfile {
     const name = String(input.name || '').trim().slice(0, 80);
     const phone = String(input.phone || '').trim().slice(0, 30);
@@ -253,7 +299,8 @@ class DataStore {
     const now = new Date().toISOString();
     this.state.customers ||= [];
     const key = DataStore.customerKey(name, phone);
-    const existing = this.state.customers.find(c => DataStore.customerKey(c.name, c.phone) === key);
+    const existing = this.state.customers.find(c => DataStore.customerKey(c.name, c.phone) === key)
+      || this.findCustomerByNameAcrossPhone(name, phone);
     if (existing) {
       // Kassir mavjud mijozning ismi, manzili yoki izohini bilmasdan o'zgartirib
       // yubormasligi kerak. Savdo va Rahbar amallari esa reestrni yangilashi mumkin.
@@ -292,11 +339,9 @@ class DataStore {
 
     const oldName = customer.name;
     const oldPhone = customer.phone;
-    const oldKey = DataStore.customerKey(oldName, oldPhone);
     let debtsUpdated = 0;
     if (options.updateDebts !== false && (oldName !== name || oldPhone !== phone)) {
-      for (const debt of this.state.debts) {
-        if (DataStore.customerKey(debt.customerName, debt.customerPhone) !== oldKey) continue;
+      for (const debt of sameCustomerDebts(this.state.debts, oldName, oldPhone)) {
         debt.customerName = name;
         if (digits.length >= 9) debt.customerPhone = phone;
         debtsUpdated++;
@@ -577,7 +622,7 @@ class DataStore {
 
     const paymentMethod = salePayload.paymentMethod || 'naqd';
     const customerName = (salePayload.customerName || 'Chakana xaridor').trim();
-    const customerPhone = (salePayload.customerPhone || '').trim();
+    const customerPhone = this.resolveCustomerPhone(customerName, salePayload.customerPhone);
     const discount = Math.max(0, Number(salePayload.discount || 0));
 
     const saleCurrencies = new Set<Currency>();
@@ -1086,7 +1131,7 @@ class DataStore {
       movementId: `manual-${id}`,
       currency,
       customerName: name,
-      customerPhone: String(input.customerPhone || '').trim(),
+      customerPhone: this.resolveCustomerPhone(name, input.customerPhone),
       totalDebt: total,
       paidAmount: paid,
       remainingAmount: remaining,
