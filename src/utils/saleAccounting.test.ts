@@ -232,3 +232,11 @@ test('editDebt va cancelDebt: tarix saqlanadi, savdo nasiyasi summasi himoyalang
   const h = customerDebtHistory([c], [], 'Ali', '');
   assert.deepEqual(h.totals.UZS, { taken: 0, paid: 0, returned: 0, remaining: 0 });
 });
+
+test('different customers sharing a stale phone keep separate debt totals and statements', () => {
+  const a = { ...debt(12000, 'ALI'), customerPhone: '+998901234567' };
+  const b = { ...debt(18000, 'VALI'), customerPhone: '+998901234567' };
+  assert.equal(customerDebtTotal([a,b], 'ALI', a.customerPhone), 12000);
+  assert.equal(groupDebtsByCustomer([a,b]).length, 2);
+  assert.equal(activeCustomerDebtReport([a,b], [], a)?.remaining, 12000);
+});

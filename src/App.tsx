@@ -1160,6 +1160,9 @@ export default function App() {
       productName: data.productName,
       category: data.category,
       type: 'vazvrat',
+      // Smena (kassa yopish) qaytarishni shu xodimning kassasidan ayirishi uchun.
+      employeeId: authUser?.id,
+      employeeName: authUser?.name,
       ...(returnCurrency === 'USD' ? { currency: 'USD' as const } : {}),
       quantity: data.quantity,
       unitCost: data.unitCost,
@@ -1178,9 +1181,6 @@ export default function App() {
       isReturn: true,
       returnReason: data.returnReason,
       originalMovementId: data.originalMovementId,
-      // Smena (kassa yopish) qaytarishni shu xodimning kassasidan ayirishi uchun.
-      employeeId: authUser?.id,
-      employeeName: authUser?.name
     };
 
     setMovements((prev) => [newMovement, ...prev]);
@@ -1798,6 +1798,7 @@ export default function App() {
               }
               products={products}
               recentChiqimMovements={movements.filter((m) => m.type === 'chiqim')}
+              historyMovements={movements}
               customers={customers}
               debts={debts}
               onConfirmChiqim={handleConfirmChiqimServer}

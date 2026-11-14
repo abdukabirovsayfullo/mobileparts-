@@ -1,3 +1,5 @@
+import { DailySalesPanel } from './DailySalesPanel';
+import { sameCustomer as matchesCustomer } from '../utils/customerIdentity';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, CustomerProfile, Currency } from '../types';
 import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
@@ -42,6 +44,7 @@ import {
 interface ChiqimFormViewProps {
   products: Product[];
   recentChiqimMovements: StockMovement[];
+  historyMovements?: StockMovement[];
   topSlot?: React.ReactNode;
   presetCustomer?: { name: string; phone: string; address: string; nonce: number } | null;
   customers?: CustomerProfile[];
@@ -129,6 +132,7 @@ const CartQuantityInput: React.FC<{
 export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   products,
   recentChiqimMovements,
+  historyMovements,
   topSlot,
   presetCustomer,
   customers = [],
@@ -204,9 +208,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
     // Find known customer profile
     const customerRecord = customers.find(
-      (c) => phoneDigits.length >= 9
-        ? c.phone.replace(/\D/g, '').slice(-9) === phoneDigits
-        : c.name.trim().toLowerCase() === cleanName
+      (c) => matchesCustomer(customerName, customerPhone, c.name, c.phone)
     );
 
     return { totalDebt, activeDebts, customerRecord };
@@ -1185,6 +1187,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     onFocus={() => setShowCustomerDropdown(true)}
                     onChange={(e) => {
                       setCustomerName(e.target.value);
+                      setCustomerPhone('+998 ');
+                      setCustomerAddress('Do‘kondan olib ketildi (Paxtaobod)');
                       setShowCustomerDropdown(true);
                       // Tanlangan mijozning telefoni boshqa ismga o'tib ketmasin
                       // (aks holda yangi nasiya o'sha mijozning qarziga yozilib qoladi).
@@ -1521,114 +1525,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         </div>
       </div>
 
-      {/* Recent Sales History */}
-      <div className="hidden lg:block bg-white rounded-2xl border border-stone-200 p-5 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <h3 className="font-black text-sm text-stone-900 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-amber-600" />
-            <span>Oxirgi Chiqqan (Sotilgan) Aksessuarlar Ro'yxati</span>
-          </h3>
-          <span className="text-xs text-stone-400">
-            Har bir sotuv uchun printer tugmasini bosib chek chiqara olasiz
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-stone-700">
-            <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
-              <tr>
-                <th className="py-2.5 px-3">Sana / Vaqt</th>
-                <th className="py-2.5 px-3">Tovar Nomi</th>
-                <th className="py-2.5 px-3 text-center">Soni</th>
-                <th className="py-2.5 px-3 text-right">Sotilgan Narx</th>
-                <th className="py-2.5 px-3 text-right">Jami Tushum</th>
-                <th className="py-2.5 px-3">To'lov</th>
-                <th className="py-2.5 px-3">Kimga / Qayerga</th>
-                <th className="py-2.5 px-3 text-center">Chek / Print</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {recentChiqimMovements.slice(0, 10).map((m) => (
-                <tr key={m.id} className="hover:bg-stone-50/60">
-                  <td className="py-2.5 px-3 text-stone-400 whitespace-nowrap">
-                    {formatDate(m.timestamp)}
-                  </td>
-                  <td className="py-2.5 px-3 font-bold text-stone-900">
-                    {m.productName}
-                  </td>
-                  <td className="py-2.5 px-3 text-center font-bold text-stone-900">
-                    {m.quantity} ta
-                  </td>
-                  <td className="py-2.5 px-3 text-right font-medium text-stone-800">
-                    {formatMoney(m.unitPrice, currencyOf(m))}
-                  </td>
-                  <td className="py-2.5 px-3 text-right font-black text-stone-900">
-                    {formatMoney(m.totalRevenue, currencyOf(m))}
-                  </td>
-                  <td className="py-2.5 px-3 whitespace-nowrap font-bold text-[10px]">
-                    <span className={`px-2 py-0.5 rounded ${
-                      m.paymentMethod === 'naqd'
-                        ? 'bg-stone-100 text-stone-800'
-                        : m.paymentMethod === 'nasiya'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {m.paymentMethod?.toUpperCase() || 'NAQD'}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-3 text-stone-700">
-                    <div className="font-bold text-stone-900">{m.counterparty}</div>
-                    {m.customerAddress && (
-                      <div className="text-[10px] text-stone-500 flex items-center gap-1">
-                        <MapPin className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                        <span className="truncate max-w-[130px]">{m.customerAddress}</span>
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (onPrintReceipt) { onPrintReceipt(m); return; }
-                        const rec: SaleReceiptData = {
-                          receiptNumber: m.receiptNumber || `PB-${m.id.slice(-6)}`,
-                          currency: currencyOf(m),
-                          date: m.timestamp,
-                          customerName: m.counterparty || 'Do\'kon mijozi',
-                          customerPhone: m.customerPhone,
-                          customerAddress: m.customerAddress || 'Do\'kondan olib ketildi (Paxtaobod)',
-                          paymentMethod: m.paymentMethod || 'naqd',
-                          items: [
-                            {
-                              id: m.productId,
-                              name: m.productName,
-                              category: m.category,
-                              quantity: m.quantity,
-                              unitPrice: m.unitPrice,
-                              total: m.totalRevenue
-                            }
-                          ],
-                          subtotal: m.totalRevenue,
-                          total: m.totalRevenue,
-                          cashierName: 'Sayfullo (Hisobchi)',
-                          showPrices: receiptPriceView
-                        };
-                        setPrintOnOpen(false);
-                        setReceiptToPrint(rec);
-                      }}
-                      className="p-1.5 bg-amber-50 hover:bg-amber-400 text-stone-800 hover:text-stone-950 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 font-bold text-[11px] border border-amber-200"
-                      title="Chek / Nakladnoyni printerdan chiqarish"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-amber-800" />
-                      <span className="hidden sm:inline">Chek</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DailySalesPanel movements={historyMovements || recentChiqimMovements} onPrint={onPrintReceipt} />
 
       {/* Printable Receipt Modal */}
       {receiptToPrint && (

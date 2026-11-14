@@ -1,5 +1,6 @@
 import type { CustomerProfile, DebtRecord, StockMovement } from '../src/types';
 import { currencyOf } from '../src/utils/money';
+import { firstNameToken } from '../src/utils/saleAccounting';
 
 const DAY = 86400000;
 export const hashIdentity = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
@@ -8,7 +9,7 @@ const phone = (value = '') => value.replace(/\D/g, '').slice(-9);
 export function debtsForCustomer(customer: CustomerProfile, customers: CustomerProfile[], debts: DebtRecord[]) {
   return debts.filter(debt => {
     const a = phone(customer.phone), b = phone(debt.customerPhone);
-    if (a.length === 9 && b.length === 9) return a === b;
+    if (a.length === 9 && b.length === 9) return a === b && firstNameToken(debt.customerName) === firstNameToken(customer.name);
     return hashIdentity(debt.customerName) === hashIdentity(customer.name) &&
       customers.filter(c => hashIdentity(c.name) === hashIdentity(customer.name)).length === 1;
   });

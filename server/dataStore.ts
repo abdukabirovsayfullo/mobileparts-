@@ -1,3 +1,4 @@
+import { protectDebtOwnership } from '../src/utils/debtOwnership';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -190,6 +191,10 @@ class DataStore {
   }
 
   public replaceReplicaState(state: PosDatabaseState) {
+    const protectedDebts = protectDebtOwnership(state.debts, this.state.debts, state.movements);
+    if (protectedDebts.some((d, i) => ['customerName', 'customerPhone', 'movementId', 'currency'].some(k => (d as any)[k] !== (state.debts[i] as any)[k]))) {
+      throw new Error('Nasiya egasini almashtiradigan nusxa qabul qilinmadi. Qurilmani yangilang va qayta sinxronlang.');
+    }
     this.saveDatabaseSync(state, true);
     this.state = state;
   }
@@ -1410,6 +1415,9 @@ class DataStore {
 
   // --- Sync with frontend ---
   public syncFromClient(clientData: Partial<PosDatabaseState>): PosDatabaseState {
+    if (Array.isArray(clientData.debts)) {
+      clientData = { ...clientData, debts: protectDebtOwnership(clientData.debts, this.state.debts, [...this.state.movements, ...(clientData.movements || [])]) };
+    }
     if (Array.isArray(clientData.products)) {
       const previousProducts = new Map(this.state.products.map(product => [product.id, product]));
       this.state.products = clientData.products.map(product => {
