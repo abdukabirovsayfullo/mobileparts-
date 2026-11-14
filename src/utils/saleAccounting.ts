@@ -392,6 +392,26 @@ export function cancelDebt(debt: DebtRecord, reason: string, by: string | undefi
   };
 }
 
+/**
+ * Adashib bekor qilingan nasiyani qaytarish. Bekor qilish paytidagi qoldiq
+ * audit yozuvidan olinadi ("qoldiq X edi"); topilmasa jami − to'langan.
+ */
+export function restoreDebt(debt: DebtRecord, by: string | undefined, nowIso: string): DebtRecord {
+  if (!debt.cancelledAt) return debt;
+  const c = currencyOf(debt);
+  const lastCancel = [...(debt.auditLog || [])].reverse().find(l => l.action === 'bekor');
+  const match = lastCancel?.details.match(/qoldiq\s+([\d.]+)\s+edi/);
+  const fromAudit = match ? Number(match[1]) : NaN;
+  const remaining = roundMoney(Number.isFinite(fromAudit) ? fromAudit : Math.max(0, debt.totalDebt - debt.paidAmount), c);
+  const { cancelledAt: _dropped, ...rest } = debt;
+  return {
+    ...rest,
+    remainingAmount: remaining,
+    status: remaining <= 0 ? 'yopildi' : debt.paidAmount > 0 ? 'qisman_tolandi' : 'faol',
+    auditLog: [...(debt.auditLog || []), { date: nowIso, by, action: 'tiklash', details: `Bekor qilish qaytarildi (qoldiq ${remaining})` }]
+  };
+}
+
 export interface LedgerPayment { date: string; amount: number; method: string; employeeName?: string }
 
 /**

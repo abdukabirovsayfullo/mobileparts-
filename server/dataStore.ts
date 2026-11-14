@@ -351,7 +351,10 @@ class DataStore {
     const oldPhone = customer.phone;
     let debtsUpdated = 0;
     if (options.updateDebts !== false && (oldName !== name || oldPhone !== phone)) {
+      const nowIso = new Date().toISOString();
       for (const debt of sameCustomerDebts(this.state.debts, oldName, oldPhone)) {
+        // Iz qoladi: nasiya qaysi ism/telefondan o'zgartirilgani keyin ko'rinadi.
+        debt.auditLog = [...(debt.auditLog || []), { date: nowIso, action: 'tahrir', details: `Mijoz tahriri: "${debt.customerName}" ${debt.customerPhone || ''} → "${name}" ${digits.length >= 9 ? phone : debt.customerPhone || ''}`.trim() }];
         debt.customerName = name;
         if (digits.length >= 9) debt.customerPhone = phone;
         debtsUpdated++;
@@ -1183,6 +1186,7 @@ class DataStore {
       createdAt: now,
       status: remaining <= 0 ? 'yopildi' : paid > 0 ? 'qisman_tolandi' : 'faol',
       notes: String(input.notes || '').trim() || "Qo'lda kiritilgan nasiya",
+      createdByName: actor?.name,
       paymentHistory: paid > 0 ? [{ date: now, amount: paid, method: input.initialMethod === 'click_payme' ? 'click_payme' : 'naqd', employeeId: actor?.id, employeeName: actor?.name }] : []
     };
     this.state.debts.unshift(debt);

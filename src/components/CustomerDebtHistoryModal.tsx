@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { DebtRecord, StockMovement } from '../types';
-import { customerDebtHistory, editDebt, cancelDebt, mergeLedgerPayments } from '../utils/saleAccounting';
+import { customerDebtHistory, editDebt, cancelDebt, mergeLedgerPayments, restoreDebt } from '../utils/saleAccounting';
 import { currencyOf } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { X, Phone, Package, Wallet, RotateCcw, Copy, CheckCircle2, Pencil, Ban, History } from 'lucide-react';
@@ -199,7 +199,7 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
             return (
               <div key={r.debt.id} className={`rounded-2xl border p-3.5 space-y-2.5 ${r.debt.status === 'yopildi' ? 'border-stone-200 opacity-75' : 'border-stone-300'}`}>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-black text-stone-900">{formatDate(r.debt.createdAt)}</div>
+                  <div className="text-xs font-black text-stone-900">{formatDate(r.debt.createdAt)}{r.debt.createdByName && <span className="ml-1.5 text-[10px] font-semibold text-stone-500">· yozdi: {r.debt.createdByName}</span>}{r.debt.customerPhone && r.debt.customerPhone.replace(/\D/g, '').length >= 9 && <span className="ml-1.5 text-[10px] font-semibold text-stone-500">· tel: {r.debt.customerPhone}</span>}</div>
                   <div className="flex items-center gap-2">
                     {r.debt.dueDate && <span className="text-[10px] text-stone-500">Muddat: {r.debt.dueDate}</span>}
                     {(r.debt.cancelledAt || r.debt.status === 'yopildi') && statusBadge(r.debt)}
@@ -249,6 +249,18 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
                 <div className="flex justify-between items-center pt-2 border-t border-stone-200 text-xs">
                   <span className="text-stone-600">Xarid summasi: <strong className="text-stone-900">{formatMoney(r.debt.totalDebt, c)}</strong></span>
                   <span className="flex items-center gap-2">
+                    {onUpdateDebt && r.debt.cancelledAt && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`${r.debt.customerName} — ${formatDate(r.debt.createdAt)} nasiyasi qayta tiklansinmi?`)) return;
+                          onUpdateDebt(restoreDebt(r.debt, currentUserName, new Date().toISOString()));
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-[10px] font-bold text-emerald-800 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Qayta tiklash
+                      </button>
+                    )}
                     {onUpdateDebt && !r.debt.cancelledAt && (
                       <button type="button" onClick={() => openEdit(r.debt)} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stone-300 hover:bg-stone-100 text-[10px] font-bold text-stone-700 cursor-pointer">
                         <Pencil className="w-3 h-3" /> Tahrirlash

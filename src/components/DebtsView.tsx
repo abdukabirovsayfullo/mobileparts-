@@ -7,7 +7,7 @@ import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtState
 import { DebtStatementParams, toLocalDay } from '../utils/debtStatementReceipt';
 import { STORE_INFO } from '../data/initialData';
 import { normalizeSearchText } from '../utils/customerSearch';
-import { activeCustomerDebtReport, customerDebtTotal, debtOverdueDays, groupDebtsByCustomer } from '../utils/saleAccounting';
+import { activeCustomerDebtReport, customerDebtTotal, debtOverdueDays, groupDebtsByCustomer, restoreDebt } from '../utils/saleAccounting';
 import { currencyOf, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
 import { 
@@ -25,7 +25,8 @@ import {
   X,
   CreditCard,
   FileText,
-  Printer
+  Printer,
+  RotateCcw
 } from 'lucide-react';
 
 interface DebtsViewProps {
@@ -143,6 +144,16 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   const overdueByCurrency = sumByCurrency(overdueDebts, (d) => d.remainingAmount);
   const overdueTotal = overdueByCurrency.UZS;
   const customerSummaries = useMemo(() => groupDebtsByCustomer(debts), [debts]);
+  // Bekor qilingan nasiyalar: mijozning hamma nasiyasi bekor bo'lsa u ro'yxatdan yo'qoladi,
+  // shuning uchun ular shu yerda alohida ko'rinadi va qayta tiklanadi.
+  const cancelledDebts = useMemo(() => debts.filter((d) => d.cancelledAt).sort((a, b) => (b.cancelledAt || '').localeCompare(a.cancelledAt || '')), [debts]);
+  const [showCancelled, setShowCancelled] = useState(false);
+  const cancelInfo = (d: DebtRecord) => {
+    const log = [...(d.auditLog || [])].reverse().find((l) => l.action === 'bekor');
+    const amount = Number(log?.details.match(/qoldiq\s+([\d.]+)\s+edi/)?.[1]);
+    const reason = log?.details.split('Sabab:')[1]?.trim();
+    return { amount: Number.isFinite(amount) ? amount : d.totalDebt - d.paidAmount, reason, by: log?.by };
+  };
 
   // Filter debts
   const filteredDebts = useMemo(() => {
@@ -272,6 +283,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
       createdAt: new Date().toISOString(),
       status: remaining === 0 ? 'yopildi' : newDebtData.paidAmount > 0 ? 'qisman_tolandi' : 'faol',
       notes: newDebtData.notes.trim() || 'Qo\'lda kiritilgan nasiya',
+      createdByName: currentUserName,
       paymentHistory: newDebtData.paidAmount > 0 ? [
         {
           date: new Date().toISOString(),
@@ -283,6 +295,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
     onAddNewDebt(newRecord);
     setIsAddModalOpen(false);
+    // Keyingi nasiyaga oldingi mijozning ismi, telefoni va izohi o'tib ketmasin.
+    setNewDebtData({ customerName: '', customerPhone: '+998 ', totalDebt: 100000, paidAmount: 0, dueDate: '', notes: '' });
   };
 
   return (
@@ -434,6 +448,45 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {cancelledDebts.length > 0 && (
+        <div className="rounded-2xl border border-stone-200 bg-white overflow-hidden">
+          <button type="button" onClick={() => setShowCancelled((v) => !v)} className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-bold text-stone-700 hover:bg-stone-50 cursor-pointer">
+            <span>Bekor qilingan nasiyalar ({cancelledDebts.length}) — o'chirilmagan, qayta tiklash mumkin</span>
+            <span>{showCancelled ? '▲' : '▼'}</span>
+          </button>
+          {showCancelled && (
+            <div className="border-t border-stone-100 divide-y divide-stone-100 max-h-80 overflow-y-auto">
+              {cancelledDebts.map((d) => {
+                const info = cancelInfo(d);
+                return (
+                  <div key={d.id} className="px-4 py-2.5 flex items-center gap-3 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-stone-900 truncate">{d.customerName}{d.customerPhone && d.customerPhone.replace(/\D/g, '').length >= 9 ? <span className="font-normal text-stone-500"> · {d.customerPhone}</span> : null}</div>
+                      <div className="text-[11px] text-stone-500 truncate">
+                        Yozilgan {formatDate(d.createdAt)} · bekor {formatDate(d.cancelledAt!)}{info.by ? ` (${info.by})` : ''}{info.reason ? ` · ${info.reason}` : ''}
+                      </div>
+                    </div>
+                    <span className="font-black text-stone-800 whitespace-nowrap">{formatMoney(info.amount, currencyOf(d))}</span>
+                    {onUpdateDebt && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`${d.customerName} — ${formatMoney(info.amount, currencyOf(d))} nasiya qayta tiklansinmi?`)) return;
+                          onUpdateDebt(restoreDebt(d, currentUserName, new Date().toISOString()));
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Tiklash
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {viewMode === 'davr' && <DebtPeriodReport debts={debts} movements={movements} store={storeInfo ?? STORE_INFO} query={searchQuery} />}
 

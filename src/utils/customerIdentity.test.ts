@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { customerDebtTotal, customerDebtHistory, customerLedger, groupDebtsByCustomer, mergeLedgerPayments, planCustomerPayment, sameCustomerDebts } from './saleAccounting';
+import { customerDebtTotal, customerDebtHistory, customerLedger, groupDebtsByCustomer, mergeLedgerPayments, planCustomerPayment, restoreDebt, sameCustomerDebts } from './saleAccounting';
+import { cancelDebt } from './saleAccounting';
 import { applyRefundToDebts } from '../../server/returnLogic';
 import type { DebtRecord } from '../types';
 
@@ -96,4 +97,16 @@ test('one customer payment split across debts shows as one line', () => {
     { date: '2026-11-15T09:00:00.000Z', amount: 5000, method: 'click_payme' }
   ]);
   assert.deepEqual(merged.map((p) => p.amount), [5000, 100000]);
+});
+
+test('a mistakenly cancelled debt can be restored with its old balance', () => {
+  const original = { ...debt('Nurullo aka usta', '', 80000), totalDebt: 100000, paidAmount: 20000, status: 'qisman_tolandi' as const };
+  const cancelled = cancelDebt(original, "noto'g'ri kiritilgan", 'Rahbar', '2026-11-14T10:00:00Z');
+  assert.equal(cancelled.remainingAmount, 0);
+  const restored = restoreDebt(cancelled, 'Rahbar', '2026-11-14T11:00:00Z');
+  assert.equal(restored.cancelledAt, undefined);
+  assert.equal(restored.remainingAmount, 80000);
+  assert.equal(restored.status, 'qisman_tolandi');
+  assert.equal(restored.auditLog?.length, 2);
+  assert.equal(customerDebtTotal([restored], 'Nurullo aka usta', ''), 80000);
 });
