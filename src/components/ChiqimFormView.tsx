@@ -5,6 +5,7 @@ import { formatMoney, formatDate } from '../utils/formatters';
 import { PrintReceiptModal } from './PrintReceiptModal';
 import { customerDebtTotal } from '../utils/saleAccounting';
 import { exactProductCodeMatch, searchProducts } from '../utils/productSearch';
+import { buildCustomerOptions, CustomerOption, normalizeSearchText, RemoteDebtHit, searchCustomerOptions } from '../utils/customerSearch';
 import { 
   ArrowUpRight, 
   Search, 
@@ -215,19 +216,54 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     return { totalDebt, activeDebts, customerRecord };
   }, [customerName, customerPhone, debts, customers, cartCurrency]);
 
-  // Autocomplete matching customers
-  const matchingCustomers = useMemo(() => {
-    const q = customerName.trim().toLowerCase();
-    if (!q || q === "do'kon mijozi") {
-      return customers;
+  // Serverdagi doimiy mijozlar reestri va nasiyalardan ham qidiriladi:
+  // kassirda mahalliy ro'yxat bo'sh bo'ladi, rahbarda esa eskirgan bo'lishi mumkin.
+  const [remoteCustomers, setRemoteCustomers] = useState<CustomerProfile[]>([]);
+  const [remoteDebts, setRemoteDebts] = useState<RemoteDebtHit[]>([]);
+  const [remoteSearching, setRemoteSearching] = useState(false);
+  useEffect(() => {
+    const q = customerName.trim();
+    if (q.length < 2 || normalizeSearchText(q) === 'dokon mijozi') {
+      setRemoteCustomers([]);
+      setRemoteDebts([]);
+      setRemoteSearching(false);
+      return;
     }
-    return customers.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.phone.toLowerCase().includes(q) ||
-        c.address.toLowerCase().includes(q)
-    );
-  }, [customerName, customers]);
+    setRemoteSearching(true);
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      const get = async (url: string) => {
+        try {
+          const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+          const body = await response.json();
+          return response.ok && Array.isArray(body.data) ? body.data : [];
+        } catch {
+          return [];
+        }
+      };
+      const [found, foundDebts] = await Promise.all([
+        get(`/api/v1/customers?q=${encodeURIComponent(q)}`),
+        get(`/api/v1/debts/lookup?q=${encodeURIComponent(q)}`)
+      ]);
+      if (controller.signal.aborted) return;
+      setRemoteCustomers(found);
+      setRemoteDebts(foundDebts);
+      setRemoteSearching(false);
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [customerName]);
+
+  const customerOptions = useMemo(
+    () => buildCustomerOptions(customers, debts, remoteCustomers, remoteDebts),
+    [customers, debts, remoteCustomers, remoteDebts]
+  );
+  const quickCustomers = useMemo(() => searchCustomerOptions(customerOptions, '', 8), [customerOptions]);
+  const matchingCustomers = useMemo(() => searchCustomerOptions(customerOptions, customerName), [customerOptions, customerName]);
+  const optionDebtLabel = (o: CustomerOption) =>
+    [o.debtUZS > 0 ? formatMoney(o.debtUZS) : '', o.debtUSD > 0 ? formatMoney(o.debtUSD, 'USD') : ''].filter(Boolean).join(' + ');
 
   // «Doimiy mijozlar» bo'limidan tanlangan mijoz sotuv formasiga to'ldiriladi
   React.useEffect(() => {
@@ -238,7 +274,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   }, [presetCustomer?.nonce]);
 
   // Helper to select a customer
-  const handleSelectCustomer = (c: CustomerProfile) => {
+  const handleSelectCustomer = (c: { name: string; phone?: string; address?: string }) => {
     setCustomerName(c.name);
     setCustomerPhone(c.phone || '+998 ');
     setCustomerAddress(c.address || 'Paxtaobod');
@@ -1086,23 +1122,20 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
 
               {/* Quick Customer Selection Chips */}
-              {customers.length > 0 && (
+              {quickCustomers.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-stone-500 mb-1.5 flex items-center gap-1">
                     <History className="w-3 h-3 text-stone-400" />
                     <span>Tezkor tanlash</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                    {customers.slice(0, 8).map((c) => {
-                      const cDebts = debts.filter(
-                        (d) => d.customerName.trim().toLowerCase() === c.name.trim().toLowerCase() && d.status !== 'yopildi'
-                      );
-                      const cDebtTotal = cDebts.reduce((sum, d) => sum + d.remainingAmount, 0);
-                      const isSelected = customerName.trim().toLowerCase() === c.name.trim().toLowerCase();
+                    {quickCustomers.map((c) => {
+                      const cDebtTotal = c.debtUZS + c.debtUSD;
+                      const isSelected = normalizeSearchText(customerName) === normalizeSearchText(c.name);
 
                       return (
                         <button
-                          key={c.id}
+                          key={c.key}
                           type="button"
                           onClick={() => handleSelectCustomer(c)}
                           className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -1116,7 +1149,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           <span>{c.name}</span>
                           {cDebtTotal > 0 ? (
                             <span className="px-1.5 py-0.2 bg-red-200 text-red-900 text-[10px] rounded font-black">
-                              ⚠️ {debtLabel(cDebts)} qarz
+                              ⚠️ {optionDebtLabel(c)} qarz
                             </span>
                           ) : (
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -1170,6 +1203,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
 
                 {/* Autocomplete Dropdown */}
+                {showCustomerDropdown && matchingCustomers.length === 0 && normalizeSearchText(customerName).length >= 2 && normalizeSearchText(customerName) !== 'dokon mijozi' && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-30 px-3 py-2 text-[11px] text-stone-500">
+                    {remoteSearching ? 'Qidirilmoqda…' : `«${customerName.trim()}» topilmadi — yangi xaridor sifatida eslab qolinadi.`}
+                  </div>
+                )}
                 {showCustomerDropdown && matchingCustomers.length > 0 && (
                   <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-30 max-h-48 overflow-y-auto divide-y divide-stone-100">
                     <div className="px-3 py-1.5 bg-stone-50 text-[10px] font-bold text-stone-500 flex justify-between items-center">
@@ -1183,14 +1221,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       </button>
                     </div>
                     {matchingCustomers.map((c) => {
-                      const cDebts = debts.filter(
-                        (d) => d.customerName.trim().toLowerCase() === c.name.trim().toLowerCase() && d.status !== 'yopildi'
-                      );
-                      const cDebtTotal = cDebts.reduce((sum, d) => sum + d.remainingAmount, 0);
+                      const cDebtTotal = c.debtUZS + c.debtUSD;
 
                       return (
                         <div
-                          key={c.id}
+                          key={c.key}
                           onClick={() => handleSelectCustomer(c)}
                           className="px-3 py-2 hover:bg-amber-50/70 cursor-pointer flex items-center justify-between transition-colors"
                         >
@@ -1206,7 +1241,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                           </div>
                           {cDebtTotal > 0 ? (
                             <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-black rounded-md shrink-0">
-                              ⚠️ {debtLabel(cDebts)} qarz
+                              ⚠️ {optionDebtLabel(c)} qarz
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-md shrink-0">
