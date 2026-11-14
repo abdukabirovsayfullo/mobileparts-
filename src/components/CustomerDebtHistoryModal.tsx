@@ -26,24 +26,21 @@ const METHOD_LABEL: Record<string, string> = {
 
 const statusBadge = (d: DebtRecord) => {
   if (d.cancelledAt) return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-200 text-stone-700 line-through">Bekor qilingan</span>;
-  if (d.status === 'yopildi') return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Yopilgan</span>;
-  const overdue = d.dueDate && new Date(d.dueDate).getTime() < Date.now();
-  return overdue
-    ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">Muddati o'tgan</span>
-    : <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Ochiq</span>;
+  // Xaridlar "yopilgan/ochiq" deb belgilanmaydi: to'lov mijozning umumiy qarzidan ayriladi.
+  return null;
 };
 
 /** Mijozning nasiyaga nima olgani, qachon qancha to'lagani — bitta joyda. */
 export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, movements, onClose, onRequestPayment, onUpdateDebt, currentUserName }) => {
-  const [showClosed, setShowClosed] = useState(false);
+  const [showCancelled, setShowCancelled] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<DebtRecord | null>(null);
   const [editForm, setEditForm] = useState({ customerName: '', customerPhone: '', dueDate: '', notes: '', totalDebt: '' });
   const [cancelReason, setCancelReason] = useState('');
   const [editError, setEditError] = useState('');
   const history = useMemo(() => customerDebtHistory(debts, movements, name, phone), [debts, movements, name, phone]);
-  const visible = history.debts.filter((r) => showClosed || r.debt.status !== 'yopildi');
-  const closedCount = history.debts.length - history.debts.filter((r) => r.debt.status !== 'yopildi').length;
+  const visible = history.debts.filter((r) => showCancelled || !r.debt.cancelledAt);
+  const cancelledCount = history.debts.filter((r) => r.debt.cancelledAt).length;
   const currencies = (['UZS', 'USD'] as const).filter((c) => history.totals[c].taken > 0);
   const payable = (['UZS', 'USD'] as const).filter((c) => history.totals[c].remaining > 0);
   // Barcha to'lovlar bitta ro'yxatda: to'lov alohida xaridni emas, jami qarzni kamaytiradi.
@@ -92,7 +89,7 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
   const copyText = async () => {
     const lines: string[] = [`${history.name} — nasiya xaridlari`];
     history.debts
-      .filter((r) => r.debt.status !== 'yopildi')
+      .filter((r) => !r.debt.cancelledAt)
       .slice()
       .reverse()
       .forEach((r) => {
@@ -100,7 +97,7 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
         lines.push('', `${formatDate(r.debt.createdAt)}:`);
         r.items.forEach((i) => lines.push(`• ${i.name} — ${i.quantity} dona × ${formatMoney(i.unitPrice, c)}${i.returnedQty ? ` (${i.returnedQty} ta qaytarilgan)` : ''}`));
         if (!r.items.length && r.note) lines.push(`• ${r.note}`);
-        lines.push(`Summa: ${formatMoney(r.debt.totalDebt, c)}, qoldiq: ${formatMoney(r.debt.remainingAmount, c)}`);
+        lines.push(`Summa: ${formatMoney(r.debt.totalDebt, c)}`);
       });
     currencies.forEach((c) => lines.push('', `Jami qolgan qarz: ${formatMoney(history.totals[c].remaining, c)}`));
     try {
@@ -168,10 +165,10 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
             </div>
           )}
           <div className="flex items-center justify-between gap-2 pt-1">
-            {closedCount > 0 ? (
+            {cancelledCount > 0 ? (
               <label className="flex items-center gap-1.5 text-[11px] text-stone-600 font-semibold cursor-pointer">
-                <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
-                Yopilgan nasiyalarni ham ko'rsatish ({closedCount})
+                <input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} />
+                Bekor qilinganlarni ham ko'rsatish ({cancelledCount})
               </label>
             ) : <span />}
             <button
@@ -192,17 +189,17 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
             <div className="text-[11px] font-black text-stone-700 flex items-center gap-1"><Package className="w-3.5 h-3.5" /> Nima olgan ({visible.length} ta xarid)</div>
           )}
           {visible.length === 0 && (
-            <div className="text-center text-xs text-stone-400 py-6">Ochiq nasiya yo'q</div>
+            <div className="text-center text-xs text-stone-400 py-6">Xarid yo'q</div>
           )}
           {visible.map((r) => {
             const c = currencyOf(r.debt);
             return (
-              <div key={r.debt.id} className={`rounded-2xl border p-3.5 space-y-2.5 ${r.debt.status === 'yopildi' ? 'border-stone-200 opacity-75' : 'border-stone-300'}`}>
+              <div key={r.debt.id} className={`rounded-2xl border p-3.5 space-y-2.5 ${r.debt.cancelledAt ? 'border-stone-200 opacity-60' : 'border-stone-300'}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-xs font-black text-stone-900">{formatDate(r.debt.createdAt)}{r.debt.createdByName && <span className="ml-1.5 text-[10px] font-semibold text-stone-500">· yozdi: {r.debt.createdByName}</span>}{r.debt.customerPhone && r.debt.customerPhone.replace(/\D/g, '').length >= 9 && <span className="ml-1.5 text-[10px] font-semibold text-stone-500">· tel: {r.debt.customerPhone}</span>}</div>
                   <div className="flex items-center gap-2">
                     {r.debt.dueDate && <span className="text-[10px] text-stone-500">Muddat: {r.debt.dueDate}</span>}
-                    {(r.debt.cancelledAt || r.debt.status === 'yopildi') && statusBadge(r.debt)}
+                    {r.debt.cancelledAt && statusBadge(r.debt)}
                   </div>
                 </div>
 
