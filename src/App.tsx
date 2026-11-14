@@ -1466,6 +1466,29 @@ export default function App() {
     }
   };
 
+  /** Rahbar: mijoz va uning barcha nasiyalarini serverda butunlay o'chirish, so'ng holatni qayta yuklash. */
+  const handlePurgeCustomer = async (customer: { name: string; phone?: string }): Promise<boolean> => {
+    try {
+      const response = await fetch('/api/v1/customers/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: customer.name, phone: customer.phone, confirm: "O'CHIRISH" })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) throw new Error(data.error || "O'chirilmadi.");
+      // Mahalliy nusxadan server o'chirgan yozuvlarni darhol olib tashlaymiz, so'ng server holati bilan tenglashtiramiz.
+      const removed = new Set<string>(data.debtIds || []);
+      setDebts((prev) => prev.filter((d) => !removed.has(d.id)));
+      setCustomers((prev) => prev.filter((c) => !(data.customerIds || []).includes(c.id)));
+      await fetchLatestStateFromServer(undefined, true);
+      window.alert(`${customer.name} o'chirildi: ${data.debtsRemoved} ta nasiya yozuvi.`);
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "O'chirilmadi.");
+      return false;
+    }
+  };
+
   /** Rahbar: nasiyani tahrirlash yoki bekor qilish (to'liq sinxron orqali saqlanadi). */
   const handleUpdateDebt = (updated: DebtRecord) => {
     setDebts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
@@ -1865,6 +1888,7 @@ export default function App() {
             onAddNewDebt={handleAddNewDebtManual}
             onAddCustomerPayment={handleAddCustomerPayment}
             onUpdateDebt={isAdminUnlocked ? handleUpdateDebt : undefined}
+            onPurgeCustomer={isAdminUnlocked ? handlePurgeCustomer : undefined}
             currentUserName={authUser?.name}
             customers={customers}
           />

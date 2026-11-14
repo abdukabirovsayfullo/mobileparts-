@@ -19,3 +19,13 @@ test("paymentReceiptHtml: to'lov, taqsimot va qolgan qarz chekda", () => {
   assert.match(html, /Nurullo &lt;usta&gt;/);
   assert.doesNotMatch(html, /<usta>/);
 });
+
+test("debtReminderHtml: faqat umumiy qarz, tovarlarsiz", async () => {
+  const { debtReminderHtml } = await import('./paymentReceipt');
+  const html = debtReminderHtml({ store: { name: 'MOBILE PARTS', address: 'Paxtaobod', phone: '+998 95 200 13 33, +998 91 174 13 33' } as any,
+    customerName: 'Nurullo aka', customerPhone: '+998 90 555 44 33', currency: 'UZS', totalDebt: 95000, date: '2026-11-15T10:00:00Z' });
+  assert.match(html, /QARZ ESLATMASI/);
+  assert.match(html, /95 000 so&#39;m/);
+  assert.match(html, /\+998 91 174 13 33/);
+  assert.doesNotMatch(html, /Tovar|dona/);
+});

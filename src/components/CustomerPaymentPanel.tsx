@@ -3,7 +3,7 @@ import { DebtRecord, StockMovement, StoreSettings } from '../types';
 import { customerDebtHistory, groupDebtsByCustomer, planCustomerPayment } from '../utils/saleAccounting';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { printThermalHtml } from '../utils/debtStatementReceipt';
-import { PaymentReceiptData, paymentReceiptHtml, paymentReceiptNumber } from '../utils/paymentReceipt';
+import { DebtReminderData, PaymentReceiptData, debtReminderHtml, paymentReceiptHtml, paymentReceiptNumber } from '../utils/paymentReceipt';
 import { X, Search, Wallet, Printer, CheckCircle2, ArrowLeft, User } from 'lucide-react';
 
 type Currency = 'UZS' | 'USD';
@@ -30,6 +30,16 @@ export async function printPaymentReceipt(data: PaymentReceiptData) {
   } catch (error) {
     console.error("[Print] To'lov cheki:", error);
     alert("Printer oynasi ochilmadi. CRM-AvtoPrint yorlig'idan oching yoki qayta urinib ko'ring.");
+  }
+}
+
+/** Haftalik qarz eslatmasi chekini chop etish. */
+export async function printDebtReminder(data: Omit<DebtReminderData, 'date'>) {
+  try {
+    await printThermalHtml(debtReminderHtml({ ...data, date: new Date().toISOString() }));
+  } catch (error) {
+    console.error('[Print] Qarz eslatmasi:', error);
+    alert("Printer oynasi ochilmadi. Qayta urinib ko'ring.");
   }
 }
 

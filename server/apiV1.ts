@@ -4,6 +4,7 @@ import { currencyOf, roundMoney } from '../src/utils/money';
 import { customerDebtTotal } from '../src/utils/saleAccounting';
 import crypto from 'node:crypto';
 import { dataStore, OwnerApprovalRequiredError } from './dataStore';
+import { forgetCustomerTelegram } from './customerTelegram';
 import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession, verifyOwnerApproval } from './auth';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 import { calculateShiftTotals } from './shiftLogic';
@@ -833,6 +834,19 @@ apiV1Router.post('/promo/send', requireOwner, async (req: Request, res: Response
   });
   if (!result.success) return res.status(502).json({ success: false, error: result.error });
   res.json({ success: true, messageIds: result.messageIds });
+});
+
+// Rahbar: mijoz va uning barcha nasiyalarini butunlay o'chirish (izsiz). Savdolar qoladi.
+apiV1Router.post('/customers/purge', requireOwner, (req: Request, res: Response) => {
+  const { name, phone, confirm } = req.body || {};
+  if (confirm !== "O'CHIRISH") return res.status(400).json({ success: false, error: "Tasdiqlash uchun O'CHIRISH deb yozing." });
+  try {
+    const result = dataStore.purgeCustomer(String(name || ''), phone ? String(phone) : undefined);
+    forgetCustomerTelegram(result.customerIds);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || "O'chirilmadi." });
+  }
 });
 
 apiV1Router.put('/customers/:id', requireOwner, (req: Request, res: Response) => {

@@ -66,3 +66,44 @@ export function paymentReceiptHtml(r: PaymentReceiptData): string {
       <div class="footer">To'lovingiz uchun rahmat!</div>
     </div></body></html>`;
 }
+
+export interface DebtReminderData {
+  store: StoreSettings;
+  customerName: string;
+  customerPhone?: string;
+  currency: Currency;
+  totalDebt: number;
+  date: string;
+}
+
+/** Haftalik qarz eslatmasi (80 mm): tovarlarsiz — faqat mijoz, umumiy qarz va iltimos. */
+export function debtReminderHtml(r: DebtReminderData): string {
+  const phones = String(r.store.phone || '').split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+  const hasPhone = r.customerPhone && r.customerPhone.replace(/\D/g, '').length > 3;
+  return `<!doctype html><html lang="uz"><head><meta charset="utf-8"><title>Qarz eslatmasi</title>
+    <style>
+      @page { size: 80mm 140mm; margin: 0; }
+      html, body { margin: 0; padding: 0; background: white; color: black; }
+      #thermal-receipt { box-sizing: border-box; width: 80mm; padding: 3mm 4mm 4mm; font: 9.5pt/1.3 Arial, sans-serif; }
+      #thermal-receipt * { box-sizing: border-box; overflow-wrap: break-word; }
+      .center { text-align: center; }
+      .brand { font-size: 15pt; font-weight: 700; margin: .5mm 0; }
+      .title { font-weight: 700; font-size: 12pt; margin: 2mm 0 2.5mm; border-top: 1px dashed black; border-bottom: 1px dashed black; padding: 1.5mm 0; }
+      .detail { margin: .6mm 0; }
+      .debt { margin: 3mm 0; padding: 2.5mm 0; border: 1.5px solid black; text-align: center; }
+      .debt .label { font-size: 9pt; }
+      .debt .sum { font-size: 17pt; font-weight: 700; margin-top: .5mm; }
+      .note { margin-top: 2.5mm; font-size: 9.5pt; text-align: center; }
+      .phones { margin-top: 3mm; text-align: center; font-weight: 700; }
+    </style></head><body><div id="thermal-receipt">
+      <div class="center brand">${escapeHtml(r.store.name)}</div>
+      ${r.store.address ? `<div class="center">${escapeHtml(r.store.address)}</div>` : ''}
+      <div class="center title">QARZ ESLATMASI</div>
+      <div class="detail"><strong>Sana:</strong> ${escapeHtml(formatDateTime(r.date))}</div>
+      <div class="detail"><strong>Mijoz:</strong> ${escapeHtml(r.customerName)}</div>
+      ${hasPhone ? `<div class="detail"><strong>Telefon:</strong> ${escapeHtml(r.customerPhone)}</div>` : ''}
+      <div class="debt"><div class="label">UMUMIY QARZINGIZ</div><div class="sum">${escapeHtml(formatSom(r.totalDebt, r.currency))}</div></div>
+      <div class="note">Hurmatli mijoz! Iltimos, qarzingizni o'z vaqtida to'lang. Hamkorligingiz uchun rahmat!</div>
+      ${phones.length ? `<div class="phones">${phones.map((p) => `<div>☎ ${escapeHtml(p)}</div>`).join('')}</div>` : ''}
+    </div></body></html>`;
+}

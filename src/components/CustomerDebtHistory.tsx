@@ -5,7 +5,7 @@ import { formatMoney } from '../utils/formatters';
 import { customerResolver } from '../utils/saleAccounting';
 import { buildCustomerStatement } from '../utils/customerStatement';
 import { tashkentDate } from '../../server/expenseLogic';
-import { FileDown, Wallet, RotateCcw, Loader2 } from 'lucide-react';
+import { FileDown, Wallet, RotateCcw, Loader2, Printer, Trash2, X } from 'lucide-react';
 
 const METHOD: Record<string, string> = { naqd: 'Naqd', click_payme: 'Click / Payme', uzum: 'Uzum', vazvrat: 'Tovar qaytarildi' };
 const dayLabel = (day: string) => {
@@ -24,10 +24,17 @@ interface Props {
   store: StoreSettings;
   /** "Mijoz to'lovi" panelini ochadi — to'lov mijozning umumiy qarzidan ayriladi. */
   onRequestPayment?: (customer: { name: string; phone?: string; currency: Currency }) => void;
+  /** Haftalik qarz eslatmasi cheki (tovarlarsiz). */
+  onPrintReminder?: (customer: { name: string; phone?: string; currency: Currency; totalDebt: number }) => void;
+  /** Rahbar: mijoz va barcha nasiyalarini butunlay o'chirish. */
+  onPurgeCustomer?: (customer: { name: string; phone?: string }) => Promise<boolean>;
 }
 
 /** Mijoz tarixi: nima olgani (kun bo'yicha), to'lovlari va umumiy qarzi. Xaridlar "yopilgan" deb belgilanmaydi. */
-export function CustomerDebtHistory({ debts, movements, query, store, onRequestPayment }: Props) {
+export function CustomerDebtHistory({ debts, movements, query, store, onRequestPayment, onPrintReminder, onPurgeCustomer }: Props) {
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgeText, setPurgeText] = useState('');
+  const [purgeBusy, setPurgeBusy] = useState(false);
   const [selected, setSelected] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -124,12 +131,28 @@ export function CustomerDebtHistory({ debts, movements, query, store, onRequestP
               <p className="mt-3 text-xs text-stone-300">Umumiy qarz</p>
               <strong className={`text-3xl ${statement.currentDebt > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>{statement.currentDebt > 0 ? money(statement.currentDebt) : "Qarzi yo'q"}</strong>
             </div>
-            {onRequestPayment && statement.currentDebt > 0 && (
-              <button type="button" onClick={() => onRequestPayment({ name: chosen.name, phone: chosen.phone, currency: chosen.currency })}
-                className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-black inline-flex items-center gap-2 cursor-pointer">
-                <Wallet className="w-5 h-5" /> To'lov qabul qilish
-              </button>
-            )}
+            <div className="flex flex-col items-end gap-2">
+              {onRequestPayment && statement.currentDebt > 0 && (
+                <button type="button" onClick={() => onRequestPayment({ name: chosen.name, phone: chosen.phone, currency: chosen.currency })}
+                  className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-black inline-flex items-center gap-2 cursor-pointer">
+                  <Wallet className="w-5 h-5" /> To'lov qabul qilish
+                </button>
+              )}
+              <div className="flex gap-2">
+                {onPrintReminder && statement.currentDebt > 0 && (
+                  <button type="button" onClick={() => onPrintReminder({ name: chosen.name, phone: chosen.phone, currency: chosen.currency, totalDebt: statement.currentDebt })}
+                    className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer" title="Qarz eslatmasi cheki (tovarlarsiz)">
+                    <Printer className="w-4 h-4" /> Eslatma chek
+                  </button>
+                )}
+                {onPurgeCustomer && (
+                  <button type="button" onClick={() => { setPurgeText(''); setPurgeOpen(true); }}
+                    className="px-3 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/40 text-red-200 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer">
+                    <Trash2 className="w-4 h-4" /> Mijozni o'chirish
+                  </button>
+                )}
+              </div>
+            </div>
           </header>
 
           {shared && <p className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs">Bu telefon boshqa ismda ham yozilgan. Hisoblar alohida saqlanmoqda. Mijozning haqiqiy telefonini aniqlashtiring.</p>}
@@ -212,6 +235,41 @@ export function CustomerDebtHistory({ debts, movements, query, store, onRequestP
                 </div>
               ))}
               {!statement.payments.length && !statement.returns.length && <p className="px-4 py-4 text-sm text-stone-500">Bu davrda to'lov yo'q.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {purgeOpen && chosen && onPurgeCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !purgeBusy && setPurgeOpen(false)}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-3 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-base text-red-700 flex items-center gap-2"><Trash2 className="w-5 h-5" /> Mijozni butunlay o'chirish</h3>
+              <button type="button" onClick={() => setPurgeOpen(false)} className="text-stone-400 hover:text-stone-900 cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="text-sm text-stone-700 space-y-1">
+              <div><b>{chosen.name}</b> {chosen.phone && <span className="text-stone-500">· {chosen.phone}</span>}</div>
+              <div>Barcha nasiyalari ({chosen.count} ta yozuv), to'lovlar tarixi, mijozlar ro'yxatidagi yozuvi va Telegram ulanishi o'chiriladi.</div>
+              {statement && statement.currentDebt > 0 && <div className="text-red-700 font-bold">Hozirgi qarzi {money(statement.currentDebt)} — u ham hisobdan yo'qoladi.</div>}
+              <div className="text-xs text-stone-500">Sotuv tarixi (kunlik savdo, ombor) o'zgarmaydi. Bu amalni qaytarib bo'lmaydi.</div>
+            </div>
+            <label className="block text-xs font-bold text-stone-700">
+              Tasdiqlash uchun <span className="text-red-700">O'CHIRISH</span> deb yozing
+              <input value={purgeText} onChange={(e) => setPurgeText(e.target.value)} autoFocus
+                className="mt-1 w-full px-3 py-2 border-2 border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:border-red-400" />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setPurgeOpen(false)} className="px-4 py-2 rounded-xl bg-stone-100 text-sm font-bold cursor-pointer">Bekor</button>
+              <button type="button" disabled={purgeText.trim().toUpperCase() !== "O'CHIRISH" || purgeBusy}
+                onClick={async () => {
+                  setPurgeBusy(true);
+                  const ok = await onPurgeCustomer({ name: chosen.name, phone: chosen.phone });
+                  setPurgeBusy(false);
+                  if (ok) { setPurgeOpen(false); setSelected(''); }
+                }}
+                className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white text-sm font-black cursor-pointer">
+                {purgeBusy ? "O'chirilmoqda…" : "Butunlay o'chirish"}
+              </button>
             </div>
           </div>
         </div>

@@ -149,6 +149,12 @@ export class CustomerTelegram {
       `MOBILE PARTS hisobingiz ulandi, ${customer.name}.\nNasiya xaridlari va yakshanbalik hisob shu yerga keladi.\nQarzingizni ko‘rish uchun /qarzim, xabarlarni to‘xtatish uchun /stop.`);
     this.save();
   }
+  /** Mijoz butunlay o'chirilganda: ulanish va barcha xabarlar tarixi ham o'chadi. */
+  forget(customerId: string) {
+    delete this.state.links[customerId];
+    for (const [id, job] of Object.entries(this.state.jobs)) if (job.customerId === customerId) delete this.state.jobs[id];
+    this.save();
+  }
   disconnect(customerId: string) {
     delete this.state.links[customerId];
     for (const job of Object.values(this.state.jobs)) if (job.customerId === customerId && job.status !== 'sent') job.status = 'cancelled';
@@ -271,8 +277,16 @@ export class CustomerTelegram {
   }
 }
 
+let activeService: CustomerTelegram | null = null;
+/** Mijozlar o'chirilganda Telegram izlarini ham tozalash. */
+export function forgetCustomerTelegram(customerIds: string[]) {
+  if (!activeService) return;
+  for (const id of customerIds) activeService.forget(id);
+}
+
 export function installCustomerTelegram(app: Express, local: boolean) {
   const service = new CustomerTelegram(path.resolve('data/customer-telegram.json'));
+  activeService = service;
   app.use('/api/v1/customer-telegram', requireOwner);
   app.get('/api/v1/customer-telegram', (_req, res) => res.set('Cache-Control', 'no-store').json(service.overview()));
   app.post('/api/v1/customer-telegram/config', async (req, res) => {

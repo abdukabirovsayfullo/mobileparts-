@@ -375,6 +375,36 @@ class DataStore {
     return { customer, debtsUpdated };
   }
 
+  /**
+   * Rahbar: mijozni va uning BARCHA nasiyalarini butunlay o'chirish (izsiz).
+   * Savdo yozuvlari (ombor harakatlari, kunlik tushum) o'zgarmaydi.
+   */
+  public purgeCustomer(name: string, phone?: string): { debtsRemoved: number; debtIds: string[]; customerIds: string[]; remainingRemoved: Record<string, number> } {
+    const cleanName = String(name || '').trim();
+    if (cleanName.length < 2 || DataStore.isGenericCustomer(cleanName)) throw new Error("Bu mijozni o'chirib bo'lmaydi (umumiy nom).");
+    const debts = sameCustomerDebts(this.state.debts, cleanName, phone);
+    const ids = new Set(debts.map(d => d.id));
+    const remainingRemoved: Record<string, number> = {};
+    for (const d of debts) {
+      const c = d.currency === 'USD' ? 'USD' : 'UZS';
+      if (d.status !== 'yopildi' && !d.cancelledAt) remainingRemoved[c] = (remainingRemoved[c] || 0) + Math.max(0, d.remainingAmount);
+    }
+    const customers = this.state.customers || [];
+    const keyOf = customerResolver([
+      ...this.state.debts,
+      ...customers.map(c => ({ customerName: c.name, customerPhone: c.phone })),
+      { customerName: cleanName, customerPhone: phone }
+    ]);
+    const identity = keyOf(cleanName, phone);
+    const customerIds = customers.filter(c => keyOf(c.name, c.phone) === identity).map(c => c.id);
+    if (!ids.size && !customerIds.length) throw new Error('Mijoz topilmadi.');
+    this.state.debts = this.state.debts.filter(d => !ids.has(d.id));
+    this.state.customers = customers.filter(c => !customerIds.includes(c.id));
+    this.state.lastUpdated = new Date().toISOString();
+    this.scheduleSave();
+    return { debtsRemoved: ids.size, debtIds: [...ids], customerIds, remainingRemoved };
+  }
+
   public deleteCustomer(id: string): boolean {
     const before = (this.state.customers || []).length;
     this.state.customers = (this.state.customers || []).filter(c => c.id !== id);

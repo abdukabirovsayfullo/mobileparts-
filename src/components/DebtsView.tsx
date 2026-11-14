@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { CustomerProfile, DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
 import { DebtPeriodReport } from './DebtPeriodReport';
 import { CustomerDebtHistoryModal } from './CustomerDebtHistoryModal';
-import { CustomerPaymentPanel } from './CustomerPaymentPanel';
+import { CustomerPaymentPanel, printDebtReminder } from './CustomerPaymentPanel';
 import { downloadDebtStatementPdf, printDebtStatement } from '../utils/debtStatementActions';
 import { DebtStatementParams, toLocalDay } from '../utils/debtStatementReceipt';
 import { STORE_INFO } from '../data/initialData';
@@ -38,6 +38,8 @@ interface DebtsViewProps {
   onAddNewDebt: (debt: DebtRecord) => void;
   onAddCustomerPayment?: (customer: { name: string; phone?: string; currency: 'UZS' | 'USD' }, amount: number, method: 'naqd' | 'click_payme') => Promise<boolean>;
   onUpdateDebt?: (debt: DebtRecord) => void;
+  /** Rahbar: mijoz va barcha nasiyalarini butunlay o'chirish. */
+  onPurgeCustomer?: (customer: { name: string; phone?: string }) => Promise<boolean>;
   currentUserName?: string;
   customers?: CustomerProfile[];
 }
@@ -50,6 +52,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   onAddNewDebt,
   onAddCustomerPayment,
   onUpdateDebt,
+  onPurgeCustomer,
   currentUserName,
   customers = []
 }) => {
@@ -496,6 +499,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           query={searchQuery}
           store={storeInfo ?? STORE_INFO}
           onRequestPayment={onAddCustomerPayment ? (c) => setPaymentPanel({ initial: c }) : undefined}
+          onPrintReminder={(c) => void printDebtReminder({ store: storeInfo ?? STORE_INFO, customerName: c.name, customerPhone: c.phone, currency: c.currency, totalDebt: c.totalDebt })}
+          onPurgeCustomer={onPurgeCustomer}
         />
       )}
 
@@ -513,7 +518,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   <th className="py-3 px-4 text-right">Jami qoldiq</th>
                   <th className="py-3 px-4">Eng yaqin muddat</th>
                   <th className="py-3 px-4">Holati</th>
-                  {onAddCustomerPayment && <th className="py-3 px-4"></th>}
+                  <th className="py-3 px-4"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
@@ -544,17 +549,27 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                             <span className="bg-amber-100 text-amber-800 font-bold text-[10px] px-2 py-0.5 rounded">Muddatida</span>
                           )}
                         </td>
-                        {onAddCustomerPayment && (
-                          <td className="py-3 px-4 whitespace-nowrap">
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 justify-end">
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setPaymentPanel({ initial: { name: c.name, phone: c.phone, currency: c.currency } }); }}
-                              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 rounded-lg text-xs font-bold cursor-pointer"
+                              onClick={(e) => { e.stopPropagation(); void printDebtReminder({ store: storeInfo ?? STORE_INFO, customerName: c.name, customerPhone: c.phone, currency: c.currency, totalDebt: c.remaining }); }}
+                              className="px-2.5 py-1 bg-white border border-stone-300 hover:bg-stone-100 text-stone-800 rounded-lg text-xs font-bold cursor-pointer"
+                              title="Qarz eslatmasi chekini chiqarish (tovarlarsiz)"
                             >
-                              To'lov olish
+                              🧾 Eslatma
                             </button>
-                          </td>
-                        )}
+                            {onAddCustomerPayment && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setPaymentPanel({ initial: { name: c.name, phone: c.phone, currency: c.currency } }); }}
+                                className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 rounded-lg text-xs font-bold cursor-pointer"
+                              >
+                                To'lov olish
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))
                 )}
