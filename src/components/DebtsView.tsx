@@ -54,7 +54,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'barchasi' | 'faol' | 'yopildi'>('faol');
   const [sortBy, setSortBy] = useState<'muddat' | 'summa' | 'yangi'>('muddat');
-  const [viewMode, setViewMode] = useState<'qarzlar' | 'mijozlar' | 'davr'>('qarzlar');
+  // Asosiy ko'rinish — mijoz bo'yicha: jami qarz, to'lov jami qarzdan ayriladi.
+  const [viewMode, setViewMode] = useState<'qarzlar' | 'mijozlar' | 'davr'>('mijozlar');
   
   // Payment modal state
   const [paymentModalDebt, setPaymentModalDebt] = useState<DebtRecord | null>(null);
@@ -448,11 +449,12 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                   <th className="py-3 px-4 text-right">Jami qoldiq</th>
                   <th className="py-3 px-4">Eng yaqin muddat</th>
                   <th className="py-3 px-4">Holati</th>
+                  {onAddCustomerPayment && <th className="py-3 px-4"></th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {customerSummaries.length === 0 ? (
-                  <tr><td colSpan={6} className="py-8 text-center text-stone-400">Faol qarzi bor mijoz yo'q</td></tr>
+                  <tr><td colSpan={7} className="py-8 text-center text-stone-400">Faol qarzi bor mijoz yo'q</td></tr>
                 ) : (
                   customerSummaries
                     .filter((c) => !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.phone.includes(searchQuery.trim()))
@@ -478,6 +480,17 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                             <span className="bg-amber-100 text-amber-800 font-bold text-[10px] px-2 py-0.5 rounded">Muddatida</span>
                           )}
                         </td>
+                        {onAddCustomerPayment && (
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setPaymentPanel({ initial: { name: c.name, phone: c.phone, currency: c.currency } }); }}
+                              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 rounded-lg text-xs font-bold cursor-pointer"
+                            >
+                              To'lov olish
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))
                 )}
@@ -956,7 +969,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                             setNewDebtData({
                               ...newDebtData,
                               customerName: c.name,
-                              customerPhone: c.phone && c.phone.replace(/\D/g, '').length > 3 ? c.phone : newDebtData.customerPhone
+                              // Oldingi tanlangan mijozning telefoni yangi mijozga o'tib ketmasin.
+                              customerPhone: c.phone && c.phone.replace(/\D/g, '').length >= 9 ? c.phone : '+998 '
                             })
                           }
                           className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${

@@ -47,7 +47,8 @@ export interface RemoteDebtHit {
 
 const optionKey = (name: string, phone: string): string => {
   const p = phoneKey(phone);
-  return p.length >= 9 ? `p:${p}` : `n:${normalizeSearchText(name)}`;
+  // Bir telefon + boshqa ism = boshqa odam (telefon adashib yozilgan bo'lishi mumkin).
+  return p.length >= 9 ? `p:${p}|${normalizeSearchText(name).split(' ')[0]}` : `n:${normalizeSearchText(name)}`;
 };
 
 const isPlaceholderName = (name: string): boolean => {

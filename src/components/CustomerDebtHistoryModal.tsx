@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { DebtRecord, StockMovement } from '../types';
-import { customerDebtHistory, editDebt, cancelDebt } from '../utils/saleAccounting';
+import { customerDebtHistory, editDebt, cancelDebt, mergeLedgerPayments } from '../utils/saleAccounting';
 import { currencyOf } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { X, Phone, Package, Wallet, RotateCcw, Copy, CheckCircle2, Pencil, Ban, History } from 'lucide-react';
@@ -46,6 +46,13 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
   const closedCount = history.debts.length - history.debts.filter((r) => r.debt.status !== 'yopildi').length;
   const currencies = (['UZS', 'USD'] as const).filter((c) => history.totals[c].taken > 0);
   const payable = (['UZS', 'USD'] as const).filter((c) => history.totals[c].remaining > 0);
+  // Barcha to'lovlar bitta ro'yxatda: to'lov alohida xaridni emas, jami qarzni kamaytiradi.
+  const allPayments = useMemo(
+    () => (['UZS', 'USD'] as const).flatMap((c) =>
+      mergeLedgerPayments(visible.filter((r) => currencyOf(r.debt) === c && !r.debt.cancelledAt).flatMap((r) => r.payments)).map((p) => ({ ...p, currency: c }))
+    ).sort((a, b) => b.date.localeCompare(a.date)),
+    [visible]
+  );
   const isManual = (d: DebtRecord) => !movements.some((m) => m.id === d.movementId);
 
   const openEdit = (d: DebtRecord) => {
@@ -181,6 +188,9 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
 
         {/* Nasiyalar ro'yxati */}
         <div className="overflow-y-auto px-5 py-4 space-y-3">
+          {visible.length > 0 && (
+            <div className="text-[11px] font-black text-stone-700 flex items-center gap-1"><Package className="w-3.5 h-3.5" /> Nima olgan ({visible.length} ta xarid)</div>
+          )}
           {visible.length === 0 && (
             <div className="text-center text-xs text-stone-400 py-6">Ochiq nasiya yo'q</div>
           )}
@@ -192,7 +202,7 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
                   <div className="text-xs font-black text-stone-900">{formatDate(r.debt.createdAt)}</div>
                   <div className="flex items-center gap-2">
                     {r.debt.dueDate && <span className="text-[10px] text-stone-500">Muddat: {r.debt.dueDate}</span>}
-                    {statusBadge(r.debt)}
+                    {(r.debt.cancelledAt || r.debt.status === 'yopildi') && statusBadge(r.debt)}
                   </div>
                 </div>
 
@@ -228,28 +238,6 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
                   {r.items.length > 0 && r.note && <div className="text-[11px] text-stone-500 mt-1">Izoh: {r.note}</div>}
                 </div>
 
-                {/* To'lovlar */}
-                {r.payments.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-bold text-stone-500 mb-1 flex items-center gap-1">
-                      <Wallet className="w-3 h-3" /> To'lovlar:
-                    </div>
-                    <div className="space-y-0.5">
-                      {r.payments.map((p, idx) => (
-                        <div key={idx} className="flex justify-between text-[11px]">
-                          <span className="text-stone-600">
-                            {formatDate(p.date)} · {METHOD_LABEL[p.method] || p.method}
-                            {p.employeeName ? ` · ${p.employeeName}` : ''}
-                          </span>
-                          <span className={`font-bold ${p.method === 'vazvrat' ? 'text-sky-700' : 'text-emerald-700'}`}>
-                            −{formatMoney(p.amount, c)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {r.debt.auditLog && r.debt.auditLog.length > 0 && (
                   <div className="text-[10px] text-stone-500 bg-stone-50 rounded-lg px-2 py-1 space-y-0.5">
                     {r.debt.auditLog.map((l, idx) => (
@@ -259,19 +247,32 @@ export const CustomerDebtHistoryModal: React.FC<Props> = ({ name, phone, debts, 
                 )}
 
                 <div className="flex justify-between items-center pt-2 border-t border-stone-200 text-xs">
-                  <span className="text-stone-600">Summa: <strong className="text-stone-900">{formatMoney(r.debt.totalDebt, c)}</strong></span>
+                  <span className="text-stone-600">Xarid summasi: <strong className="text-stone-900">{formatMoney(r.debt.totalDebt, c)}</strong></span>
                   <span className="flex items-center gap-2">
                     {onUpdateDebt && !r.debt.cancelledAt && (
                       <button type="button" onClick={() => openEdit(r.debt)} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stone-300 hover:bg-stone-100 text-[10px] font-bold text-stone-700 cursor-pointer">
                         <Pencil className="w-3 h-3" /> Tahrirlash
                       </button>
                     )}
-                    <span className="text-stone-600">Qoldiq: <strong className="text-red-600">{formatMoney(r.debt.status === 'yopildi' ? 0 : r.debt.remainingAmount, c)}</strong></span>
                   </span>
                 </div>
               </div>
             );
           })}
+
+          {allPayments.length > 0 && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-3.5">
+              <div className="text-[11px] font-black text-stone-700 mb-1.5 flex items-center gap-1"><Wallet className="w-3.5 h-3.5" /> To'lovlar — jami qarzdan ayrilgan ({allPayments.length})</div>
+              <div className="space-y-0.5">
+                {allPayments.map((p, idx) => (
+                  <div key={idx} className="flex justify-between text-[11px]">
+                    <span className="text-stone-600">{formatDate(p.date)} · {METHOD_LABEL[p.method] || p.method}{p.employeeName ? ` · ${p.employeeName}` : ''}</span>
+                    <span className={`font-bold ${p.method === 'vazvrat' ? 'text-sky-700' : 'text-emerald-700'}`}>−{formatMoney(p.amount, p.currency)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

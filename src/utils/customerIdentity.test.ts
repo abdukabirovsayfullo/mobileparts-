@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { customerDebtTotal, customerDebtHistory, groupDebtsByCustomer, planCustomerPayment, sameCustomerDebts } from './saleAccounting';
+import { customerDebtTotal, customerDebtHistory, customerLedger, groupDebtsByCustomer, mergeLedgerPayments, planCustomerPayment, sameCustomerDebts } from './saleAccounting';
 import { applyRefundToDebts } from '../../server/returnLogic';
 import type { DebtRecord } from '../types';
 
@@ -53,4 +53,47 @@ test('history and returns see the whole customer', () => {
   assert.equal(applied, 120000);
   assert.equal(after[0].remainingAmount, 0);
   assert.equal(after[1].remainingAmount, 30000);
+});
+
+test('a debt written with someone else\'s phone does not leak into their account', () => {
+  // Nurullo nasiyasi adashib Omadillo telefoni bilan yozilgan.
+  const debts = [
+    debt('Omadillo', '901112233', 300000),
+    debt('Nurullo aka usta', '901112233', 40000),
+    debt('Nurullo aka usta', '', 60000),
+    debt('Nurullo aka usta', '', 10000)
+  ];
+  assert.equal(customerDebtTotal(debts, 'Omadillo', '901112233'), 300000);
+  assert.equal(customerDebtTotal(debts, 'Nurullo aka usta', ''), 110000);
+  const groups = groupDebtsByCustomer(debts);
+  assert.equal(groups.length, 2);
+  assert.equal(customerDebtHistory(debts, [], 'Omadillo', '+998 90 111 22 33').debts.length, 1);
+});
+
+test('same phone with a longer form of the same name stays one customer', () => {
+  const debts = [debt('Omadillo', '901112233', 1000), debt('Omadillo aka', '901112233', 2000)];
+  assert.equal(groupDebtsByCustomer(debts).length, 1);
+});
+
+test('partial payment reduces the customer total; purchases stay visible', () => {
+  const a = debt('Omadillo', '901112233', 100000, '2026-10-01T10:00:00Z');
+  const b = debt('Omadillo', '', 50000, '2026-11-01T10:00:00Z');
+  const plan = planCustomerPayment([a, b], 'Omadillo', '901112233', 'UZS', 30000);
+  assert.deepEqual(plan.allocations.map((x) => x.amount), [30000]);
+  a.remainingAmount = 70000; a.paidAmount = 30000; a.status = 'qisman_tolandi';
+  a.paymentHistory = [{ date: '2026-11-14T09:00:00.000Z', amount: 30000, method: 'naqd' }];
+  const ledger = customerLedger([a, b], [], 'Omadillo', '901112233', 'UZS')!;
+  assert.equal(ledger.taken, 150000);
+  assert.equal(ledger.paid, 30000);
+  assert.equal(ledger.remaining, 120000);
+  assert.equal(ledger.purchases.length, 2);
+});
+
+test('one customer payment split across debts shows as one line', () => {
+  const merged = mergeLedgerPayments([
+    { date: '2026-11-14T09:00:00.000Z', amount: 70000, method: 'naqd', employeeName: 'Kassir' },
+    { date: '2026-11-14T09:00:00.020Z', amount: 30000, method: 'naqd', employeeName: 'Kassir' },
+    { date: '2026-11-15T09:00:00.000Z', amount: 5000, method: 'click_payme' }
+  ]);
+  assert.deepEqual(merged.map((p) => p.amount), [5000, 100000]);
 });

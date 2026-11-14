@@ -11,12 +11,17 @@ const phoneTail = (phone?: string) => {
 
 export type CustomerKeyFn = (name: string, phone?: string) => string;
 
+/** Ismning birinchi so'zi: "Nurullo aka usta" → "nurullo". */
+export const firstNameToken = (name: string): string => cleanName(name || '').split(' ')[0] || '';
+
 /**
- * Mijoz kaliti: telefon (9+ raqam) bo'lsa telefon, bo'lmasa ism.
- * Telefonsiz yozuvning ismi ro'yxatda faqat BITTA telefon bilan uchrasa, o'sha
- * telefonga bog'lanadi: "Omadillo" (telefonsiz eski qarz) va "Omadillo, +998 90…"
- * (yangi sotuv) bitta mijoz bo'ladi. Bir ism ikki xil telefon bilan uchrasa,
- * telefonsiz yozuv taxmin qilinmaydi va alohida qoladi.
+ * Mijoz kaliti.
+ * - Telefon (9+ raqam) bo'lsa: telefon + ismning birinchi so'zi. Bir telefonga
+ *   adashib boshqa odamning nasiyasi yozilgan bo'lsa ham ("Nurullo" nasiyasi
+ *   Omadillo telefoni bilan), ismi boshqa bo'lgani uchun ular aralashmaydi.
+ * - Telefonsiz yozuvning to'liq ismi ro'yxatda faqat BITTA telefon bilan
+ *   uchrasa, o'sha telefonga bog'lanadi ("Omadillo" eski qarzi + telefonli yangi sotuv).
+ *   Bir ism ikki xil telefon bilan uchrasa, taxmin qilinmaydi.
  */
 export function customerResolver(records: Array<{ customerName: string; customerPhone?: string }>): CustomerKeyFn {
   const phonesByName = new Map<string, Set<string>>();
@@ -29,11 +34,12 @@ export function customerResolver(records: Array<{ customerName: string; customer
     phonesByName.set(name, set);
   }
   return (name: string, phone?: string) => {
-    const tail = phoneTail(phone);
-    if (tail) return `phone:${tail}`;
     const clean = cleanName(name || '');
+    const first = firstNameToken(name);
+    const tail = phoneTail(phone);
+    if (tail) return `phone:${tail}|${first}`;
     const phones = phonesByName.get(clean);
-    if (phones && phones.size === 1) return `phone:${[...phones][0]}`;
+    if (phones && phones.size === 1) return `phone:${[...phones][0]}|${first}`;
     return `name:${clean}`;
   };
 }
@@ -383,5 +389,68 @@ export function cancelDebt(debt: DebtRecord, reason: string, by: string | undefi
     remainingAmount: 0,
     cancelledAt: nowIso,
     auditLog: [...(debt.auditLog || []), { date: nowIso, by, action: 'bekor', details: `Bekor qilindi (qoldiq ${debt.remainingAmount} edi). Sabab: ${why}` }]
+  };
+}
+
+export interface LedgerPayment { date: string; amount: number; method: string; employeeName?: string }
+
+/**
+ * Mijozning barcha nasiyalaridagi to'lovlarni bitta ro'yxatga yig'adi.
+ * Bitta "Mijoz to'lovi" bir nechta nasiyaga bo'lib yozilgan bo'lsa (bir xil usul,
+ * xodim va vaqt ±10 soniya), u bitta to'lov bo'lib ko'rinadi. Eng yangisi birinchi.
+ */
+export function mergeLedgerPayments(payments: LedgerPayment[]): LedgerPayment[] {
+  const sorted = payments.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const merged: LedgerPayment[] = [];
+  for (const p of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && last.method === p.method && (last.employeeName || '') === (p.employeeName || '')
+      && Math.abs(new Date(p.date).getTime() - new Date(last.date).getTime()) <= 10_000) {
+      last.amount += p.amount;
+    } else {
+      merged.push({ ...p });
+    }
+  }
+  return merged.reverse();
+}
+
+export interface CustomerLedger {
+  /** To'lov uchun mijozni aniqlovchi nasiya (shu mijozning istalgan faol nasiyasi). */
+  debtId: string;
+  name: string;
+  phone: string;
+  currency: Currency;
+  /** Faol (yopilmagan) xaridlar: nima olgani va qachon. */
+  purchases: Array<{ debtId: string; date: string; items: Array<{ name: string; quantity: number; total: number; returnedQty: number }>; note?: string; amount: number }>;
+  payments: LedgerPayment[];
+  taken: number;
+  paid: number;
+  returned: number;
+  remaining: number;
+}
+
+/** Mijozning bitta valyutadagi nasiya hisobi: jami olgan − to'lagan − qaytargan = qoldiq. */
+export function customerLedger(debts: DebtRecord[], movements: StockMovement[], name: string, phone: string | undefined, currency: Currency): CustomerLedger | undefined {
+  const history = customerDebtHistory(debts, movements, name, phone);
+  const rows = history.debts.filter(r => !r.debt.cancelledAt && currencyOf(r.debt) === currency && r.debt.status !== 'yopildi' && r.debt.remainingAmount > 0);
+  if (!rows.length) return undefined;
+  const payments = mergeLedgerPayments(rows.flatMap(r => r.payments));
+  const returned = rows.reduce((s, r) => s + (r.debt.paymentHistory || []).filter(p => p.method === 'vazvrat').reduce((x, p) => x + p.amount, 0), 0);
+  const taken = rows.reduce((s, r) => s + r.debt.totalDebt, 0);
+  const remaining = rows.reduce((s, r) => s + Math.max(0, r.debt.remainingAmount), 0);
+  return {
+    debtId: rows[0].debt.id,
+    name: history.name,
+    phone: history.phone,
+    currency,
+    purchases: rows
+      .slice()
+      .sort((a, b) => b.debt.createdAt.localeCompare(a.debt.createdAt))
+      .map(r => ({ debtId: r.debt.id, date: r.debt.createdAt, items: r.items.map(i => ({ name: i.name, quantity: i.quantity, total: i.total, returnedQty: i.returnedQty })), note: r.items.length ? undefined : r.note, amount: r.debt.totalDebt })),
+    payments,
+    taken: roundMoney(taken, currency),
+    paid: roundMoney(taken - remaining - returned, currency),
+    returned: roundMoney(returned, currency),
+    remaining: roundMoney(remaining, currency)
   };
 }
