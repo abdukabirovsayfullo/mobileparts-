@@ -1,18 +1,54 @@
 import { Currency, DebtRecord, StockMovement } from '../types';
 import { currencyOf, roundMoney } from './money';
+import { normalizeSearchText } from './customerSearch';
 
-const cleanName = (name: string) => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
-
-const customerKey = (name: string, phone?: string) => {
+// Katta-kichik harf, kirill/lotin, apostrof va ortiqcha bo'shliq farqi bitta mijozni ikkiga bo'lmasin.
+const cleanName = (name: string) => normalizeSearchText(name);
+const phoneTail = (phone?: string) => {
   const digits = String(phone || '').replace(/\D/g, '');
-  return digits.length >= 9 ? `phone:${digits.slice(-9)}` : `name:${cleanName(name)}`;
+  return digits.length >= 9 ? digits.slice(-9) : '';
 };
+
+export type CustomerKeyFn = (name: string, phone?: string) => string;
+
+/**
+ * Mijoz kaliti: telefon (9+ raqam) bo'lsa telefon, bo'lmasa ism.
+ * Telefonsiz yozuvning ismi ro'yxatda faqat BITTA telefon bilan uchrasa, o'sha
+ * telefonga bog'lanadi: "Omadillo" (telefonsiz eski qarz) va "Omadillo, +998 90…"
+ * (yangi sotuv) bitta mijoz bo'ladi. Bir ism ikki xil telefon bilan uchrasa,
+ * telefonsiz yozuv taxmin qilinmaydi va alohida qoladi.
+ */
+export function customerResolver(records: Array<{ customerName: string; customerPhone?: string }>): CustomerKeyFn {
+  const phonesByName = new Map<string, Set<string>>();
+  for (const r of records) {
+    const tail = phoneTail(r.customerPhone);
+    const name = cleanName(r.customerName || '');
+    if (!tail || !name) continue;
+    const set = phonesByName.get(name) || new Set<string>();
+    set.add(tail);
+    phonesByName.set(name, set);
+  }
+  return (name: string, phone?: string) => {
+    const tail = phoneTail(phone);
+    if (tail) return `phone:${tail}`;
+    const clean = cleanName(name || '');
+    const phones = phonesByName.get(clean);
+    if (phones && phones.size === 1) return `phone:${[...phones][0]}`;
+    return `name:${clean}`;
+  };
+}
+
+/** Berilgan ism/telefon bilan bir mijoz bo'lgan barcha yozuvlar (so'rovning o'zi ham hisobga olinadi). */
+export function sameCustomerDebts(debts: DebtRecord[], name: string, phone?: string): DebtRecord[] {
+  const keyOf = customerResolver([...debts, { customerName: name, customerPhone: phone }]);
+  const identity = keyOf(name, phone);
+  return debts.filter(d => keyOf(d.customerName, d.customerPhone) === identity);
+}
 
 export function customerDebtTotal(debts: DebtRecord[], name: string, phone?: string, currency: Currency = 'UZS'): number {
   const key = cleanName(name);
   if (!key || key === cleanName("Do'kon mijozi")) return 0;
-  const identity = customerKey(name, phone);
-  return roundMoney(debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity && d.status !== 'yopildi' && currencyOf(d) === currency)
+  return roundMoney(sameCustomerDebts(debts, name, phone).filter(d => d.status !== 'yopildi' && currencyOf(d) === currency)
     .reduce((sum, d) => sum + Math.max(0, d.remainingAmount), 0), currency);
 }
 
@@ -83,6 +119,7 @@ export interface CustomerDebtSummary {
 /** Faol qarzlarni mijoz bo'yicha jamlaydi (eng katta qarz birinchi). "Do'kon mijozi" alohida qatorlarda qoladi. */
 export function groupDebtsByCustomer(debts: DebtRecord[], now = Date.now()): CustomerDebtSummary[] {
   const anonymous = cleanName("Do'kon mijozi");
+  const customerKey = customerResolver(debts);
   const map = new Map<string, CustomerDebtSummary>();
   for (const d of debts) {
     if (d.status === 'yopildi' || d.remainingAmount <= 0) continue;
@@ -99,7 +136,7 @@ export function groupDebtsByCustomer(debts: DebtRecord[], now = Date.now()): Cus
       current.activeCount += 1;
       current.maxOverdueDays = Math.max(current.maxOverdueDays, overdue);
       if (d.dueDate && (!current.nearestDue || d.dueDate < current.nearestDue)) current.nearestDue = d.dueDate;
-      if (!current.phone && d.customerPhone) current.phone = d.customerPhone;
+      if (!phoneTail(current.phone) && phoneTail(d.customerPhone)) current.phone = d.customerPhone;
     }
   }
   return [...map.values()].sort((a, b) => Number(a.currency === 'USD') - Number(b.currency === 'USD') || b.remaining - a.remaining);
@@ -134,6 +171,7 @@ export interface PeriodCustomerReport {
 /** [fromMs, toMs] oralig'ida (ikkala chegara kiradi) yozilgan nasiyalar: mijoz bo'yicha, olingan tovarlari bilan. Eng katta qoldiq birinchi. */
 export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[], fromMs: number, toMs: number): PeriodCustomerReport[] {
   const anonymous = cleanName("Do'kon mijozi");
+  const customerKey = customerResolver(debts);
   const groups = new Map<string, PeriodCustomerReport>();
   for (const d of debts) {
     // Bu ekran mijozga yuboriladigan qarz eslatmasi uchun: to'liq yopilgan
@@ -164,7 +202,7 @@ export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[]
     group.paid += paid;
     group.returned += returned;
     group.remaining += d.remainingAmount;
-    if (!group.phone && d.customerPhone) group.phone = d.customerPhone;
+    if (!phoneTail(group.phone) && phoneTail(d.customerPhone)) group.phone = d.customerPhone;
   }
   const result = [...groups.values()];
   for (const g of result) {
@@ -180,8 +218,7 @@ export function debtPeriodReport(debts: DebtRecord[], movements: StockMovement[]
 export function activeCustomerDebtReport(debts: DebtRecord[], movements: StockMovement[], debt: DebtRecord): PeriodCustomerReport | undefined {
   const anonymous = cleanName("Do'kon mijozi");
   const name = cleanName(debt.customerName);
-  const identity = customerKey(debt.customerName, debt.customerPhone);
-  const sameCustomer = !name || name === anonymous ? [debt] : debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity && currencyOf(d) === currencyOf(debt));
+  const sameCustomer = !name || name === anonymous ? [debt] : sameCustomerDebts(debts, debt.customerName, debt.customerPhone).filter(d => currencyOf(d) === currencyOf(debt));
   const active = sameCustomer.filter(d => d.status !== 'yopildi' && d.remainingAmount > 0);
   return debtPeriodReport(active, movements, -Infinity, Infinity)[0];
 }
@@ -212,10 +249,9 @@ export interface CustomerDebtHistory {
 /** Bitta mijozning barcha nasiyalari: nima olgani, qancha to'lagani va qaytargani. Yangi nasiyalar birinchi. */
 export function customerDebtHistory(debts: DebtRecord[], movements: StockMovement[], name: string, phone?: string): CustomerDebtHistory {
   const anonymous = cleanName("Do'kon mijozi");
-  const identity = customerKey(name, phone);
   const own = cleanName(name) === anonymous || !cleanName(name)
     ? []
-    : debts.filter(d => customerKey(d.customerName, d.customerPhone) === identity);
+    : sameCustomerDebts(debts, name, phone);
   const totals = { UZS: { taken: 0, paid: 0, returned: 0, remaining: 0 }, USD: { taken: 0, paid: 0, returned: 0, remaining: 0 } };
 
   const rows: CustomerHistoryDebt[] = own.map(d => {
@@ -284,9 +320,8 @@ export interface CustomerPaymentPlan {
 /** Mijoz bergan umumiy summani uning faol nasiyalariga eng eskisidan boshlab taqsimlaydi. */
 export function planCustomerPayment(debts: DebtRecord[], name: string, phone: string | undefined, currency: Currency, amount: number): CustomerPaymentPlan {
   const anonymous = cleanName("Do'kon mijozi");
-  const identity = customerKey(name, phone);
-  const active = cleanName(name) === anonymous || !cleanName(name) ? [] : debts
-    .filter(d => d.status !== 'yopildi' && d.remainingAmount > 0 && currencyOf(d) === currency && customerKey(d.customerName, d.customerPhone) === identity)
+  const active = cleanName(name) === anonymous || !cleanName(name) ? [] : sameCustomerDebts(debts, name, phone)
+    .filter(d => d.status !== 'yopildi' && d.remainingAmount > 0 && currencyOf(d) === currency)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const totalRemaining = roundMoney(active.reduce((s, d) => s + d.remainingAmount, 0), currency);
   let left = Math.max(0, roundMoney(Number(amount) || 0, currency));

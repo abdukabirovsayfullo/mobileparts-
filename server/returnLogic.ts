@@ -1,6 +1,8 @@
 import type { Currency, DebtRecord, StockMovement } from '../src/types';
 import { currencyOf, roundMoney } from '../src/utils/money';
 import { tashkentDate } from './expenseLogic';
+import { normalizeSearchText } from '../src/utils/customerSearch';
+import { sameCustomerDebts } from '../src/utils/saleAccounting';
 
 export const WORKER_RETURN_WINDOW_DAYS = 7;
 export const RETURN_FLAG_DAILY_COUNT = Number(process.env.POS_RETURN_FLAG_COUNT) > 0 ? Number(process.env.POS_RETURN_FLAG_COUNT) : 3;
@@ -14,7 +16,7 @@ export const sameCustomer = (nameA: string, phoneA: string | undefined, nameB: s
   const aPhone = phoneKey(phoneA);
   const bPhone = phoneKey(phoneB);
   if (aPhone.length >= 9 && bPhone.length >= 9) return aPhone === bPhone;
-  return normalizeName(nameA) === normalizeName(nameB);
+  return normalizeSearchText(nameA) === normalizeSearchText(nameB);
 };
 
 const dayNumber = (date: string): number => Math.round(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
@@ -39,8 +41,8 @@ export const applyRefundToDebts = (
   // Faqat o'sha valyutadagi nasiyalar kamayadi: dollarli qaytarish so'mli nasiyaga tegmaydi va aksincha.
   let left = Math.max(0, roundMoney(amount, currency));
   let applied = 0;
-  const candidates = debts
-    .filter(debt => debt.status !== 'yopildi' && debt.remainingAmount > 0 && currencyOf(debt) === currency && sameCustomer(customerName, customerPhone, debt.customerName, debt.customerPhone))
+  const candidates = sameCustomerDebts(debts, customerName, customerPhone)
+    .filter(debt => debt.status !== 'yopildi' && debt.remainingAmount > 0 && currencyOf(debt) === currency)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const updated = new Map<string, DebtRecord>();
   for (const debt of candidates) {

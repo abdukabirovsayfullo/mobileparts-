@@ -45,7 +45,7 @@ import { CustomersPanel } from './components/CustomersPanel';
 
 import { OnlineOrder, OnlineOrderStatus } from './types';
 import { playCashRegisterChime } from './utils/audioAlert';
-import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment, applyDebtPayment, planCustomerPayment } from './utils/saleAccounting';
+import { customerDebtTotal, saleAccounting, movementPaymentSummary, clampDebtPayment, applyDebtPayment, planCustomerPayment, sameCustomerDebts } from './utils/saleAccounting';
 
 // Kamdan-kam ochiladigan og'ir bo'limlar faqat kerak bo'lganda yuklanadi.
 const lazyLoaders = {
@@ -1187,11 +1187,10 @@ export default function App() {
       const totalRefundSum = data.totalRefund;
       setDebts((prevDebts) => {
         let remainingRefundToDeduct = totalRefundSum;
+        const sameIds = new Set(sameCustomerDebts(prevDebts, data.customerName, data.customerPhone).map((d) => d.id));
         return prevDebts.map((debt) => {
           if (remainingRefundToDeduct <= 0) return debt;
-          const isSameCustomer = 
-            (debt.customerName.toLowerCase().trim() === data.customerName.toLowerCase().trim()) ||
-            (data.customerPhone && debt.customerPhone === data.customerPhone);
+          const isSameCustomer = sameIds.has(debt.id);
 
           // Faqat shu valyutadagi nasiya kamayadi (dollarli qaytarish so'mli qarzga tegmaydi).
           if (isSameCustomer && currencyOf(debt) === returnCurrency && debt.status !== 'yopildi' && debt.remainingAmount > 0) {

@@ -3,7 +3,7 @@ import { Product, StockMovement, PaymentMethod, DebtRecord, SaleReceiptData, Cus
 import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { PrintReceiptModal } from './PrintReceiptModal';
-import { customerDebtTotal } from '../utils/saleAccounting';
+import { customerDebtTotal, sameCustomerDebts } from '../utils/saleAccounting';
 import { exactProductCodeMatch, searchProducts } from '../utils/productSearch';
 import { buildCustomerOptions, CustomerOption, normalizeSearchText, RemoteDebtHit, searchCustomerOptions } from '../utils/customerSearch';
 import { 
@@ -196,14 +196,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const cleanName = customerName.trim().toLowerCase();
     const phoneDigits = customerPhone.replace(/\D/g, '').slice(-9);
     
-    // Find debts matching name
-    const activeDebts = debts.filter(
-      (d) => {
-        const debtPhone = d.customerPhone.replace(/\D/g, '').slice(-9);
-        const sameCustomer = phoneDigits.length >= 9 ? debtPhone === phoneDigits : d.customerName.trim().toLowerCase() === cleanName;
-        return sameCustomer && d.status !== 'yopildi';
-      }
-    );
+    // Eski qarzlar: telefonsiz yozilgan nasiyalar ham shu mijozga bog'lanadi.
+    const activeDebts = sameCustomerDebts(debts, customerName, customerPhone).filter((d) => d.status !== 'yopildi');
     const totalDebt = customerDebtTotal(debts, customerName, customerPhone, cartCurrency);
 
     // Find known customer profile
