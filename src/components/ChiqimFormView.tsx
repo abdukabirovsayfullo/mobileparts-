@@ -5,6 +5,7 @@ import { formatMoney, formatDate } from '../utils/formatters';
 import { PrintReceiptModal } from './PrintReceiptModal';
 import { customerDebtTotal, sameCustomerDebts } from '../utils/saleAccounting';
 import { exactProductCodeMatch, searchProducts } from '../utils/productSearch';
+import { paidAfterMethodChange } from '../utils/checkoutCustomers';
 import { buildCustomerOptions, CustomerOption, normalizeSearchText, RemoteDebtHit, searchCustomerOptions } from '../utils/customerSearch';
 import { 
   ArrowUpRight, 
@@ -442,6 +443,12 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const effectiveRemainingDebt = roundMoney(Math.max(0, grandTotalRevenue - effectivePaid), cartCurrency);
 
     const willBeDebt = effectiveRemainingDebt > 0;
+    // Nasiya ismsiz yozilmaydi: aks holda qarz "Do'kon mijozi"ga tushib, egasi yo'qoladi.
+    if (willBeDebt && normalizeSearchText(currentCustomer) === 'dokon mijozi') {
+      setSaleError("Nasiya (yoki to'liq to'lanmagan savdo) uchun mijozni tanlang yoki ismini yozing.");
+      setShowCustomerDropdown(true);
+      return;
+    }
     const salePaymentMethod = willBeDebt ? 'nasiya' : paymentMethod === 'nasiya' ? 'naqd' : paymentMethod;
 
     const saleNotesWithDiscount = discountAmount > 0
@@ -1039,7 +1046,13 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
+                    onClick={() => {
+                      // Naqd uchun yozilgan summa Nasiyaga o'tganda "darhol to'lov" bo'lib qolib ketmasin
+                      // (aks holda kassada yo'q pul hisobga qo'shiladi).
+                      setCashReceived(paidAfterMethodChange(paymentMethod, m.id as PaymentMethod, cashReceived));
+                      setPaymentMethod(m.id as PaymentMethod);
+                      setSaleError('');
+                    }}
                     aria-pressed={paymentMethod === m.id}
                     className={`py-2 text-xs rounded-lg font-black text-center cursor-pointer transition-colors ${
                       paymentMethod === m.id
