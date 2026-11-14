@@ -4,6 +4,7 @@ import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { PrintReceiptModal } from './PrintReceiptModal';
 import { customerDebtTotal } from '../utils/saleAccounting';
+import { matchingCheckoutCustomers, paidAfterMethodChange } from '../utils/checkoutCustomers';
 import { exactProductCodeMatch, searchProducts } from '../utils/productSearch';
 import { 
   ArrowUpRight, 
@@ -215,23 +216,47 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     return { totalDebt, activeDebts, customerRecord };
   }, [customerName, customerPhone, debts, customers, cartCurrency]);
 
-  // Autocomplete matching customers
-  const matchingCustomers = useMemo(() => {
-    const q = customerName.trim().toLowerCase();
-    if (!q || q === "do'kon mijozi") {
-      return customers;
-    }
-    return customers.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.phone.toLowerCase().includes(q) ||
-        c.address.toLowerCase().includes(q)
-    );
-  }, [customerName, customers]);
+  // Search the same server registry used by Doimiy mijozlar, including for workers.
+  const [customerSearch, setCustomerSearch] = useState<{
+    query: string; rows: CustomerProfile[]; loading: boolean; error: string;
+  }>({ query: '', rows: [], loading: false, error: '' });
+  const customerQuery = customerName.trim() === "Do'kon mijozi" ? '' : customerName.trim();
+  const selectedCustomer = useRef<CustomerProfile | null>(null);
+
+  useEffect(() => {
+    if (!showCustomerDropdown || customerQuery.length < 2) return;
+    const controller = new AbortController();
+    setCustomerSearch({ query: customerQuery, rows: [], loading: true, error: '' });
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/v1/customers?q=${encodeURIComponent(customerQuery)}`, {
+          cache: 'no-store', signal: controller.signal
+        });
+        const body = await response.json();
+        if (!response.ok || !Array.isArray(body.data)) {
+          throw new Error(body.error || 'Mijozlar ro‘yxatini yuklab bo‘lmadi.');
+        }
+        if (!controller.signal.aborted) {
+          setCustomerSearch({ query: customerQuery, rows: body.data, loading: false, error: '' });
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setCustomerSearch({ query: customerQuery, rows: [], loading: false,
+            error: error instanceof Error ? error.message : 'Internetni tekshirib qayta qidiring.' });
+        }
+      }
+    }, 250);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [customerQuery, showCustomerDropdown]);
+
+  const matchingCustomers = useMemo(() => matchingCheckoutCustomers(
+    customers, customerSearch.query === customerQuery ? customerSearch.rows : [], customerQuery
+  ), [customerQuery, customers, customerSearch]);
 
   // «Doimiy mijozlar» bo'limidan tanlangan mijoz sotuv formasiga to'ldiriladi
   React.useEffect(() => {
     if (!presetCustomer) return;
+    selectedCustomer.current = { ...presetCustomer, id: "preset" };
     setCustomerName(presetCustomer.name);
     setCustomerPhone(presetCustomer.phone || '+998 ');
     setCustomerAddress(presetCustomer.address || 'Paxtaobod');
@@ -239,6 +264,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   // Helper to select a customer
   const handleSelectCustomer = (c: CustomerProfile) => {
+    selectedCustomer.current = c;
     setCustomerName(c.name);
     setCustomerPhone(c.phone || '+998 ');
     setCustomerAddress(c.address || 'Paxtaobod');
@@ -391,6 +417,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   const handleFinalizeSale = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingSale) return;
     if (cart.length === 0) {
       alert('Avval sotilayotgan tovarlarni tanlang!');
       return;
@@ -408,6 +435,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const effectiveRemainingDebt = roundMoney(Math.max(0, grandTotalRevenue - effectivePaid), cartCurrency);
 
     const willBeDebt = effectiveRemainingDebt > 0;
+    if (willBeDebt && (!customerName.trim() || currentCustomer.toLowerCase() === "do'kon mijozi")) {
+      setSaleError('Nasiya uchun mijozni tanlang yoki to‘liq ismini yozing.');
+      setShowCustomerDropdown(true);
+      return;
+    }
     const salePaymentMethod = willBeDebt ? 'nasiya' : paymentMethod === 'nasiya' ? 'naqd' : paymentMethod;
 
     const saleNotesWithDiscount = discountAmount > 0
@@ -482,6 +514,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     }
 
     saleAttempt.current = null;
+    selectedCustomer.current = null;
     setCart([]);
     setMobileTab('catalog');
     setCashReceived(0);
@@ -1005,7 +1038,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
+                    onClick={() => {
+                      setCashReceived(paidAfterMethodChange(paymentMethod, m.id as PaymentMethod, cashReceived));
+                      setPaymentMethod(m.id as PaymentMethod);
+                      setSaleError('');
+                    }}
                     aria-pressed={paymentMethod === m.id}
                     className={`py-2 text-xs rounded-lg font-black text-center cursor-pointer transition-colors ${
                       paymentMethod === m.id
@@ -1093,7 +1130,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <span>Tezkor tanlash</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                    {customers.slice(0, 8).map((c) => {
+                    {matchingCustomers.slice(0, 8).map((c) => {
                       const cDebts = debts.filter(
                         (d) => d.customerName.trim().toLowerCase() === c.name.trim().toLowerCase() && d.status !== 'yopildi'
                       );
@@ -1127,6 +1164,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        selectedCustomer.current = null;
                         setCustomerName('Do\'kon mijozi');
                         setCustomerPhone('+998 ');
                         setCustomerAddress('Do\'kondan olib ketildi (Paxtaobod)');
@@ -1143,17 +1181,26 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               {/* Customer Name Input with Autocomplete */}
               <div className="relative">
                 <label className="text-[10px] font-bold text-stone-700 block mb-1">
-                  Kimga sotildi (Mijoz / Do'kon / Usta ismi) — ixtiyoriy
+                  Kimga sotildi — nasiya uchun mijoz ismi shart
                 </label>
                 <div className="relative">
                   <User className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2.5" />
                   <input
                     type="text"
-                    placeholder="Ixtiyoriy: Akromjon, Rustam usta..."
+                    placeholder="Mijoz ismi yoki telefonini qidiring..."
+                    aria-label="Doimiy mijozni qidirish"
+                    aria-expanded={showCustomerDropdown}
+                    aria-controls="checkout-customers"
                     value={customerName}
                     onFocus={() => setShowCustomerDropdown(true)}
                     onChange={(e) => {
+                      if (selectedCustomer.current) {
+                        selectedCustomer.current = null;
+                        setCustomerPhone('+998 ');
+                        setCustomerAddress("Do'kondan olib ketildi (Paxtaobod)");
+                      }
                       setCustomerName(e.target.value);
+                      setSaleError('');
                       setShowCustomerDropdown(true);
                     }}
                     className="w-full pl-8 pr-8 py-1.5 bg-white border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
@@ -1170,8 +1217,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
 
                 {/* Autocomplete Dropdown */}
-                {showCustomerDropdown && matchingCustomers.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-30 max-h-48 overflow-y-auto divide-y divide-stone-100">
+                {showCustomerDropdown && (
+                  <div id="checkout-customers" className="mt-2 bg-white border border-stone-200 rounded-xl shadow-lg max-h-48 overflow-y-auto divide-y divide-stone-100">
                     <div className="px-3 py-1.5 bg-stone-50 text-[10px] font-bold text-stone-500 flex justify-between items-center">
                       <span>Topilgan xaridorlar ({matchingCustomers.length})</span>
                       <button
@@ -1182,6 +1229,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         <X className="w-3 h-3" />
                       </button>
                     </div>
+                    <div role="status" className="px-3 py-2 text-xs text-stone-600">
+                      {customerQuery.length < 2 ? 'Qidirish uchun kamida 2 ta belgi yozing.'
+                        : customerSearch.query !== customerQuery || customerSearch.loading ? 'Mijozlar qidirilmoqda…'
+                        : customerSearch.error || (matchingCustomers.length === 0 ? 'Mijoz topilmadi. To‘liq ismni yozing yoki Doimiy mijozlar bo‘limida tekshiring.' : '')}
+                    </div>
                     {matchingCustomers.map((c) => {
                       const cDebts = debts.filter(
                         (d) => d.customerName.trim().toLowerCase() === c.name.trim().toLowerCase() && d.status !== 'yopildi'
@@ -1189,10 +1241,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                       const cDebtTotal = cDebts.reduce((sum, d) => sum + d.remainingAmount, 0);
 
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={c.id}
                           onClick={() => handleSelectCustomer(c)}
-                          className="px-3 py-2 hover:bg-amber-50/70 cursor-pointer flex items-center justify-between transition-colors"
+                          className="w-full text-left px-3 py-2 hover:bg-amber-50/70 cursor-pointer flex items-center justify-between transition-colors"
                         >
                           <div>
                             <div className="font-bold text-xs text-stone-900 flex items-center gap-1.5">
@@ -1213,7 +1266,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                               Toza
                             </span>
                           )}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -1475,7 +1528,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 }`}
               >
                 <CheckCircle2 className="w-5 h-5" />
-                <span>{isSubmittingSale ? 'VPSga saqlanmoqda…' : 'Sotish'}</span>
+                <span>{isSubmittingSale ? 'VPSga saqlanmoqda…' : unpaidRemaining > 0 ? 'Nasiyaga sotish' : 'Sotish'}</span>
               </button>
             </div>
           </form>}

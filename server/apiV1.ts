@@ -417,9 +417,10 @@ apiV1Router.get('/cash-shifts/current', (req: Request, res: Response) => {
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
   const date = tashkentDate();
-  const previous = dataStore.getCashShifts().find(item => item.employeeId === user.id && item.businessDate < date && !item.reopenedAt);
+  const cashScope = user.role === 'owner' ? 'store' : 'employee';
+  const previous = dataStore.getCashShifts().find(item => item.employeeId === user.id && (item.cashScope || 'employee') === cashScope && item.businessDate < date && !item.reopenedAt);
   const openingCash = Math.max(0, Math.round(Number(req.query.openingCash ?? previous?.leftForNextDay ?? 0)));
-  res.json({ success: true, businessDate: date, closedShift: dataStore.getClosedShift(user.id, date) || null, suggestedOpeningCash: previous?.leftForNextDay || 0, totals: calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, date, openingCash, dataStore.getState().debts) });
+  res.json({ success: true, cashScope, businessDate: date, closedShift: dataStore.getClosedShift(user.id, date) || null, suggestedOpeningCash: previous?.leftForNextDay || 0, totals: calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.role === 'owner' ? null : user.id, date, openingCash, dataStore.getState().debts) });
 });
 
 apiV1Router.post('/cash-shifts/close', (req: Request, res: Response) => {
@@ -431,10 +432,10 @@ apiV1Router.post('/cash-shifts/close', (req: Request, res: Response) => {
     const countedCash = Math.max(0, Math.round(Number(req.body?.countedCash) || 0));
     const leftForNextDay = Math.max(0, Math.round(Number(req.body?.leftForNextDay) || 0));
     const note = String(req.body?.note || '').trim();
-    const totals = calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.id, businessDate, openingCash, dataStore.getState().debts);
+    const totals = calculateShiftTotals(dataStore.getState().movements, dataStore.getExpenses(), user.role === 'owner' ? null : user.id, businessDate, openingCash, dataStore.getState().debts);
     const difference = countedCash - totals.expectedCash;
     if (difference !== 0 && note.length < 3) return res.status(400).json({ success: false, error: "Kamomat yoki ortiqcha bo'lsa izoh yozish majburiy." });
-    const shift = dataStore.closeCashShift({ id: `shift-${crypto.randomUUID()}`, businessDate, employeeId: user.id, employeeName: user.name, openingCash, ...totals, countedCash, difference, leftForNextDay, note: note || undefined, closedAt: new Date().toISOString() });
+    const shift = dataStore.closeCashShift({ id: `shift-${crypto.randomUUID()}`, cashScope: user.role === 'owner' ? 'store' : 'employee', businessDate, employeeId: user.id, employeeName: user.name, openingCash, ...totals, countedCash, difference, leftForNextDay, note: note || undefined, closedAt: new Date().toISOString() });
     res.status(201).json({ success: true, data: shift });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error?.message || 'Smena yopilmadi.' });

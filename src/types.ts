@@ -33,6 +33,8 @@ export interface CashExpense {
 }
 
 export interface CashShift {
+  /** Missing in legacy records: personal employee shift. */
+  cashScope?: 'store' | 'employee';
   id: string;
   businessDate: string;
   employeeId: string;
