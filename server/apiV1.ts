@@ -16,8 +16,7 @@ import {
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
   buildAiReportTelegramMessage, 
-  sendLowStockNotification 
-} from './telegram';
+  sendLowStockNotification, sendTelegramPromo } from './telegram';
 import { 
   computeStoreAuditData, 
   runGeminiStoreAudit, 
@@ -811,6 +810,29 @@ apiV1Router.post('/customers/import', requireOwner, (req: Request, res: Response
   }
   added = dataStore.listCustomers('', 100000).length - before;
   res.json({ success: true, data: { added, skipped, total: dataStore.listCustomers('', 100000).length } });
+});
+
+// Kanalga reklama PDF yuborish (rahbar). Kanal manzili so'rovda keladi; bot tokeni Telegram sozlamalaridan olinadi.
+apiV1Router.post('/promo/send', requireOwner, async (req: Request, res: Response) => {
+  const { channel, caption, fileName, pdfBase64, coverBase64 } = req.body || {};
+  const chat = String(channel || '').trim();
+  if (!/^(@[A-Za-z0-9_]{4,}|-100\d{6,})$/.test(chat)) {
+    return res.status(400).json({ success: false, error: "Kanal manzili @kanal_nomi yoki -100... ko'rinishida bo'lishi kerak." });
+  }
+  const pdf = Buffer.from(String(pdfBase64 || ''), 'base64');
+  if (pdf.length < 1000 || pdf.subarray(0, 4).toString() !== '%PDF') {
+    return res.status(400).json({ success: false, error: 'PDF fayl topilmadi.' });
+  }
+  const cover = coverBase64 ? Buffer.from(String(coverBase64), 'base64') : undefined;
+  const safeName = String(fileName || 'narxlar.pdf').replace(/[^\p{L}\p{N} ._-]/gu, '').slice(0, 80) || 'narxlar.pdf';
+  const result = await sendTelegramPromo(dataStore.getTelegramConfig().botToken || '', chat, {
+    caption: String(caption || ''),
+    pdf,
+    fileName: safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`,
+    cover: cover && cover.length > 1000 ? cover : undefined
+  });
+  if (!result.success) return res.status(502).json({ success: false, error: result.error });
+  res.json({ success: true, messageIds: result.messageIds });
 });
 
 apiV1Router.put('/customers/:id', requireOwner, (req: Request, res: Response) => {

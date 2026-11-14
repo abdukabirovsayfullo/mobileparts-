@@ -233,3 +233,47 @@ export async function sendLowStockNotification(overrideConfig?: Partial<Telegram
     message: result.error || "Telegramga xabar yuborishda xatolik yuz berdi"
   };
 }
+
+/** Kanalga reklama: avval muqova rasmi (matn bilan), keyin PDF fayl. Bot kanalda admin bo'lishi kerak. */
+export async function sendTelegramPromo(
+  token: string,
+  chatId: string,
+  input: { caption: string; pdf: Buffer; fileName: string; cover?: Buffer }
+): Promise<{ success: boolean; error?: string; messageIds?: number[] }> {
+  const cleanToken = token.trim();
+  const chat = chatId.trim();
+  if (!cleanToken) return { success: false, error: "Telegram bot tokeni sozlanmagan (Sozlamalar → Telegram)." };
+  if (!chat) return { success: false, error: 'Kanal manzili kiritilmagan (masalan @mobilepartsuz).' };
+  const call = async (method: 'sendPhoto' | 'sendDocument', form: FormData) => {
+    const response = await fetch(`https://api.telegram.org/bot${cleanToken}/${method}`, { method: 'POST', body: form });
+    const result: any = await response.json().catch(() => ({}));
+    if (!result.ok) {
+      const desc = String(result.description || `Telegram xatosi (${response.status})`);
+      if (/not enough rights|administrator|chat not found|member/i.test(desc)) {
+        throw new Error(`Bot kanalga yoza olmadi: ${desc}. Botni kanalga admin qilib qo'shing ("Post messages" ruxsati bilan).`);
+      }
+      throw new Error(desc);
+    }
+    return result.result?.message_id as number;
+  };
+  try {
+    const ids: number[] = [];
+    const caption = input.caption.slice(0, 1024);
+    if (input.cover) {
+      const photo = new FormData();
+      photo.append('chat_id', chat);
+      photo.append('caption', caption);
+      photo.append('photo', new Blob([new Uint8Array(input.cover)], { type: 'image/jpeg' }), 'muqova.jpg');
+      ids.push(await call('sendPhoto', photo));
+    }
+    const doc = new FormData();
+    doc.append('chat_id', chat);
+    if (!input.cover) doc.append('caption', caption);
+    doc.append('document', new Blob([new Uint8Array(input.pdf)], { type: 'application/pdf' }), input.fileName);
+    ids.push(await call('sendDocument', doc));
+    return { success: true, messageIds: ids };
+  } catch (err: any) {
+    console.error('[Telegram] Reklama yuborilmadi:', err?.message || err);
+    return { success: false, error: err?.message || "Telegram bilan bog'lanib bo'lmadi" };
+  }
+}

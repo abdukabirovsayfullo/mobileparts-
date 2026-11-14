@@ -62,6 +62,7 @@ const lazyLoaders = {
   SupplierDebtsView: () => import('./components/SupplierDebtsView'),
   HisobchiPanelView: () => import('./components/HisobchiPanelView'),
   MovementJournalView: () => import('./components/MovementJournalView'),
+  PromoCatalogModal: () => import('./components/PromoCatalogModal'),
 };
 const ExcelImportModal = lazy(() => lazyLoaders.ExcelImportModal().then((m) => ({ default: m.ExcelImportModal })));
 const PdfReportModal = lazy(() => lazyLoaders.PdfReportModal().then((m) => ({ default: m.PdfReportModal })));
@@ -76,6 +77,7 @@ const TechnicianServiceView = lazy(() => lazyLoaders.TechnicianServiceView().the
 const SupplierDebtsView = lazy(() => lazyLoaders.SupplierDebtsView().then((m) => ({ default: m.SupplierDebtsView })));
 const HisobchiPanelView = lazy(() => lazyLoaders.HisobchiPanelView().then((m) => ({ default: m.HisobchiPanelView })));
 const MovementJournalView = lazy(() => lazyLoaders.MovementJournalView().then((m) => ({ default: m.MovementJournalView })));
+const PromoCatalogModal = lazy(() => lazyLoaders.PromoCatalogModal().then((m) => ({ default: m.PromoCatalogModal })));
 /** Kirgandan keyin bo'sh vaqtda qolgan bo'limlarni oldindan yuklab qo'yadi (keyin darhol ochiladi). */
 const prefetchLazyViews = () => {
   Object.values(lazyLoaders).forEach((load, i) => setTimeout(() => { void load().catch(() => undefined); }, i * 150));
@@ -131,6 +133,7 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(canReachPos());
   const isAdminUnlocked = authUser?.role === 'owner';
+  const [isPromoOpen, setIsPromoOpen] = useState(false);
   useEffect(() => {
     if (!authUser) return;
     const timer = window.setTimeout(prefetchLazyViews, 2500);
@@ -1841,6 +1844,7 @@ export default function App() {
             onAddCategory={handleAddCategory}
             onEditCategory={handleEditCategory}
             onDeleteCategory={handleDeleteCategory}
+            onOpenPromo={isAdminUnlocked ? () => setIsPromoOpen(true) : undefined}
             onOpenExcelImport={() => setIsExcelImportModalOpen(true)}
             onOpenPdfReports={handleOpenPdfReports}
             onNavigateToAiAnalyst={() => setActiveTab('ai-analyst')}
@@ -2587,6 +2591,9 @@ export default function App() {
         </div>
       </footer>
       </div>
+      {isPromoOpen && isAdminUnlocked && (
+        <PromoCatalogModal products={products} categories={categories} onClose={() => setIsPromoOpen(false)} />
+      )}
     </div>
     </Suspense>
   );

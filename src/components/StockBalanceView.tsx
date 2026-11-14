@@ -42,6 +42,8 @@ interface StockBalanceViewProps {
   onOpenExcelImport?: () => void;
   onOpenPdfReports?: (reportType?: 'out_of_stock' | 'stock_inventory' | 'low_stock') => void;
   onNavigateToAiAnalyst?: () => void;
+  /** Rahbar: kanal uchun reklama PDF. */
+  onOpenPromo?: () => void;
 }
 
 export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
@@ -59,6 +61,7 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
   onDeleteCategory,
   onOpenExcelImport,
   onOpenPdfReports,
+  onOpenPromo,
   onNavigateToAiAnalyst
 }) => {
   const [visibleRows, setVisibleRows] = useState(75);
@@ -438,6 +441,17 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
               <Tag className="w-4 h-4 text-amber-600" />
               <span>🏷️ Kataloglar ({availableCategories.length})</span>
             </button>
+
+            {onOpenPromo && (
+              <button
+                type="button"
+                onClick={onOpenPromo}
+                className="px-3.5 py-2.5 bg-stone-950 hover:bg-stone-800 text-amber-400 text-xs sm:text-sm font-black rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                title="Kategoriya va brend bo'yicha kanal uchun reklama PDF"
+              >
+                <span>📣 Reklama PDF</span>
+              </button>
+            )}
 
             {onOpenPdfReports && (
               <button
