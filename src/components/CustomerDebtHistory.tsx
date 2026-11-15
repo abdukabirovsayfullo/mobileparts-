@@ -15,7 +15,7 @@ export function CustomerDebtHistory({debts, movements, query, onPay}: {debts: De
   const [selected, setSelected] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [onlyActive, setOnlyActive] = useState(true);
+  const [onlyActive, setOnlyActive] = useState(false);
   const groups = useMemo(() => {
     const map = new Map<string, DebtRecord[]>();
     for(const d of debts) { const key=identity(d); map.set(key,[...(map.get(key)||[]),d]); }

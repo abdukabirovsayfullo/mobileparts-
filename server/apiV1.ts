@@ -850,7 +850,7 @@ apiV1Router.get('/returns/search', (req: Request, res: Response) => {
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'CRM hisobiga kiring.' });
   const query = typeof req.query.q === 'string' ? req.query.q : '';
-  res.json({ success: true, windowDays: WORKER_RETURN_WINDOW_DAYS, data: dataStore.searchReturnableSales(query, user) });
+  res.json({ success: true, windowDays: WORKER_RETURN_WINDOW_DAYS, data: dataStore.searchReturnableSales(query, user, { date: typeof req.query.date === 'string' ? req.query.date : undefined, productId: typeof req.query.productId === 'string' ? req.query.productId : undefined }) });
 });
 
 apiV1Router.post('/returns', (req: Request, res: Response) => {
@@ -867,6 +867,7 @@ apiV1Router.post('/returns', (req: Request, res: Response) => {
       ownerApprovedBy = (approval as { ownerName: string }).ownerName;
     }
     const result = dataStore.recordReturn({
+      requestId: typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
       lines: Array.isArray(req.body?.lines) ? req.body.lines : [],
       reason: String(req.body?.reason || ''),
       refundMethod: req.body?.refundMethod,

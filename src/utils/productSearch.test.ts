@@ -4,3 +4,9 @@ test('harf, apostrof, belgi va kirill normallashadi',()=>{assert.equal(normalize
 test('so‘z tartibi, qisman va bir harf xato topiladi',()=>{assert.equal(searchProducts(products,'samsung kabel')[0].id,'p2');assert.equal(searchProducts(products,'jensk')[0].id,'p1');assert.equal(searchProducts(products,'chexl')[0].id,'p1');assert.equal(searchProducts(products,'кабел type c')[0].id,'p2');});
 test('aniq shtrix kod ustun va yagona',()=>assert.equal(exactProductCodeMatch(products,'abc123')?.id,'p2'));
 test('1500 tovarda qidiruv tez ishlaydi',()=>{const large=Array.from({length:1500},(_,i)=>({...products[i%2],id:`p${i}`,barcode:`B${i}`}));const started=performance.now();assert.ok(searchProducts(large,'type c kabel').length>0);assert.ok(performance.now()-started<250);});
+
+test('hidden random IDs do not create unrelated model search matches', () => {
+  const p = {id:'prod-a51-random',name:'SAMSUNG A15 LCD PRO',category:'EKRAN',brand:'Samsung',barcode:'123456',stock:2} as any;
+  assert.equal(searchProducts([p],'a51').length,0);
+  assert.equal(searchProducts([p],p.id).length,1);
+});

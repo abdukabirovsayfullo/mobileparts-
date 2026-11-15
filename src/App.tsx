@@ -1062,12 +1062,8 @@ export default function App() {
 
   // Open Vazvrat Modal (Optionally pre-filled with an existing movement / sale)
   const handleOpenVazvratModal = (movement?: StockMovement) => {
-    if (authUser?.role === 'worker') {
-      setIsWorkerReturnOpen(true);
-      return;
-    }
     setVazvratInitialMovement(movement);
-    setIsVazvratModalOpen(true);
+    setIsWorkerReturnOpen(true);
   };
 
   // Confirm Vazvrat (Returned Goods)
@@ -1691,7 +1687,7 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <ReportsDashboard onOpenPdfReports={handleOpenPdfReports} />
+            <ReportsDashboard debts={debts} movements={movements} onOpenPdfReports={handleOpenPdfReports} />
           )
         )}
 
@@ -1954,8 +1950,11 @@ export default function App() {
 
       {/* Ishchi uchun serverga yoziladigan tovar qaytarish */}
       <WorkerReturnModal
-        isOpen={isWorkerReturnOpen && authUser?.role === 'worker'}
-        onClose={() => setIsWorkerReturnOpen(false)}
+        isOpen={isWorkerReturnOpen}
+        products={products}
+        prefillMovement={vazvratInitialMovement}
+        isOwner={authUser?.role === 'owner'}
+        onClose={() => { setIsWorkerReturnOpen(false); setVazvratInitialMovement(undefined); }}
         cashierName={authUser?.name || 'Kassir'}
         onDone={(receipt) => {
           fetchLatestStateFromServer();
@@ -1965,7 +1964,7 @@ export default function App() {
 
       {/* Vazvrat Modal (Mijozdan tovar qaytarish) */}
       <VazvratModal
-        isOpen={isVazvratModalOpen}
+        isOpen={false}
         onClose={() => {
           setIsVazvratModalOpen(false);
           setVazvratInitialMovement(undefined);

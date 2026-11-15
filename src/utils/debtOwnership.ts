@@ -1,3 +1,4 @@
+import { debtCustomerError } from './checkoutCustomer';
 import type { DebtRecord, StockMovement } from '../types';
 
 /** A payment or sync may change balances, never the owner of an existing debt. */
@@ -8,6 +9,11 @@ export function protectDebtOwnership(incoming: DebtRecord[], existing: DebtRecor
     const prior = known.get(d.id);
     if (prior) return { ...d, customerName: prior.customerName, customerPhone: prior.customerPhone, movementId: prior.movementId, currency: prior.currency };
     const sale = d.movementId ? sales.get(d.movementId) : undefined;
-    return sale ? { ...d, customerName: sale.counterparty, customerPhone: sale.customerPhone || '', currency: sale.currency } : d;
+    const result = sale ? { ...d, customerName: sale.counterparty, customerPhone: sale.customerPhone || '', currency: sale.currency } : d;
+    if (result.remainingAmount > 0) {
+      const error = debtCustomerError(result.customerName, result.customerPhone);
+      if (error) throw new Error(error);
+    }
+    return result;
   });
 }

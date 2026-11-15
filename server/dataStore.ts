@@ -1,3 +1,4 @@
+import { debtCustomerError } from '../src/utils/checkoutCustomer';
 import { protectDebtOwnership } from '../src/utils/debtOwnership';
 import fs from 'fs';
 import path from 'path';
@@ -29,7 +30,7 @@ export interface ReturnableLine {
   movementId: string; productId: string; productName: string; soldQuantity: number; returnedQuantity: number; returnableQuantity: number; unitRefund: number; lineTotal: number;
 }
 export interface ReturnableSale {
-  key: string; currency: Currency; receiptNumber: string; timestamp: string; customerName: string; employeeName: string; paymentMethod?: string; withinWorkerWindow: boolean; lines: ReturnableLine[];
+  key: string; currency: Currency; receiptNumber: string; timestamp: string; customerName: string; customerPhone?: string; employeeName: string; paymentMethod?: string; withinWorkerWindow: boolean; lines: ReturnableLine[];
 }
 import { 
   INITIAL_PRODUCTS, 
@@ -561,6 +562,16 @@ class DataStore {
     }
     if (saleCurrencies.size > 1) throw new Error("Bitta chekda faqat bitta valyuta bo'lishi mumkin. So'mli va dollarli tovarlarni alohida savdo qiling.");
     const saleCurrency: Currency = saleCurrencies.has('USD') ? 'USD' : 'UZS';
+    const previewAmounts = salePayload.items.map(item => {
+      const p = this.getProductById(item.productId || item.barcode || '')!;
+      return roundMoney(Number(item.unitPrice || p.sellingPrice) * Math.max(1, Math.floor(Number(item.quantity) || 1)), saleCurrency);
+    });
+    const previewTotal = previewAmounts.reduce((a,b) => a+b, 0);
+    const preview = saleAccounting(previewAmounts, salePayload.paidNow ?? (paymentMethod === 'nasiya' ? 0 : previewTotal), discount, saleCurrency);
+    if (preview.remaining > 0) {
+      const error = debtCustomerError(customerName, customerPhone);
+      if (error) throw new Error(error);
+    }
     const previousCustomerDebt = customerDebtTotal(this.state.debts, customerName, customerPhone, saleCurrency);
 
     for (const item of salePayload.items) {
@@ -859,7 +870,7 @@ class DataStore {
 
 
   /** Qaytarish uchun sotuvlarni qidiradi (tannarx/foyda maydonlarisiz). Ishchi faqat 7 kunlik oynani ko'radi. */
-  public searchReturnableSales(query: string, user: AuthUser): ReturnableSale[] {
+  public searchReturnableSales(query: string, user: AuthUser, filters: { date?: string; productId?: string } = {}): ReturnableSale[] {
     const today = tashkentDate();
     const tokens = normalizeName(query).split(' ').filter(Boolean);
     const groups = new Map<string, ReturnableSale>();
@@ -867,22 +878,23 @@ class DataStore {
       if (m.type !== 'chiqim' || m.isReturn) continue;
       const within = isWithinWorkerWindow(m.timestamp, today);
       if (user.role === 'worker' && !within) continue;
-      const key = m.receiptNumber || m.batchSaleId || m.id;
-      const haystack = normalizeName(`${m.receiptNumber || ''} ${m.counterparty} ${m.productName}`);
-      if (tokens.length && !tokens.every(token => haystack.includes(token))) continue;
+      if (filters.date && tashkentDate(m.timestamp) !== filters.date) continue;
+      const key = m.batchSaleId || m.receiptNumber || m.id;
       const returned = returnedQuantity(this.state.movements, m.id);
-      const group = groups.get(key) || { key, currency: currencyOf(m), receiptNumber: m.receiptNumber || '', timestamp: m.timestamp, customerName: m.counterparty, employeeName: m.employeeName || '', paymentMethod: m.paymentMethod, withinWorkerWindow: within, lines: [] };
-      group.lines.push({
-        movementId: m.id, productId: m.productId, productName: m.productName, soldQuantity: m.quantity, returnedQuantity: returned,
-        returnableQuantity: Math.max(0, m.quantity - returned), unitRefund: refundAmount(m, 1), lineTotal: m.totalRevenue
-      });
+      const group = groups.get(key) || { key, currency: currencyOf(m), receiptNumber: m.receiptNumber || '', timestamp: m.timestamp, customerName: m.counterparty, customerPhone: m.customerPhone, employeeName: m.employeeName || '', paymentMethod: m.paymentMethod, withinWorkerWindow: within, lines: [] };
+      group.lines.push({ movementId: m.id, productId: m.productId, productName: m.productName, soldQuantity: m.quantity, returnedQuantity: returned, returnableQuantity: Math.max(0, m.quantity - returned), unitRefund: refundAmount(m, 1), lineTotal: m.totalRevenue });
       groups.set(key, group);
     }
-    return [...groups.values()].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 15);
+    return [...groups.values()].filter(group => {
+      if (filters.productId && !group.lines.some(l => l.productId === filters.productId)) return false;
+      const text = normalizeName(`${group.receiptNumber} ${group.customerName} ${group.lines.map(l => l.productName).join(' ')}`);
+      return tokens.every(token => text.includes(token));
+    }).sort((a,b) => b.timestamp.localeCompare(a.timestamp)).slice(0,100);
   }
 
   /** Tovar qaytarish (vazvrat). Hammasi tekshiriladi, keyin bitta yozuv. */
   public recordReturn(input: {
+    requestId?: string;
     lines: Array<{ movementId: string; quantity: number }>;
     reason: string;
     refundMethod: 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
@@ -891,6 +903,14 @@ class DataStore {
     user: AuthUser;
     ownerApprovedBy?: string;
   }): { receiptNumber: string; totalRefund: number; movements: StockMovement[]; debtReduced: number; customerName: string; currency: Currency } {
+    const requestId = input.requestId?.trim().slice(0,100);
+    if (requestId) {
+      const previous = this.state.movements.filter(m => m.type === 'vazvrat' && m.returnRequestId === requestId && m.employeeId === input.user.id);
+      if (previous.length) {
+        const totalRefund = previous.reduce((s,m) => s+m.totalRevenue,0);
+        return { receiptNumber: previous[0].receiptNumber || '', totalRefund, movements: previous, debtReduced: previous[0].paymentMethod === 'nasiya' ? totalRefund : 0, customerName: previous[0].counterparty, currency: currencyOf(previous[0]) };
+      }
+    }
     const reason = String(input.reason || '').trim();
     if (reason.length < 3) throw new Error("Qaytarish sababi kamida 3 ta belgidan iborat bo'lishi kerak.");
     if (!['naqd', 'click_payme', 'uzum', 'nasiya'].includes(input.refundMethod)) throw new Error("Qaytarish usuli noto'g'ri.");
@@ -919,6 +939,9 @@ class DataStore {
     const returnCurrency: Currency = returnCurrencies.has('USD') ? 'USD' : 'UZS';
     const moneyLabel = (value: number) => (returnCurrency === 'USD' ? `$${value}` : `${value} so'm`);
     const customerName = prepared[0].original.counterparty;
+    if (prepared.some(item => !sameCustomer(item.original.counterparty, item.original.customerPhone, customerName, prepared[0].original.customerPhone))) {
+      throw new Error('Bitta qaytarishda faqat bitta mijozning tovarlari bo‘lishi mumkin.');
+    }
     const totalRefund = roundMoney(prepared.reduce((sum, item) => sum + item.refund, 0), returnCurrency);
     const nowIso = new Date().toISOString();
     const receiptNumber = `VZV-${nowIso.slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -928,10 +951,23 @@ class DataStore {
     if (input.refundMethod === 'nasiya') {
       const customerPhone = prepared[0].original.customerPhone;
       if (prepared.some(item => !sameCustomer(item.original.counterparty, item.original.customerPhone, customerName, customerPhone))) throw new Error("Nasiyaga qaytarish faqat bitta mijozning sotuvlari uchun mumkin.");
-      const result = applyRefundToDebts(this.state.debts, customerName, customerPhone, totalRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name }, returnCurrency);
-      if (result.applied < totalRefund) throw new Error(`${customerName} mijozning faol nasiyasi ${moneyLabel(result.applied)}; qaytarish ${moneyLabel(totalRefund)}. Naqd yoki boshqa usulni tanlang.`);
-      nextDebts = result.debts;
-      debtReduced = result.applied;
+      const refundGroups = new Map<string, typeof prepared>();
+      for (const item of prepared) {
+        const key = item.original.batchSaleId || item.original.id;
+        refundGroups.set(key,[...(refundGroups.get(key)||[]),item]);
+      }
+      nextDebts = this.state.debts;
+      for (const items of refundGroups.values()) {
+        const original = items[0].original;
+        const saleIds = new Set(this.state.movements.filter(m => m.type === 'chiqim' && (original.batchSaleId ? m.batchSaleId === original.batchSaleId : m.id === original.id)).map(m => m.id));
+        const linkedDebts = nextDebts.filter(d => d.movementId && saleIds.has(d.movementId));
+        const groupRefund = roundMoney(items.reduce((n,i)=>n+i.refund,0),returnCurrency);
+        const result = applyRefundToDebts(linkedDebts, customerName, customerPhone, groupRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name }, returnCurrency);
+        if (result.applied < groupRefund) throw new Error(`${original.receiptNumber || original.id}: shu xaridning qolgan nasiyasi ${moneyLabel(result.applied)}, qaytarish ${moneyLabel(groupRefund)}. Qaytarish usulini tekshiring.`);
+        const changed = new Map(result.debts.map(d => [d.id,d]));
+        nextDebts = nextDebts.map(d => changed.get(d.id) || d);
+        debtReduced = roundMoney(debtReduced + result.applied,returnCurrency);
+      }
     }
 
     const restoreStock = input.restoreStock !== false;
@@ -941,6 +977,7 @@ class DataStore {
       const totalCost = roundMoney(original.unitCost * quantity, returnCurrency);
       const movement: StockMovement = {
         id: `vazvrat-${Date.now()}-${index}-${crypto.randomBytes(3).toString('hex')}`,
+        returnRequestId: requestId,
         type: 'vazvrat', productId: original.productId, productName: original.productName, category: original.category,
         ...(returnCurrency === 'USD' ? { currency: 'USD' as const } : {}),
         quantity, unitCost: original.unitCost, unitPrice: roundMoney(refund / quantity, returnCurrency), totalCost, totalRevenue: refund, profit: roundMoney(refund - totalCost, returnCurrency),

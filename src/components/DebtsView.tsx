@@ -1,3 +1,4 @@
+import { DebtPaymentsPanel } from './DebtPaymentsPanel';
 import { CustomerDebtHistory } from './CustomerDebtHistory';
 import React, { useState, useMemo } from 'react';
 import { DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
@@ -351,6 +352,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           </button>
         </div>
       </div>
+
+      <DebtPaymentsPanel debts={debts} movements={movements} />
 
       {viewMode === 'tarix' && <CustomerDebtHistory debts={debts} movements={movements} query={searchQuery} onPay={handleOpenPayment} />}
 
