@@ -99,6 +99,7 @@ export interface StockMovement {
   customerAddress?: string; // Qayerga sotildi (Manzil / Joylashuv)
   receiptNumber?: string; // Chek / Kvitansiya raqami
   batchSaleId?: string;   // Bitta savatdagi barcha tovarlar uchun umumiy ID
+  returnRequestId?: string;
   originalMovementId?: string; // Qaytarilgan dastlabki sotuv (chiqim) ID si
   returnReason?: string;  // Tovar qaytarilish sababi
   isReturn?: boolean;     // Qaytarilgan tovar belgisi

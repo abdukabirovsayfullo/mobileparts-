@@ -11,3 +11,7 @@ test('new sale-linked debt takes its owner from the original sale',()=>{
  const sale={id:'sale',type:'chiqim',counterparty:'ASL MIJOZ',customerPhone:'907777777'} as StockMovement;
  const [result]=protectDebtOwnership([original],[],[sale]);assert.equal(result.customerName,'ASL MIJOZ');assert.equal(result.customerPhone,'907777777');
 });
+
+test('new anonymous debt cannot enter through a browser snapshot',()=>{
+ assert.throws(()=>protectDebtOwnership([{...original,id:'new',customerName:"Do'kon mijozi",customerPhone:'+998'}],[],[]),/mijoz/);
+});

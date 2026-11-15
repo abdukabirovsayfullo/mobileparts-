@@ -14,7 +14,7 @@ test('dollar tovar o‘z valyutasida kirim/savdo/nasiya/qaytariladi va so‘m bi
   context.after(async () => {
     await new Promise(resolve => setTimeout(resolve, 400)); // scheduleSave kutayotgan yozuvlar tugasin
     process.chdir(originalCwd);
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const { dataStore } = await import(`./dataStore.ts?currency=${Date.now()}`);
@@ -100,7 +100,7 @@ test('TELEFON katalogidagi yangi tovar valyuta ko‘rsatilmasa ham dollarda kiri
   context.after(async () => {
     await new Promise(resolve => setTimeout(resolve, 400));
     process.chdir(originalCwd);
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const { dataStore } = await import(`./dataStore.ts?catalog=${Date.now()}`);
   const kirim = dataStore.recordKirim({ items: [{ name: 'Novey A65', category: 'TELEFON', quantity: 3, unitCost: 18.5, sellingPrice: 23 }] });

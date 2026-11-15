@@ -1,242 +1,86 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCcw, Search, X } from 'lucide-react';
-import type { Currency, PaymentMethod, SaleReceiptData } from '../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { Currency, PaymentMethod, Product, SaleReceiptData, StockMovement } from '../types';
+import { currencyOf, roundMoney } from '../utils/money';
 import { formatMoney } from '../utils/formatters';
+import { searchProducts } from '../utils/productSearch';
+import { sameCustomer } from '../utils/customerIdentity';
 
-interface ReturnableLine {
-  movementId: string;
-  productName: string;
-  soldQuantity: number;
-  returnedQuantity: number;
-  returnableQuantity: number;
-  unitRefund: number;
-  lineTotal: number;
-}
-
-interface ReturnableSale {
-  key: string;
-  currency?: Currency;
-  receiptNumber: string;
-  timestamp: string;
-  customerName: string;
-  employeeName: string;
-  paymentMethod?: string;
-  lines: ReturnableLine[];
-}
-
-interface ReturnResult {
-  currency?: Currency;
-  receiptNumber: string;
-  totalRefund: number;
-  customerName: string;
-  debtReduced: number;
-  movements: Array<{ productId: string; productName: string; category: string; quantity: number; unitPrice: number; totalRevenue: number }>;
-}
-
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
-  cashierName: string;
-  onDone: (receipt: SaleReceiptData | null) => void;
-}
-
-const REASONS = [
-  'Mos kelmadi (model / razmer)',
-  'Nuqsonli / ishlamadi',
-  'Mijoz fikridan qaytdi',
-  'Boshqa tovarga almashtirildi',
-  'Noto‘g‘ri sotilgan'
-];
-
-const METHODS: Array<{ value: PaymentMethod; label: string }> = [
-  { value: 'naqd', label: 'Naqd pul qaytarildi' },
-  { value: 'click_payme', label: 'Click / karta' },
-  { value: 'uzum', label: 'Uzum' },
-  { value: 'nasiya', label: 'Nasiya qarzidan ayirish' }
-];
-
-const dateLabel = (iso: string) => new Date(iso).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-
-export const WorkerReturnModal: React.FC<Props> = ({ isOpen, onClose, cashierName, onDone }) => {
-  const [query, setQuery] = useState('');
-  const [sales, setSales] = useState<ReturnableSale[]>([]);
-  const [selected, setSelected] = useState<ReturnableSale | null>(null);
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [reason, setReason] = useState(REASONS[0]);
-  const [customReason, setCustomReason] = useState('');
-  const [method, setMethod] = useState<PaymentMethod>('naqd');
-  const [restoreStock, setRestoreStock] = useState(true);
-  const [needsOwner, setNeedsOwner] = useState(false);
-  const [ownerPin, setOwnerPin] = useState('');
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState<ReturnResult | null>(null);
-
-  const reset = useCallback(() => {
-    setQuery(''); setSelected(null); setQuantities({}); setReason(REASONS[0]); setCustomReason('');
-    setMethod('naqd'); setRestoreStock(true); setNeedsOwner(false); setOwnerPin(''); setError(''); setSuccess(null);
-  }, []);
-
-  useEffect(() => { if (isOpen) reset(); }, [isOpen, reset]);
-
-  const search = useCallback(async (text: string) => {
-    try {
-      const response = await fetch(`/api/v1/returns/search?q=${encodeURIComponent(text)}`, { cache: 'no-store' });
-      const body = await response.json();
-      if (response.ok && Array.isArray(body.data)) setSales(body.data);
-    } catch {
-      /* tarmoq xatosi: ro'yxat o'zgarmaydi */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen || selected) return;
-    const timer = window.setTimeout(() => { search(query); }, 250);
-    return () => window.clearTimeout(timer);
-  }, [isOpen, selected, query, search]);
-
-  const chosenLines = useMemo(
-    () => (selected?.lines || []).map(line => ({ line, quantity: quantities[line.movementId] || 0 })).filter(item => item.quantity > 0),
-    [selected, quantities]
-  );
-  const total = chosenLines.reduce((sum, item) => sum + item.line.unitRefund * item.quantity, 0);
-  const finalReason = reason === 'Boshqa' ? customReason.trim() : reason;
-
-  if (!isOpen) return null;
-
-  const submit = async () => {
-    if (!selected) return;
-    setSaving(true); setError('');
-    try {
-      const response = await fetch('/api/v1/returns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lines: chosenLines.map(item => ({ movementId: item.line.movementId, quantity: item.quantity })),
-          reason: finalReason,
-          refundMethod: method,
-          restoreStock,
-          ownerPin: needsOwner ? ownerPin : undefined
-        })
-      });
-      const body = await response.json();
-      if (response.status === 403 && body.code === 'OWNER_APPROVAL_REQUIRED') {
-        setNeedsOwner(true);
-        setError(body.error || 'Bu sotuv 7 kundan eski: Rahbar PIN-kodi kerak.');
-        return;
-      }
-      if (!response.ok) throw new Error(body.error || 'Qaytarish saqlanmadi.');
-      const result: ReturnResult = body.data;
-      setSuccess(result);
-      const receipt: SaleReceiptData = {
-        receiptNumber: result.receiptNumber,
-        date: new Date().toISOString(),
-        customerName: result.customerName,
-        paymentMethod: method,
-        items: result.movements.map(item => ({ id: item.productId, name: item.productName, category: item.category, quantity: item.quantity, unitPrice: item.unitPrice, total: item.totalRevenue })),
-        subtotal: result.totalRefund,
-        total: result.totalRefund,
-        notes: `Vazvrat: ${finalReason}`,
-        cashierName,
-        isReturn: true,
-        returnReason: finalReason
-      };
-      onDone(receipt);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Qaytarish saqlanmadi.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const canSubmit = chosenLines.length > 0 && finalReason.length >= 3 && (!needsOwner || /^\d{4,8}$/.test(ownerPin)) && !saving;
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label="Tovar qaytarish" className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-400 text-stone-950"><RotateCcw className="h-5 w-5" /></span>
-          <div className="flex-1"><h2 className="text-base font-black">Tovar qaytarish (vazvrat)</h2><p className="text-[11px] text-stone-500">Oxirgi 7 kundagi sotuvni o‘zingiz qaytara olasiz</p></div>
-          <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-lg p-2 hover:bg-stone-100"><X className="h-5 w-5" /></button>
-        </div>
-
-        {success ? (
-          <div className="space-y-3 p-5 text-center">
-            <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
-            <h3 className="text-lg font-black">Qaytarish qayd etildi</h3>
-            <p className="text-sm text-stone-600">Chek: <strong>{success.receiptNumber}</strong> • Mijoz: {success.customerName}</p>
-            <p className="text-2xl font-black">{formatMoney(success.totalRefund, success.currency)}</p>
-            {success.debtReduced > 0 && <p className="text-xs text-stone-500">Nasiya qarzi {formatMoney(success.debtReduced, success.currency)} ga kamaytirildi.</p>}
-            <button type="button" onClick={onClose} className="w-full rounded-xl bg-amber-400 py-3 text-sm font-black text-stone-950">Yopish</button>
-          </div>
-        ) : !selected ? (
-          <div className="space-y-3 p-4">
-            <label className="flex items-center gap-2 rounded-xl border border-stone-300 px-3 py-2.5">
-              <Search className="h-4 w-4 text-stone-400" />
-              <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Chek raqami, mijoz yoki tovar nomi" className="w-full bg-transparent text-sm outline-none" />
-            </label>
-            {sales.length === 0 && <p className="py-8 text-center text-sm text-stone-500">Oxirgi 7 kunda mos sotuv topilmadi.</p>}
-            <div className="space-y-2">
-              {sales.map(sale => (
-                <button key={sale.key} type="button" onClick={() => { setSelected(sale); setQuantities({}); setNeedsOwner(false); setError(''); }}
-                  className="w-full rounded-2xl border border-stone-200 p-3 text-left hover:border-amber-400 hover:bg-amber-50">
-                  <div className="flex items-center justify-between gap-2 text-xs text-stone-500"><span className="font-bold text-stone-800">{sale.receiptNumber || 'Chek raqamsiz'}</span><span>{dateLabel(sale.timestamp)}</span></div>
-                  <div className="mt-1 text-sm font-bold">{sale.customerName}</div>
-                  <div className="mt-0.5 text-xs text-stone-600">{sale.lines.map(line => `${line.productName} ×${line.soldQuantity}`).join(', ')}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4 p-4">
-            <button type="button" onClick={() => setSelected(null)} className="text-xs font-bold text-amber-700">← Boshqa sotuvni tanlash</button>
-            <div className="rounded-xl bg-stone-50 p-3 text-xs"><strong>{selected.receiptNumber}</strong> • {selected.customerName} • {dateLabel(selected.timestamp)}</div>
-            <div className="space-y-2">
-              {selected.lines.map(line => (
-                <div key={line.movementId} className="flex items-center gap-3 rounded-xl border border-stone-200 p-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold">{line.productName}</div>
-                    <div className="text-[11px] text-stone-500">Sotilgan {line.soldQuantity} • qaytarilgan {line.returnedQuantity} • bir donasi {formatMoney(line.unitRefund, selected?.currency)}</div>
-                  </div>
-                  {line.returnableQuantity > 0 ? (
-                    <label className="text-[11px] font-bold text-stone-600">Soni
-                      <input type="number" min={0} max={line.returnableQuantity} value={quantities[line.movementId] || ''}
-                        onChange={event => setQuantities(prev => ({ ...prev, [line.movementId]: Math.min(line.returnableQuantity, Math.max(0, Math.floor(Number(event.target.value) || 0))) }))}
-                        placeholder="0" className="mt-0.5 block w-16 rounded-lg border border-stone-300 px-2 py-1.5 text-sm" />
-                    </label>
-                  ) : <span className="text-[11px] font-bold text-stone-400">Qaytarilgan</span>}
-                </div>
-              ))}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-bold">Sabab
-                <select value={reason} onChange={event => setReason(event.target.value)} className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
-                  {REASONS.map(item => <option key={item}>{item}</option>)}
-                  <option>Boshqa</option>
-                </select>
-              </label>
-              <label className="text-xs font-bold">Pul qaytarish usuli
-                <select value={method} onChange={event => setMethod(event.target.value as PaymentMethod)} className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
-                  {METHODS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </label>
-            </div>
-            {reason === 'Boshqa' && <input value={customReason} onChange={event => setCustomReason(event.target.value)} placeholder="Sababni yozing (kamida 3 belgi)" className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />}
-            <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={restoreStock} onChange={event => setRestoreStock(event.target.checked)} /> Tovar omborga qaytarilsin (yaroqsiz bo‘lsa belgini oling)</label>
-
-            {needsOwner && (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-                <p className="flex items-center gap-2 text-xs font-bold text-amber-800"><AlertTriangle className="h-4 w-4" /> Bu sotuv 7 kundan eski. Rahbar PIN-kodi kerak.</p>
-                <input type="password" inputMode="numeric" value={ownerPin} onChange={event => setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="Rahbar PIN-kodi" className="mt-2 w-full rounded-xl border border-amber-300 px-3 py-2.5 text-sm" />
-              </div>
-            )}
-            {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
-            <div className="flex items-center justify-between rounded-xl bg-stone-900 px-4 py-3 text-white"><span className="text-xs">Qaytariladigan summa</span><strong className="text-lg text-amber-300">{formatMoney(total, selected?.currency)}</strong></div>
-            <button type="button" disabled={!canSubmit} onClick={submit} className="w-full rounded-xl bg-amber-400 py-3 text-sm font-black text-stone-950 disabled:opacity-40">{saving ? 'Saqlanmoqda…' : 'Qaytarishni tasdiqlash'}</button>
-          </div>
-        )}
+type Line = { movementId: string; productId: string; productName: string; soldQuantity: number; returnedQuantity: number; returnableQuantity: number; unitRefund: number; lineTotal: number };
+type Sale = { key: string; currency?: Currency; receiptNumber: string; timestamp: string; customerName: string; customerPhone?: string; employeeName: string; paymentMethod?: PaymentMethod; lines: Line[] };
+type Pick = { sale: Sale; line: Line; quantity: number };
+interface Props { isOpen: boolean; onClose: () => void; cashierName: string; onDone: (receipt: SaleReceiptData | null) => void; products?: Product[]; prefillMovement?: StockMovement; isOwner?: boolean }
+const dateLabel = (s: string) => new Date(s).toLocaleString('uz-UZ', { timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit' });
+const reasons = ['Model / razmer mos kelmadi','Nuqsonli / ishlamadi','Mijoz fikridan qaytdi','Boshqa tovarga almashtirish','Boshqa'];
+export function WorkerReturnModal({isOpen,onClose,cashierName,onDone,products=[],prefillMovement,isOwner=false}: Props) {
+  const [tab,setTab]=useState<'history'|'products'>('history');
+  const [query,setQuery]=useState(''),[date,setDate]=useState(''),[productQuery,setProductQuery]=useState('');
+  const [productId,setProductId]=useState(''),[sales,setSales]=useState<Sale[]>([]),[selected,setSelected]=useState<Sale|null>(null);
+  const [basket,setBasket]=useState<Record<string,Pick>>({});
+  const [method,setMethod]=useState<PaymentMethod>('naqd'),[reason,setReason]=useState(reasons[0]),[custom,setCustom]=useState('');
+  const [restore,setRestore]=useState(true),[print,setPrint]=useState(false),[error,setError]=useState(''),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false);
+  const [needsOwner,setNeedsOwner]=useState(false),[pin,setPin]=useState(''),[success,setSuccess]=useState('');
+  const prefilled=useRef(false), busy=useRef(false);
+  const attempt=useRef<{payload:string;id:string}|null>(null);
+  useEffect(()=>{if(!isOpen)return;setTab('history');setQuery(prefillMovement?.receiptNumber||'');setDate('');setProductId('');setProductQuery('');setSelected(null);setBasket({});setMethod('naqd');setReason(reasons[0]);setCustom('');setRestore(true);setPrint(false);setError('');setSuccess('');setNeedsOwner(false);setPin('');prefilled.current=false;attempt.current=null;},[isOpen,prefillMovement]);
+  useEffect(()=>{
+    if(!isOpen)return; const abort=new AbortController();
+    const timer=setTimeout(async()=>{setLoading(true);try {
+      const params=new URLSearchParams({q:query,date,productId});
+      const response=await fetch('/api/v1/returns/search?'+params,{cache:'no-store',signal:abort.signal});const body=await response.json();
+      if(!response.ok)throw Error(body.error||'Savdolar yuklanmadi');
+      if(abort.signal.aborted)return;setSales(body.data||[]);
+      if(prefillMovement&&!prefilled.current){const sale=(body.data as Sale[]).find(s=>s.lines.some(l=>l.movementId===prefillMovement.id));if(sale){setSelected(sale);setMethod(sale.paymentMethod||'naqd');prefilled.current=true;}}
+    }catch(e){if(!abort.signal.aborted)setError(e instanceof Error?e.message:'Savdolar yuklanmadi');}finally{if(!abort.signal.aborted)setLoading(false);}},200);
+    return()=>{clearTimeout(timer);abort.abort();};
+  },[isOpen,query,date,productId,prefillMovement]);
+  const picks=Object.values(basket), currency=currencyOf(picks[0]?.sale||selected||{});
+  const amount=(p:Pick)=>roundMoney(p.line.lineTotal/p.line.soldQuantity*p.quantity,currencyOf(p.sale));
+  const total=roundMoney(picks.reduce((s,p)=>s+amount(p),0),currency);
+  const productResults=useMemo(()=>searchProducts(products,productQuery).slice(0,60),[products,productQuery]);
+  function change(sale:Sale,line:Line,value:number){
+    const quantity=Math.min(line.returnableQuantity,Math.max(0,Math.floor(value)||0));
+    const first=picks.find(p=>p.line.movementId!==line.movementId);
+    if(quantity&&first&&(currencyOf(first.sale)!==currencyOf(sale)||!sameCustomer(first.sale.customerName,first.sale.customerPhone,sale.customerName,sale.customerPhone))){setError('Bitta qaytarishda faqat bitta mijoz va bitta valyutadagi tovarlarni tanlang.');return;}
+    setError('');setBasket(prev=>{const next={...prev};if(quantity)next[line.movementId]={sale,line,quantity};else delete next[line.movementId];return next;});
+    if(!picks.length)setMethod(sale.paymentMethod||'naqd');
+  }
+  async function submit(){
+    if(busy.current||!picks.length)return;busy.current=true;setSaving(true);setError('');
+    const payload = {lines:picks.map(p=>({movementId:p.line.movementId,quantity:p.quantity})),reason:reason==='Boshqa'?custom:reason,refundMethod:method,restoreStock:restore};
+    const serialized=JSON.stringify(payload);
+    if(attempt.current?.payload!==serialized)attempt.current={payload:serialized,id:crypto.randomUUID()};
+    try{const response=await fetch('/api/v1/returns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,requestId:attempt.current.id,ownerPin:needsOwner?pin:undefined})});const body=await response.json();
+      if(response.status===403&&body.code==='OWNER_APPROVAL_REQUIRED'){setNeedsOwner(true);throw Error(body.error);}
+      if(!response.ok)throw Error(body.error||'Qaytarish saqlanmadi');const r=body.data;
+      setSuccess(`${r.receiptNumber}: ${formatMoney(r.totalRefund,r.currency)} qaytarish saqlandi.`);
+      onDone(print?{receiptNumber:r.receiptNumber,currency:r.currency,date:new Date().toISOString(),customerName:r.customerName,paymentMethod:method,items:r.movements.map((m:any)=>({id:m.productId,name:m.productName,category:m.category,quantity:m.quantity,unitPrice:m.unitPrice,total:m.totalRevenue})),subtotal:r.totalRefund,total:r.totalRefund,cashierName,isReturn:true,returnReason:reason==='Boshqa'?custom:reason}:null);
+    }catch(e){setError(e instanceof Error?e.message:'Qaytarish saqlanmadi');}finally{busy.current=false;setSaving(false);}
+  }
+  if(!isOpen)return null;
+  return <div role="dialog" aria-modal="true" aria-label="Tovar qaytarish" className="fixed inset-0 z-[80] bg-black/70 p-2 sm:p-5 flex items-center justify-center"><div className="bg-white rounded-2xl w-full max-w-6xl max-h-[94dvh] flex flex-col overflow-hidden shadow-2xl">
+    <header className="border-b p-4 flex justify-between items-center"><div><h2 className="font-black text-lg">Tovar qaytarish</h2><p className="text-xs text-stone-500">Savdoni toping → bir yoki bir nechta tovarni belgilang → sonini kiriting.{!isOwner&&' Ishchi uchun oxirgi 7 kun.'}</p></div><button type="button" onClick={onClose} disabled={saving} className="border rounded-xl px-3 py-2">Yopish</button></header>
+    {success?<div className="p-8 text-center space-y-4"><strong className="block text-emerald-700">{success}</strong><button type="button" onClick={onClose} className="bg-emerald-600 text-white rounded-xl p-3">Yopish</button></div>:<div className="overflow-y-auto p-4 grid lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,1fr)] gap-4">
+      <div className="min-w-0 space-y-3"><div className="flex gap-2"><button type="button" onClick={()=>{setTab('history');setProductId('');setSelected(null);}} className={`p-3 rounded-xl font-bold text-sm ${tab==='history'?'bg-amber-400':'bg-stone-100'}`}>Savdo tarixi</button><button type="button" onClick={()=>{setTab('products');setSelected(null);setProductId('');setQuery('');}} className={`p-3 rounded-xl font-bold text-sm ${tab==='products'?'bg-amber-400':'bg-stone-100'}`}>Tovar qidirish</button></div>
+      {!selected&&tab==='products'&&!productId?<><input aria-label="Qaytariladigan tovarni qidirish" placeholder="Tovar nomi yoki shtrix-kod" value={productQuery} onChange={e=>setProductQuery(e.target.value)} className="w-full border-2 rounded-xl p-3 text-stone-900"/><p className="text-xs text-stone-500">Tovarni tanlang, keyin qaysi savdodan qaytarilishini belgilang.</p><div className="max-h-[55vh] overflow-y-auto divide-y border rounded-xl">{productResults.map(p=><button type="button" key={p.id} onClick={()=>{setProductId(p.id);setQuery('');setDate('');}} className="block w-full text-left p-3 hover:bg-amber-50"><strong className="text-sm">{p.name}</strong><span className="block text-xs text-stone-500">{p.category} · {p.barcode}</span></button>)}{!productResults.length&&<p className="p-4 text-sm">Tovar topilmadi.</p>}</div></>:!selected?<>
+      {productId&&<button type="button" onClick={()=>setProductId('')} className="text-sm font-bold text-amber-700">← Boshqa tovarni qidirish</button>}
+      <input aria-label="Savdo tarixidan qidirish" placeholder="Chek, mijoz yoki tovar nomi" value={query} onChange={e=>setQuery(e.target.value)} className="w-full border-2 rounded-xl p-3 text-stone-900"/>
+      <div className="flex gap-2 items-center text-xs"><label>Savdo sanasi<input type="date" value={date} onChange={e=>setDate(e.target.value)} className="block border rounded-lg p-2 mt-1"/></label><button type="button" onClick={()=>setDate('')} className="border rounded-lg p-2">Barcha sanalar</button></div><p className="text-xs text-stone-500">Eng yangi 100 ta mos chek. Eski savdo uchun sana yoki chek raqamini yozing.</p>
+      <div className="space-y-2 max-h-[55vh] overflow-y-auto">{loading&&<p className="p-4">Savdolar yuklanmoqda…</p>}{!loading&&!sales.length&&<p className="p-4 text-stone-500">Mos savdo topilmadi.</p>}{sales.map(s=><button key={s.key} type="button" onClick={()=>{setSelected(s);if(!picks.length)setMethod(s.paymentMethod||'naqd');setError('');}} className="w-full text-left border rounded-xl p-3 hover:bg-amber-50"><div className="flex justify-between text-xs text-stone-500 gap-2"><span>{s.receiptNumber||'Chek raqamsiz'}</span><span>{dateLabel(s.timestamp)}</span></div><strong className="block mt-1">{s.customerName}</strong><div className="text-xs text-stone-600 mt-1">{s.lines.map(l=>`${l.productName} × ${l.soldQuantity}`).join(' · ')}</div><div className="text-xs mt-1 text-emerald-700">Qaytarish mumkin: {s.lines.reduce((n,l)=>n+l.returnableQuantity,0)} dona</div></button>)}</div></>:<>
+      <button type="button" onClick={()=>setSelected(null)} className="text-sm font-bold text-amber-700">← Yana savdo / tovar tanlash (ro‘yxat saqlanadi)</button><div className="bg-amber-50 border border-amber-200 rounded-xl p-3"><strong>{selected.customerName}</strong><p className="text-xs">{selected.receiptNumber} · {dateLabel(selected.timestamp)}</p></div>
+      <button type="button" onClick={()=>selected.lines.forEach(l=>{if(l.returnableQuantity>0)change(selected,l,l.returnableQuantity);})} className="border rounded-lg p-2 text-xs font-bold">Shu chekdagi barcha tovarlarni belgilash</button>
+      {selected.lines.map(l=><div key={l.movementId} className={`border rounded-xl p-3 ${basket[l.movementId]?'bg-emerald-50 border-emerald-300':''}`}><label className="flex gap-2 items-start"><input type="checkbox" checked={!!basket[l.movementId]} disabled={!l.returnableQuantity} onChange={e=>change(selected,l,e.target.checked?1:0)}/><span className="font-bold text-sm">{l.productName}</span></label><p className="text-xs text-stone-500 my-2">Sotilgan: {l.soldQuantity} · Qaytgan: {l.returnedQuantity} · Qaytarish mumkin: {l.returnableQuantity}</p><div className="flex flex-wrap gap-3 items-center text-xs"><span>1 dona: {formatMoney(l.unitRefund,selected.currency)}</span><label className="font-bold">Qaytariladigan soni<input aria-label={`Qaytarish soni: ${l.productName}`} type="number" min="0" max={l.returnableQuantity} step="1" value={basket[l.movementId]?.quantity||''} placeholder="0" disabled={!l.returnableQuantity} onChange={e=>change(selected,l,Number(e.target.value))} className="ml-2 w-20 border rounded-lg p-2 bg-white"/></label></div></div>)}
+      </>}
       </div>
-    </div>
-  );
-};
+      <aside className="border rounded-2xl p-4 space-y-3 self-start bg-stone-50 min-w-0"><h3 className="font-black">Qaytarish ro‘yxati · {picks.length} xil / {picks.reduce((s,p)=>s+p.quantity,0)} dona</h3>{!picks.length&&<p className="text-sm text-stone-500">Chapdan savdo yoki tovarni tanlang. Bir nechta qatorni belgilash mumkin.</p>}{picks.length>0&&<p className="text-sm font-bold">Mijoz: {picks[0].sale.customerName}</p>}
+      <div className="space-y-2 max-h-60 overflow-y-auto">{picks.map(p=><div key={p.line.movementId} className="bg-white border rounded-xl p-3"><strong className="text-sm block">{p.line.productName}</strong><div className="text-xs text-stone-500">{p.sale.receiptNumber} · {p.quantity} dona</div><div className="flex items-center justify-between mt-1 text-sm"><strong>{formatMoney(amount(p),currency)}</strong><button type="button" onClick={()=>change(p.sale,p.line,0)} className="text-rose-600 text-xs">Olib tashlash</button></div></div>)}</div>
+      <label className="block text-xs font-bold">Sabab<select value={reason} onChange={e=>setReason(e.target.value)} className="block w-full p-2 border rounded-lg mt-1">{reasons.map(r=><option key={r}>{r}</option>)}</select></label>{reason==='Boshqa'&&<input placeholder="Sababni yozing" value={custom} onChange={e=>setCustom(e.target.value)} className="w-full border rounded-lg p-2"/>}
+      <label className="block text-xs font-bold">Pul / qarz qaytarish usuli<select value={method} onChange={e=>setMethod(e.target.value as PaymentMethod)} className="block w-full border rounded-lg p-2 mt-1"><option value="nasiya">Shu mijozning nasiya qarzidan ayirish</option><option value="naqd">Kassadan naqd pul qaytarish</option><option value="click_payme">Click / karta orqali qaytarish</option><option value="uzum">Uzum orqali qaytarish</option></select></label>
+      <p className="text-xs text-stone-600">{method==='nasiya'?'Mijoz qarzi kamayadi, kassadan pul chiqmaydi.':method==='naqd'?'Qaytarilgan summa kassadagi naqd puldan ayriladi.':'Naqd kassa o‘zgarmaydi.'}</p>
+      <label className="flex gap-2 text-xs"><input type="checkbox" checked={restore} onChange={e=>setRestore(e.target.checked)}/>Tovar omborga qaytsin (yaroqsiz bo‘lsa belgini oling)</label><label className="flex gap-2 text-xs"><input type="checkbox" checked={print} onChange={e=>setPrint(e.target.checked)}/>Qaytarish chekini ochish</label>
+      {needsOwner&&<input aria-label="Rahbar tasdiqlash PIN" type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Rahbar PIN" className="border rounded-lg p-2 w-full"/>}
+      {error&&<p role="alert" className="bg-rose-50 text-rose-700 border border-rose-200 p-3 rounded-xl text-sm">{error}</p>}
+      <div className="bg-stone-950 text-white rounded-xl p-4"><span className="text-xs">Jami qaytarish</span><strong className="block text-2xl text-amber-400">{formatMoney(total,currency)}</strong></div><button type="button" disabled={!picks.length||picks.length>30||saving||(reason==='Boshqa'&&custom.trim().length<3)||(needsOwner&&!pin)} onClick={submit} className="bg-amber-400 rounded-xl p-3 w-full font-black disabled:opacity-40">{saving?'Saqlanmoqda…':'Qaytarishni tasdiqlash'}</button>
+      </aside>
+    </div>}
+  </div></div>;
+}

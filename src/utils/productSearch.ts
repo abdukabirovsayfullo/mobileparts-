@@ -28,7 +28,7 @@ export const productSearchScore = (product: Product, query: string): number => {
   if(barcode.startsWith(q)||id.startsWith(q))return 8500;
   if(name===q)return 7500;
   if(name.startsWith(q))return 6500;
-  const haystack=`${name} ${brand} ${category} ${barcode} ${id}`; const words=haystack.split(' '); const tokens=q.split(' ');
+  const haystack=`${name} ${brand} ${category} ${barcode}`; const words=haystack.split(' '); const tokens=q.split(' ');
   let score=0;
   for(const token of tokens){
     if(!token)continue;

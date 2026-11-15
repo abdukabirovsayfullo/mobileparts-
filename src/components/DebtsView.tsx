@@ -1,3 +1,4 @@
+import { DebtPaymentsPanel } from './DebtPaymentsPanel';
 import { CustomerDebtHistory } from './CustomerDebtHistory';
 import React, { useState, useMemo } from 'react';
 import { CustomerProfile, DebtRecord, PaymentMethod, StockMovement, StoreSettings } from '../types';
@@ -503,6 +504,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           onPurgeCustomer={onPurgeCustomer}
         />
       )}
+
+      <DebtPaymentsPanel debts={debts} movements={movements} />
 
       {viewMode === 'davr' && <DebtPeriodReport debts={debts} movements={movements} store={storeInfo ?? STORE_INFO} query={searchQuery} />}
 

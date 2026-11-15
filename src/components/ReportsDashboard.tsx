@@ -1,3 +1,5 @@
+import { DebtPaymentsPanel } from './DebtPaymentsPanel';
+import type { DebtRecord, StockMovement } from '../types';
 import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Download, RefreshCw } from 'lucide-react';
 import { downloadCSV, formatMoney } from '../utils/formatters';
@@ -9,7 +11,7 @@ const moveDay = (date: string, days: number) => new Date(Date.parse(`${date}T12:
 const monthStart = (date: string) => `${date.slice(0,7)}-01`;
 const yearStart = (date: string) => `${date.slice(0,4)}-01-01`;
 
-export const ReportsDashboard: React.FC<{ onOpenPdfReports?: (type?: 'daily_sales') => void }> = ({ onOpenPdfReports }) => {
+export const ReportsDashboard: React.FC<{ debts?: DebtRecord[]; movements?: StockMovement[]; onOpenPdfReports?: (type?: 'daily_sales') => void }> = ({ onOpenPdfReports, debts = [], movements = [] }) => {
   const now = today(); const [from, setFrom] = useState(monthStart(now)); const [to, setTo] = useState(now);
   const [report, setReport] = useState<Report>(null); const [previous, setPrevious] = useState<Report>(null); const [loading,setLoading]=useState(false); const [error,setError]=useState('');
   const load = async () => { setLoading(true); setError(''); try { const response=await fetch(`/api/v1/reports/summary?from=${from}&to=${to}`,{cache:'no-store'}); const body=await response.json(); if(!response.ok) throw new Error(body.error); setReport(body.data); setPrevious(body.previous); } catch(e){setError(e instanceof Error?e.message:'Hisobot yuklanmadi.');} finally{setLoading(false);} };
@@ -34,6 +36,7 @@ export const ReportsDashboard: React.FC<{ onOpenPdfReports?: (type?: 'daily_sale
       <section className="rounded-2xl bg-white border p-4"><h3 className="font-black text-sm">Xodimlar savdosi</h3>{report.employees.map((r:any)=><div key={r.name} className="py-1.5 border-b text-xs"><div className="flex justify-between"><strong>{r.name}</strong><span>{formatMoney(r.revenue)}</span></div><div className="text-stone-400">{r.sales} ta savdo</div></div>)}{!report.employees.length&&<p className="text-xs text-stone-400 mt-3">Ma’lumot yo‘q</p>}</section>
       <section className="rounded-2xl bg-white border p-4"><h3 className="font-black text-sm">Nazorat</h3><div className="mt-3 space-y-2 text-xs">{[['Kirim qiymati',formatMoney(report.inventory.kirimCost)],['Sotilmagan tovar',`${report.inventory.unsoldCount} ta`],['Nasiya berilgan',formatMoney(report.debts.issued)],['Nasiya qaytarilgan',formatMoney(report.debts.paid)],['Jami qolgan qarz',formatMoney(report.debts.remaining)],['Smena kamomati',formatMoney(report.shifts.shortage)],['Smena ortiqchasi',formatMoney(report.shifts.surplus)]].map(([l,v]:any)=><div key={l} className="flex justify-between border-b pb-1"><span>{l}</span><strong>{v}</strong></div>)}</div></section></div>
     </>}
+    <DebtPaymentsPanel debts={debts} movements={movements} />
     <ReturnsAuditPanel />
   </div>;
 };

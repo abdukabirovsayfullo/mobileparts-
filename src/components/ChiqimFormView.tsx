@@ -1,3 +1,6 @@
+import { DebtPaymentsPanel } from './DebtPaymentsPanel';
+import { ProductSearchList } from './ProductSearchList';
+import { debtCustomerError } from '../utils/checkoutCustomer';
 import { DailySalesPanel } from './DailySalesPanel';
 import { sameCustomer as matchesCustomer } from '../utils/customerIdentity';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
@@ -161,8 +164,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [discountValue, setDiscountValue] = useState<number>(0);
 
   // Checkout inputs
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('naqd');
-  const [customerName, setCustomerName] = useState('Do\'kon mijozi');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('nasiya');
+  const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('+998 ');
   const [customerAddress, setCustomerAddress] = useState('Do\'kondan olib ketildi (Paxtaobod)');
   const [cashReceived, setCashReceived] = useState<number>(0);
@@ -188,6 +191,20 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   /** Telefon qaysi tanlangan mijozdan avtomatik to'ldirilgani (ism o'zgarsa tozalanadi). */
   const [autoPhoneName, setAutoPhoneName] = useState('');
+  const [customerEditorOpen, setCustomerEditorOpen] = useState(true);
+  const previousCartSize = useRef(0);
+  React.useEffect(() => {
+    if (previousCartSize.current > 0 && cart.length === 0) {
+      setCustomerName(''); setCustomerPhone('+998 ');
+      setCustomerAddress("Do'kondan olib ketildi (Paxtaobod)");
+      setPaymentMethod('nasiya'); setCashReceived(0);
+      setCustomerEditorOpen(true); setShowCustomerDropdown(false);
+      setSaleError(''); setNotes(''); setDiscountValue(0);
+      saleAttempt.current = null;
+    }
+    previousCartSize.current = cart.length;
+  }, [cart.length]);
+
 
   // Quick Pay Modal for Past Debt
   const [selectedDebtToPay, setSelectedDebtToPay] = useState<DebtRecord | null>(null);
@@ -270,6 +287,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     setCustomerPhone(presetCustomer.phone || '+998 ');
     setAutoPhoneName(normalizeSearchText(presetCustomer.name));
     setCustomerAddress(presetCustomer.address || 'Paxtaobod');
+    setCustomerEditorOpen(!!debtCustomerError(presetCustomer.name,presetCustomer.phone || ''));
   }, [presetCustomer?.nonce]);
 
   // Helper to select a customer
@@ -278,6 +296,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     setCustomerPhone(c.phone || '+998 ');
     setAutoPhoneName(normalizeSearchText(c.name));
     setCustomerAddress(c.address || 'Paxtaobod');
+    setCustomerEditorOpen(!!debtCustomerError(c.name,c.phone || ''));
     setShowCustomerDropdown(false);
   };
 
@@ -423,6 +442,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     ? roundMoney(Math.max(0, grandTotalRevenue - (cashReceived || 0)), cartCurrency)
     : 0;
 
+  const checkoutCustomerError = unpaidRemaining > 0 ? debtCustomerError(customerName, customerPhone) : '';
+
   const changeAmount = cashReceived > grandTotalRevenue ? roundMoney(cashReceived - grandTotalRevenue, cartCurrency) : 0;
 
   const handleFinalizeSale = async (e: React.FormEvent) => {
@@ -444,6 +465,10 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const effectiveRemainingDebt = roundMoney(Math.max(0, grandTotalRevenue - effectivePaid), cartCurrency);
 
     const willBeDebt = effectiveRemainingDebt > 0;
+    if (willBeDebt && debtCustomerError(currentCustomer, currentPhone)) {
+      setSaleError(debtCustomerError(currentCustomer, currentPhone));
+      return;
+    }
     const salePaymentMethod = willBeDebt ? 'nasiya' : paymentMethod === 'nasiya' ? 'naqd' : paymentMethod;
 
     const saleNotesWithDiscount = discountAmount > 0
@@ -523,10 +548,11 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     setCashReceived(0);
     setDiscountValue(0);
     setNotes('');
-    setCustomerName("Do'kon mijozi");
+    setCustomerName('');
     setCustomerPhone('+998 ');
     setCustomerAddress("Do'kondan olib ketildi (Paxtaobod)");
-    setPaymentMethod('naqd');
+    setPaymentMethod('nasiya');
+    setCustomerEditorOpen(true);
     setShowCustomerDropdown(false);
     setShowAdditional(false);
   };
@@ -703,7 +729,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 autoFocus={typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches}
                 placeholder="Tovar nomi, brendi yoki shtrix-kodini yozing..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { setSearchQuery(e.target.value); if (e.target.value.trim()) setSelectedCategory('all'); }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter') return;
                   const exact = exactProductCodeMatch(products, searchQuery);
@@ -712,6 +738,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 className="w-full pl-12 pr-4 py-3.5 bg-stone-50 border-2 border-stone-200 rounded-xl text-base font-semibold focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
               />
             </div>
+
+            {searchQuery.trim() && <ProductSearchList products={displayedProducts} total={filteredProducts.length} mode={priceMode} onPick={handleAddToCart} onMore={() => setVisibleProductCount(n => n + 60)} />}
 
             <div className="flex items-center gap-2 overflow-x-auto scrollbar-none text-sm pb-0.5">
               {categories.map((cat) => (
@@ -751,7 +779,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
           {topSlot}
 
           {/* Product Items Cards with both Retail & Wholesale prices */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5 max-h-[70vh] lg:max-h-[calc(100vh-17rem)] overflow-y-auto pr-1 content-start">
+          <div className={`${searchQuery.trim() ? 'hidden' : 'grid'} grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5 max-h-[70vh] lg:max-h-[calc(100vh-17rem)] overflow-y-auto pr-1 content-start`}>
             {filteredProducts.length === 0 && <div className="sm:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">Hech narsa topilmadi. Tovar nomi yoki kodini tekshiring.</div>}
             {displayedProducts.map((p) => {
               const isLowStock = p.stock <= p.minStockAlert;
@@ -850,7 +878,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         )}
 
         {/* Right Side: Sales Cart & Checkout (5 cols) */}
-        <div className={`${mobileTab !== 'catalog' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start ${cart.length > 0 ? 'lg:h-[calc(100dvh-7rem)]' : ''} lg:overflow-hidden bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-3`}>
+        <div className={`${mobileTab !== 'catalog' ? 'block' : 'hidden'} lg:flex lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 lg:self-start  bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-xs flex flex-col space-y-3`}>
           {/* Mobile Back to Catalog Button */}
           <div className="lg:hidden flex items-center justify-between pb-2 border-b border-stone-100">
             <button
@@ -1025,102 +1053,18 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
           {/* Checkout Form */}
           {cart.length > 0 && <form onSubmit={handleFinalizeSale} className={`${mobileTab === 'payment' ? 'block' : 'hidden'} lg:flex border-t border-stone-100 pt-3 space-y-3 text-xs lg:flex-col lg:space-y-0 lg:gap-3 lg:flex-1 lg:min-h-0`}>
-            <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-            {/* Payment Method Selector */}
-            <div>
-              <label className="block font-semibold text-stone-700 mb-1">
-                To'lov turi
-              </label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {[
-                  { id: 'naqd', label: 'Naqd' },
-                  { id: 'click_payme', label: 'Click' },
-                  { id: 'uzum', label: 'Uzum' },
-                  { id: 'nasiya', label: 'Nasiya' }
-                ].map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
-                    aria-pressed={paymentMethod === m.id}
-                    className={`py-2 text-xs rounded-lg font-black text-center cursor-pointer transition-colors ${
-                      paymentMethod === m.id
-                        ? m.id === 'nasiya'
-                          ? 'bg-red-500 text-white'
-                          : 'bg-stone-950 text-white'
-                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* If Cash or partial payment: Amount Received & Auto-Debt Logic (1-talab) */}
-            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
-              <div className="space-y-1.5">
-                <label htmlFor="checkout-paid" className="font-semibold text-stone-700">
-                  {paymentMethod === 'nasiya' ? "Avans (ixtiyoriy)" : "To'langan summa"}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="checkout-paid"
-                    type="number"
-                    step={cartCurrency === 'USD' ? 'any' : '1'}
-                    placeholder={paymentMethod === 'nasiya' ? '0' : String(grandTotalRevenue)}
-                    value={cashReceived || ''}
-                    min="0"
-                    onChange={(e) => {
-                      const nextAmount = Math.max(0, Number(e.target.value));
-                      setCashReceived(nextAmount);
-                    }}
-                    className="min-w-0 flex-1 px-2 py-2 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  />
-                  <span className="text-[10px] text-stone-500 font-bold">{cartCurrency === 'USD' ? '$' : "so'm"}</span>
-                </div>
-              </div>
-
-              {(customerDebtInfo.totalDebt > 0 || unpaidRemaining > 0 || changeAmount > 0) && (
-                <div className="space-y-1 border-t border-stone-200 pt-2 font-bold">
-                  {customerDebtInfo.totalDebt > 0 && (
-                    <div className="flex justify-between gap-2">
-                      <span>Avvalgi qarz</span>
-                      <span>{formatMoney(customerDebtInfo.totalDebt, cartCurrency)}</span>
-                    </div>
-                  )}
-                  {unpaidRemaining > 0 && (
-                    <div className="flex justify-between gap-2 text-red-700">
-                      <span>Nasiyaga yoziladi</span>
-                      <span>{formatMoney(unpaidRemaining, cartCurrency)}</span>
-                    </div>
-                  )}
-                  {customerDebtInfo.totalDebt > 0 && unpaidRemaining > 0 && (
-                    <div className="flex justify-between gap-2 text-red-700">
-                      <span>Jami qarz</span>
-                      <span>{formatMoney(roundMoney(customerDebtInfo.totalDebt + unpaidRemaining, cartCurrency), cartCurrency)}</span>
-                    </div>
-                  )}
-                  {changeAmount > 0 && (
-                    <div className="flex justify-between gap-2 text-emerald-700">
-                      <span>Qaytim</span>
-                      <span>{formatMoney(changeAmount, cartCurrency)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </div>
-
+            <div className="space-y-3">
             {/* Customer & Delivery / Destination Information (Kimga & Qayerga) with CRM Memory & Debt Auto-Detection */}
             <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs text-amber-950 flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Xaridor</span>
+                  <span>1. Mijozni tanlang</span>
                 </span>
               </div>
 
+              {!customerEditorOpen && <div className="flex items-center justify-between gap-2"><div><strong className="block text-sm">{customerName}</strong><span className="text-xs text-stone-600">{customerPhone}</span></div><button type="button" onClick={() => {setCustomerEditorOpen(true);setCustomerName('');setCustomerPhone('+998 ');setCashReceived(0);setShowCustomerDropdown(true);}} className="rounded-lg border border-amber-400 bg-white px-3 py-2 font-bold">Almashtirish</button></div>}
+              {customerEditorOpen && <>
               {/* Quick Customer Selection Chips */}
               {quickCustomers.length > 0 && (
                 <div>
@@ -1160,14 +1104,16 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setCustomerName('Do\'kon mijozi');
+                        setCustomerName('');
+                        setPaymentMethod('naqd');
+                        setCashReceived(0);
                         setCustomerPhone('+998 ');
                         setCustomerAddress('Do\'kondan olib ketildi (Paxtaobod)');
                         setShowCustomerDropdown(false);
                       }}
                       className="px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg text-[11px] font-semibold cursor-pointer"
                     >
-                      Oddiy mijoz
+                      Naqd · oddiy mijoz
                     </button>
                   </div>
                 </div>
@@ -1176,13 +1122,13 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               {/* Customer Name Input with Autocomplete */}
               <div className="relative">
                 <label className="text-[10px] font-bold text-stone-700 block mb-1">
-                  Kimga sotildi (Mijoz / Do'kon / Usta ismi) — ixtiyoriy
+                  Mijoz ismi — nasiya uchun majburiy
                 </label>
                 <div className="relative">
                   <User className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2.5" />
                   <input
                     type="text"
-                    placeholder="Ixtiyoriy: Akromjon, Rustam usta..."
+                    placeholder="Mijozni qidiring yoki yangi ism yozing"
                     value={customerName}
                     onFocus={() => setShowCustomerDropdown(true)}
                     onChange={(e) => {
@@ -1298,38 +1244,22 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               </div>
 
+              </>}
               {/* AUTOMATIC DEBT DETECTION BANNER */}
               {customerDebtInfo.activeDebts.length > 0 ? (
                 <div className="p-3 bg-red-50 border-2 border-red-500 rounded-xl space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-red-800 font-black text-xs">
-                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 animate-bounce" />
-                      <span>OGOHLANTIRISH: Ushbu mijozda avvaldan to'lanmagan qarz bor!</span>
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>Mijozning avvalgi qarzi</span>
                     </div>
                     <span className="px-2.5 py-0.5 bg-red-600 text-white rounded-full font-black text-xs whitespace-nowrap shadow-xs">
                       {debtLabel(customerDebtInfo.activeDebts)}
                     </span>
                   </div>
 
-                  {/* Active debts breakdown */}
-                  <div className="bg-white/90 rounded-lg p-2 border border-red-200 text-[11px] space-y-1">
-                    {customerDebtInfo.activeDebts.map((d) => (
-                      <div key={d.id} className="flex justify-between items-center text-stone-800">
-                        <div>
-                          <span className="font-bold text-stone-900">{d.notes || "Oldingi aksessuar xaridi"}</span>
-                          {d.dueDate && (<span className="text-[10px] text-stone-500 ml-1.5">
-                            (Muddat: {formatDate(d.dueDate)})
-                          </span>)}
-                        </div>
-                        <span className="font-black text-red-600">
-                          {formatMoney(d.remainingAmount, currencyOf(d))}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
                   {/* Action to accept debt payment right here */}
-                  {onQuickPayPastDebt && (
+                  {onQuickPayPastDebt && showAdditional && (
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[11px] text-red-700 font-semibold">
                         Mijoz eski qarzini ham to'lamoqchimi?
@@ -1358,6 +1288,93 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                   <span className="text-[10px] text-emerald-600 font-semibold">Doimiy mijoz</span>
                 </div>
               ) : null}
+
+            </div>
+
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-1"><strong className="block text-sm">{paymentMethod === 'nasiya' ? 'NASIYA SAVDOSI' : 'TO‘LANGAN SAVDO'}</strong><p className="text-xs">{customerName.trim() || 'Mijoz tanlanmagan'} · {paymentMethod === 'nasiya' ? 'To‘lanmagan summa mijoz qarziga qo‘shiladi.' : 'To‘lov usulini tekshiring.'}</p></div>
+            {/* Payment Method Selector */}
+            <div>
+              <label className="block font-semibold text-stone-700 mb-1">
+                To'lov turi
+              </label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { id: 'nasiya', label: 'Nasiya' },
+                  { id: 'naqd', label: 'Naqd' },
+                  { id: 'click_payme', label: 'Click' },
+                  { id: 'uzum', label: 'Uzum' }
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => { setPaymentMethod(m.id as PaymentMethod); setCashReceived(0); setSaleError(''); }}
+                    aria-pressed={paymentMethod === m.id}
+                    className={`py-2 text-xs rounded-lg font-black text-center cursor-pointer transition-colors ${
+                      paymentMethod === m.id
+                        ? m.id === 'nasiya'
+                          ? 'bg-red-500 text-white'
+                          : 'bg-stone-950 text-white'
+                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* If Cash or partial payment: Amount Received & Auto-Debt Logic (1-talab) */}
+            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
+              <div className="space-y-1.5">
+                <label htmlFor="checkout-paid" className="font-semibold text-stone-700">
+                  {paymentMethod === 'nasiya' ? "Avans (ixtiyoriy)" : "To'langan summa"}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="checkout-paid"
+                    type="number"
+                    step={cartCurrency === 'USD' ? 'any' : '1'}
+                    placeholder={paymentMethod === 'nasiya' ? '0' : String(grandTotalRevenue)}
+                    value={cashReceived || ''}
+                    min="0"
+                    onChange={(e) => {
+                      const nextAmount = Math.max(0, Number(e.target.value));
+                      setCashReceived(nextAmount);
+                    }}
+                    className="min-w-0 flex-1 px-2 py-2 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  />
+                  <span className="text-[10px] text-stone-500 font-bold">{cartCurrency === 'USD' ? '$' : "so'm"}</span>
+                </div>
+              </div>
+
+              {(customerDebtInfo.totalDebt > 0 || unpaidRemaining > 0 || changeAmount > 0) && (
+                <div className="space-y-1 border-t border-stone-200 pt-2 font-bold">
+                  {customerDebtInfo.totalDebt > 0 && (
+                    <div className="flex justify-between gap-2">
+                      <span>Avvalgi qarz</span>
+                      <span>{formatMoney(customerDebtInfo.totalDebt, cartCurrency)}</span>
+                    </div>
+                  )}
+                  {unpaidRemaining > 0 && (
+                    <div className="flex justify-between gap-2 text-red-700">
+                      <span>Nasiyaga yoziladi</span>
+                      <span>{formatMoney(unpaidRemaining, cartCurrency)}</span>
+                    </div>
+                  )}
+                  {customerDebtInfo.totalDebt > 0 && unpaidRemaining > 0 && (
+                    <div className="flex justify-between gap-2 text-red-700">
+                      <span>Jami qarz</span>
+                      <span>{formatMoney(roundMoney(customerDebtInfo.totalDebt + unpaidRemaining, cartCurrency), cartCurrency)}</span>
+                    </div>
+                  )}
+                  {changeAmount > 0 && (
+                    <div className="flex justify-between gap-2 text-emerald-700">
+                      <span>Qaytim</span>
+                      <span>{formatMoney(changeAmount, cartCurrency)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
 
@@ -1499,6 +1516,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 {saleError}
               </div>
             )}
+            {checkoutCustomerError && <p role="alert" className="rounded-xl bg-amber-50 border border-amber-300 p-3 text-xs font-bold text-amber-900">{checkoutCustomerError}</p>}
             <div className="sticky bottom-16 lg:static lg:shrink-0 z-20 p-3 bg-stone-950/95 backdrop-blur rounded-2xl border border-stone-700 shadow-2xl space-y-2 lg:space-y-0 lg:flex lg:items-center lg:gap-3">
               <div className="flex items-center justify-between gap-3 text-white lg:flex-col lg:items-start lg:justify-center lg:gap-0 lg:min-w-[40%]">
                 <div>
@@ -1510,21 +1528,22 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
               <button
                 type="submit"
-                disabled={cart.length === 0 || isSubmittingSale}
+                disabled={cart.length === 0 || isSubmittingSale || !!checkoutCustomerError}
                 className={`w-full lg:flex-1 py-3.5 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  cart.length > 0 && !isSubmittingSale
+                  cart.length > 0 && !isSubmittingSale && !checkoutCustomerError
                     ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md active:scale-[0.99]'
                     : 'bg-stone-700 text-stone-400 cursor-not-allowed'
                 }`}
               >
                 <CheckCircle2 className="w-5 h-5" />
-                <span>{isSubmittingSale ? 'VPSga saqlanmoqda…' : 'Sotish'}</span>
+                <span>{isSubmittingSale ? 'VPSga saqlanmoqda…' : unpaidRemaining > 0 ? 'Nasiyaga yozish' : 'To‘lovni tasdiqlash'}</span>
               </button>
             </div>
           </form>}
         </div>
       </div>
 
+      <DebtPaymentsPanel debts={debts} movements={historyMovements || recentChiqimMovements} />
       <DailySalesPanel movements={historyMovements || recentChiqimMovements} onPrint={onPrintReceipt} />
 
       {/* Printable Receipt Modal */}
