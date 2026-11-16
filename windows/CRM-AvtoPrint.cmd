@@ -15,7 +15,10 @@ if errorlevel 1 (
  pause
  exit /b 1
 )
+rem Shu profil bilan oldin ochilgan Chrome yopiladi: aks holda yangi bayroqlar (--kiosk-printing) qabul qilinmaydi.
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*BeelineCRM-AutoPrint*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+timeout /t 2 /nobreak >nul
 echo CRM avtomatik printer rejimida ochilmoqda.
 echo XP-80 qog'oz sozlamasi 80 mm bo'lishi kerak.
-start "" "%CRM_CHROME_EXE%" --user-data-dir="%LOCALAPPDATA%\BeelineCRM-AutoPrint" --kiosk-printing --no-first-run --no-default-browser-check --app="https://mobileparts-pos.onrender.com/"
+start "" "%CRM_CHROME_EXE%" --user-data-dir="%LOCALAPPDATA%\BeelineCRM-AutoPrint" --kiosk-printing --disable-print-preview --no-first-run --no-default-browser-check --app="https://77-81-138-243.sslip.io/"
 endlocal

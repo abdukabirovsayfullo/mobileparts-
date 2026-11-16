@@ -96,7 +96,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     setPrintError('');
     const frame = document.createElement('iframe');
     frame.title = 'XP-80 chek';
-    frame.style.cssText = 'position:fixed;left:0;top:0;width:80mm;height:1px;opacity:0;pointer-events:none;border:0';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:80mm;height:1200px;pointer-events:none;border:0';
     document.body.appendChild(frame);
     const cleanup = () => { frame.remove(); printingRef.current = false; };
     try {
