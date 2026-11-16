@@ -33,6 +33,8 @@ export interface CashExpense {
 }
 
 export interface CashShift {
+  /** 'store' — rahbarning umumiy do'kon kassasi; yo'q bo'lsa (eski yozuvlar) — xodimning shaxsiy smenasi. */
+  cashScope?: 'store' | 'employee';
   id: string;
   businessDate: string;
   employeeId: string;
