@@ -1090,11 +1090,24 @@ class DataStore {
         const saleIds = new Set(this.state.movements.filter(m => m.type === 'chiqim' && (original.batchSaleId ? m.batchSaleId === original.batchSaleId : m.id === original.id)).map(m => m.id));
         const linkedDebts = nextDebts.filter(d => d.movementId && saleIds.has(d.movementId));
         const groupRefund = roundMoney(items.reduce((n,i)=>n+i.refund,0),returnCurrency);
-        const result = applyRefundToDebts(linkedDebts, customerName, customerPhone, groupRefund, receiptNumber, nowIso, { id: input.user.id, name: input.user.name }, returnCurrency);
-        if (result.applied < groupRefund) throw new Error(`${original.receiptNumber || original.id}: shu xaridning qolgan nasiyasi ${moneyLabel(result.applied)}, qaytarish ${moneyLabel(groupRefund)}. Qaytarish usulini tekshiring.`);
-        const changed = new Map(result.debts.map(d => [d.id,d]));
+        const actor = { id: input.user.id, name: input.user.name };
+        // Avval shu xaridning o'z nasiyasidan ayiriladi.
+        const result = applyRefundToDebts(linkedDebts, customerName, customerPhone, groupRefund, receiptNumber, nowIso, actor, returnCurrency);
+        let changed = new Map(result.debts.map(d => [d.id,d]));
         nextDebts = nextDebts.map(d => changed.get(d.id) || d);
-        debtReduced = roundMoney(debtReduced + result.applied,returnCurrency);
+        let applied = result.applied;
+        // Shu xaridning qarzi to'lab bo'lingan bo'lsa (mijoz to'lovi eng eski qarzdan yopiladi),
+        // qolgani mijozning JAMI qarzidan ayiriladi — hisob mijoz bo'yicha yuritiladi.
+        if (applied < groupRefund) {
+          const rest = applyRefundToDebts(nextDebts, customerName, customerPhone, roundMoney(groupRefund - applied, returnCurrency), receiptNumber, nowIso, actor, returnCurrency);
+          changed = new Map(rest.debts.map(d => [d.id,d]));
+          nextDebts = nextDebts.map(d => changed.get(d.id) || d);
+          applied = roundMoney(applied + rest.applied, returnCurrency);
+        }
+        if (applied < groupRefund) {
+          throw new Error(`${customerName}: mijozning jami ochiq qarzi ${moneyLabel(applied)}, qaytarish ${moneyLabel(groupRefund)}. Qarzdan ortiq qismini "Kassadan naqd" yoki Click orqali qaytaring.`);
+        }
+        debtReduced = roundMoney(debtReduced + applied,returnCurrency);
       }
     }
 
