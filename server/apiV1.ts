@@ -958,6 +958,8 @@ apiV1Router.post('/returns', (req: Request, res: Response) => {
       lines: Array.isArray(req.body?.lines) ? req.body.lines : [],
       reason: String(req.body?.reason || ''),
       refundMethod: req.body?.refundMethod,
+      // Boshqa mijozning qarzidan ayirishni faqat rahbar tanlay oladi.
+      debtTargetId: user.role === 'owner' && typeof req.body?.debtTargetId === 'string' && req.body.debtTargetId ? req.body.debtTargetId : undefined,
       restoreStock: req.body?.restoreStock !== false,
       notes: typeof req.body?.notes === 'string' ? req.body.notes : undefined,
       user,

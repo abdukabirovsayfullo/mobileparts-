@@ -358,6 +358,18 @@ class DataStore {
     let debtsUpdated = 0;
     if (options.updateDebts !== false && (oldName !== name || oldPhone !== phone)) {
       const nowIso = new Date().toISOString();
+      // Sotuv cheklaridagi ism ham yangilanadi: aks holda chekda eski ism, nasiyada yangi ism
+      // qolib, qaytarish va tarix ularni ikki xil odam deb hisoblaydi.
+      const saleIds = new Set<string>();
+      for (const debt of sameCustomerDebts(this.state.debts, oldName, oldPhone)) if (debt.movementId) saleIds.add(debt.movementId);
+      const batches = new Set(this.state.movements.filter(m => saleIds.has(m.id) && m.batchSaleId).map(m => m.batchSaleId as string));
+      for (const m of this.state.movements) {
+        if (m.type !== 'chiqim' && m.type !== 'vazvrat') continue;
+        const linked = saleIds.has(m.id) || (m.batchSaleId && batches.has(m.batchSaleId));
+        if (!linked && !sameCustomer(m.counterparty || '', m.customerPhone, oldName, oldPhone)) continue;
+        m.counterparty = name;
+        if (digits.length >= 9) m.customerPhone = phone;
+      }
       for (const debt of sameCustomerDebts(this.state.debts, oldName, oldPhone)) {
         // Iz qoladi: nasiya qaysi ism/telefondan o'zgartirilgani keyin ko'rinadi.
         debt.auditLog = [...(debt.auditLog || []), { date: nowIso, action: 'tahrir', details: `Mijoz tahriri: "${debt.customerName}" ${debt.customerPhone || ''} → "${name}" ${digits.length >= 9 ? phone : debt.customerPhone || ''}`.trim() }];
@@ -1026,6 +1038,8 @@ class DataStore {
     lines: Array<{ movementId: string; quantity: number }>;
     reason: string;
     refundMethod: 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
+    /** Nasiyaga qaytarishda: qaysi mijozning qarzidan ayirish (shu mijozning istalgan nasiyasi id'si). */
+    debtTargetId?: string;
     restoreStock?: boolean;
     notes?: string;
     user: AuthUser;
@@ -1085,27 +1099,41 @@ class DataStore {
         refundGroups.set(key,[...(refundGroups.get(key)||[]),item]);
       }
       nextDebts = this.state.debts;
+      const actorRef = { id: input.user.id, name: input.user.name };
+      // Rahbar/kassir boshqa mijozni tanlagan bo'lsa: butun summa o'sha mijozning jami qarzidan ayriladi.
+      const target = input.debtTargetId ? this.state.debts.find(d => d.id === input.debtTargetId) : undefined;
+      if (input.debtTargetId && !target) throw new Error('Tanlangan mijozning nasiyasi topilmadi.');
+      if (target && currencyOf(target) !== returnCurrency) throw new Error("Tanlangan mijozning qarzi boshqa valyutada.");
+      if (target) refundGroups.clear();
+      if (target) {
+        const res = applyRefundToDebts(nextDebts, target.customerName, target.customerPhone, totalRefund, receiptNumber, nowIso, actorRef, returnCurrency);
+        if (res.applied < totalRefund) throw new Error(`${target.customerName}: jami ochiq qarzi ${moneyLabel(res.applied)}, qaytarish ${moneyLabel(totalRefund)}. Ortig'ini naqd yoki Click orqali qaytaring.`);
+        nextDebts = res.debts;
+        debtReduced = res.applied;
+      }
       for (const items of refundGroups.values()) {
         const original = items[0].original;
         const saleIds = new Set(this.state.movements.filter(m => m.type === 'chiqim' && (original.batchSaleId ? m.batchSaleId === original.batchSaleId : m.id === original.id)).map(m => m.id));
         const linkedDebts = nextDebts.filter(d => d.movementId && saleIds.has(d.movementId));
         const groupRefund = roundMoney(items.reduce((n,i)=>n+i.refund,0),returnCurrency);
-        const actor = { id: input.user.id, name: input.user.name };
-        // Avval shu xaridning o'z nasiyasidan ayiriladi.
-        const result = applyRefundToDebts(linkedDebts, customerName, customerPhone, groupRefund, receiptNumber, nowIso, actor, returnCurrency);
+        const actor = actorRef;
+        // Avval shu xaridning o'z nasiyasidan ayiriladi. Nasiya chekka bog'langani uchun ism
+        // keyin o'zgartirilgan bo'lsa ham (Hojiakbar → Xojiakbar) o'sha nasiya olinadi.
+        const owner = linkedDebts[0] ? { name: linkedDebts[0].customerName, phone: linkedDebts[0].customerPhone } : { name: customerName, phone: customerPhone };
+        const result = applyRefundToDebts(linkedDebts, owner.name, owner.phone, groupRefund, receiptNumber, nowIso, actor, returnCurrency);
         let changed = new Map(result.debts.map(d => [d.id,d]));
         nextDebts = nextDebts.map(d => changed.get(d.id) || d);
         let applied = result.applied;
         // Shu xaridning qarzi to'lab bo'lingan bo'lsa (mijoz to'lovi eng eski qarzdan yopiladi),
         // qolgani mijozning JAMI qarzidan ayiriladi — hisob mijoz bo'yicha yuritiladi.
         if (applied < groupRefund) {
-          const rest = applyRefundToDebts(nextDebts, customerName, customerPhone, roundMoney(groupRefund - applied, returnCurrency), receiptNumber, nowIso, actor, returnCurrency);
+          const rest = applyRefundToDebts(nextDebts, owner.name, owner.phone, roundMoney(groupRefund - applied, returnCurrency), receiptNumber, nowIso, actor, returnCurrency);
           changed = new Map(rest.debts.map(d => [d.id,d]));
           nextDebts = nextDebts.map(d => changed.get(d.id) || d);
           applied = roundMoney(applied + rest.applied, returnCurrency);
         }
         if (applied < groupRefund) {
-          throw new Error(`${customerName}: mijozning jami ochiq qarzi ${moneyLabel(applied)}, qaytarish ${moneyLabel(groupRefund)}. Qarzdan ortiq qismini "Kassadan naqd" yoki Click orqali qaytaring.`);
+          throw new Error(`${owner.name}: mijozning jami ochiq qarzi ${moneyLabel(applied)}, qaytarish ${moneyLabel(groupRefund)}. Qarzdan ortiq qismini "Kassadan naqd" yoki Click orqali qaytaring.`);
         }
         debtReduced = roundMoney(debtReduced + applied,returnCurrency);
       }
