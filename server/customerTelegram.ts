@@ -54,6 +54,10 @@ export class CustomerTelegram {
     // for delivery, although Telegram itself has no sendMessage idempotency key.
     for (const job of Object.values(this.state.jobs)) if (job.status === 'sending') job.status = 'queued';
   }
+  /** Kanal reklamasi uchun: asosiy Telegram sozlamasida token bo'lmasa, shu bot ishlatiladi. */
+  botToken(): string {
+    return this.state.token || '';
+  }
   private save() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
     fs.writeFileSync(this.file + '.tmp', JSON.stringify(this.state), { mode: 0o600 });
@@ -282,6 +286,10 @@ let activeService: CustomerTelegram | null = null;
 export function forgetCustomerTelegram(customerIds: string[]) {
   if (!activeService) return;
   for (const id of customerIds) activeService.forget(id);
+}
+
+export function customerBotToken(): string {
+  return activeService?.botToken() || '';
 }
 
 export function installCustomerTelegram(app: Express, local: boolean) {
