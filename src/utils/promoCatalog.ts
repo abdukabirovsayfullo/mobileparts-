@@ -192,11 +192,11 @@ export function promoCaption(category: string, brands: string[], groups: PromoGr
   const brandText = brands.length ? brands.join(', ') : groups.slice(0, 6).map((g) => g.brand).join(', ') + (groups.length > 6 ? ' va boshqalar' : '');
   const lines = [
     unitLabel ? `🔥 ${category.toUpperCase()} — ${unitLabel}` : `🔥 ${category.toUpperCase()} — ${brandText}`,
-    unitLabel ? `📱 ${brandText}` : '',
+    unitLabel && brandText !== unitLabel ? `📱 ${brandText}` : '',
     '',
     `✅ Omborda bor: ${models} xil model (${pieces} dona)`,
     `📅 Narxlar ${day} holatiga`,
-    `📄 To'liq narxlar ro'yxati — PDF faylda 👇`,
+    `🖼 Narxlar va ombor qoldig'i — rasmlarda 👆`,
     '',
     contacts.phones ? `📞 ${contacts.phones.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean).join(' | ')}` : '',
     contacts.address ? `📍 ${contacts.address}` : '',

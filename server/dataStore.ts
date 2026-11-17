@@ -51,6 +51,38 @@ export interface TelegramConfig {
   lastAlertSentAt?: string;
 }
 
+/** Kanal reklamasi sozlamalari va avtomatik post jadvali. */
+export interface PromoSettings {
+  title: string;
+  phones: string;
+  address: string;
+  link: string;
+  channel: string;
+  extra: string;
+  /** Avtomatik post: har N kunda kanalga brendlar bo'yicha rasmlar. */
+  autoEnabled: boolean;
+  intervalDays: number;
+  /** Toshkent vaqti bo'yicha soat (0–23). */
+  hour: number;
+  /** Bo'sh — omborda tovari bor barcha kategoriyalar. */
+  categories: string[];
+  lastRunAt?: string;
+  lastResult?: string;
+}
+
+export const DEFAULT_PROMO_SETTINGS: PromoSettings = {
+  title: 'MobileParts Paxtaobod',
+  phones: '+998 95 200 13 33, +998 91 174 13 33',
+  address: 'Paxtaobod, Beeline ofisi · Yoqubov stoyankasi yonida',
+  link: 't.me/mobilepartsuz',
+  channel: '@mobilepartsuz',
+  extra: '',
+  autoEnabled: false,
+  intervalDays: 3,
+  hour: 10,
+  categories: []
+};
+
 export interface PosDatabaseState {
   apiKey: string;
   storeInfo: StoreSettings;
@@ -64,6 +96,7 @@ export interface PosDatabaseState {
   cashShifts: CashShift[];
   customers: CustomerProfile[];
   telegramConfig?: TelegramConfig;
+  promoSettings?: PromoSettings;
   lastUpdated: string;
   deviceLastMerge?: string;
 }
@@ -126,6 +159,7 @@ class DataStore {
             autoAlertLowStock: true,
             autoPrintOnlineOrders: true
           },
+          ...(parsed.promoSettings && typeof parsed.promoSettings === 'object' ? { promoSettings: parsed.promoSettings } : {}),
           lastUpdated: parsed.lastUpdated || new Date().toISOString(),
           ...(typeof parsed.deviceLastMerge === 'string' ? { deviceLastMerge: parsed.deviceLastMerge } : {})
         };
@@ -544,6 +578,17 @@ class DataStore {
     this.state.lastUpdated = new Date().toISOString();
     this.scheduleSave();
     return this.state.telegramConfig;
+  }
+
+  // --- Kanal reklamasi ---
+  public getPromoSettings(): PromoSettings {
+    return { ...DEFAULT_PROMO_SETTINGS, ...(this.state.promoSettings || {}) };
+  }
+
+  public setPromoSettings(patch: Partial<PromoSettings>): PromoSettings {
+    this.state.promoSettings = { ...this.getPromoSettings(), ...patch };
+    this.scheduleSave();
+    return this.state.promoSettings;
   }
 
   // --- Products ---
