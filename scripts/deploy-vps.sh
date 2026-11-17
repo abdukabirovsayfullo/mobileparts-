@@ -55,7 +55,8 @@ npm run build </dev/null
 
 log "3/6 Server kutubxonalari tekshirilmoqda"
 MISSING=""
-for mod in $(grep -oE 'require\("[^"]+"\)' dist/server.cjs | sed -E 's/require\("([^"]+)"\)/\1/' | grep -vE '^(node:|\.|/)' | sort -u); do
+# require("x") va dinamik import("x") — ikkalasi ham (masalan reklama rasmlari uchun satori, @resvg/resvg-js).
+for mod in $(grep -oE '(require|import)\("[^"]+"\)' dist/server.cjs | sed -E 's/(require|import)\("([^"]+)"\)/\2/' | grep -vE '^(node:|\.|/)' | sort -u); do
   case "$mod" in fs|path|crypto|os|http|https|url|util|stream|events|zlib|child_process|buffer|net|tls|querystring) continue;; esac
   (cd "$APP_DIR" && node -e "require.resolve(process.argv[1])" "$mod" 2>/dev/null </dev/null) || MISSING="$MISSING $mod"
 done

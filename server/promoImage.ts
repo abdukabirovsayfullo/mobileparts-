@@ -1,7 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import satoriModule from 'satori';
-import { Resvg } from '@resvg/resvg-js';
 import { formatMoney } from '../src/utils/formatters';
 import { OTHER_TYPE, PromoContacts, PromoRow, PromoUnit, paginatePromo, promoTotals } from '../src/utils/promoCatalog';
 
@@ -13,17 +11,28 @@ export const PROMO_ROWS_PER_IMAGE = 11;
 /** Tovar kam bo'lsa rasm qisqaradi, lekin kvadratdan kichik bo'lmaydi. */
 const PROMO_MIN_H = 1080;
 
-// CJS yig'mada (dist/server.cjs) default import butun modul bo'lib keladi — ikkala holatni qo'llab-quvvatlaymiz.
-const satori: typeof satoriModule = typeof satoriModule === 'function' ? satoriModule : (satoriModule as any).default;
+/** Kutubxonalar faqat rasm kerak bo'lganda yuklanadi: ular yo'q joyda (oflayn qurilma) server baribir ishga tushadi.
+ *  CJS yig'mada (dist/server.cjs) default import butun modul bo'lib keladi — ikkala holat qo'llab-quvvatlanadi. */
+const loadRenderer = async () => {
+  const [satoriMod, resvgMod]: any[] = await Promise.all([import('satori'), import('@resvg/resvg-js')]);
+  const satori = typeof satoriMod.default === 'function' ? satoriMod.default : satoriMod.default?.default;
+  const Resvg = resvgMod.Resvg || resvgMod.default?.Resvg;
+  return { satori: satori as typeof import('satori').default, Resvg: Resvg as typeof import('@resvg/resvg-js').Resvg };
+};
 
 type Font = { name: string; data: Buffer; weight: 400 | 700 | 900; style: 'normal' };
 const FONT_NAMES: Record<string, string> = { latin: 'Inter', 'latin-ext': 'InterExt', cyrillic: 'InterCyr' };
-/** Shrift papkasi: ishchi papka yoki server fayli (dist/server.cjs, server.ts) yonidagi node_modules. */
+/** Shrift papkasi: build vaqtida dist/promo-fonts ga nusxalanadi (VPS deployi faqat dist'ni almashtiradi),
+ *  ishlab chiqishda esa node_modules/@fontsource/inter/files ishlatiladi. */
 const fontDir = () => {
-  const roots = [process.cwd(), typeof __dirname !== 'undefined' ? path.join(__dirname, '..') : '', process.argv[1] ? path.join(path.dirname(process.argv[1]), '..') : '', process.argv[1] ? path.dirname(process.argv[1]) : ''];
-  for (const root of roots.filter(Boolean)) {
-    const dir = path.join(root, 'node_modules', '@fontsource', 'inter', 'files');
-    if (fs.existsSync(dir)) return dir + path.sep;
+  const serverDir = typeof __dirname !== 'undefined' ? __dirname : process.argv[1] ? path.dirname(process.argv[1]) : '';
+  const candidates = [
+    serverDir && path.join(serverDir, 'promo-fonts'),
+    path.join(process.cwd(), 'dist', 'promo-fonts'),
+    ...[process.cwd(), serverDir && path.join(serverDir, '..')].filter(Boolean).map((root) => path.join(root as string, 'node_modules', '@fontsource', 'inter', 'files'))
+  ].filter(Boolean) as string[];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'inter-latin-900-normal.woff'))) return dir + path.sep;
   }
   throw new Error("Reklama shrifti topilmadi (@fontsource/inter o'rnatilmagan).");
 };
@@ -174,6 +183,7 @@ export const promoImagePages = (unit: PromoUnit) =>
 /** Bitta brend/tur uchun reklama rasmlari (PNG). Sahifalar ko'p bo'lsa — bir nechta rasm. */
 export async function renderPromoImages(opts: PromoImageOptions): Promise<Buffer[]> {
   const pages = promoImagePages(opts.unit);
+  const { satori, Resvg } = await loadRenderer();
   const fonts = loadFonts();
   const out: Buffer[] = [];
   for (let i = 0; i < pages.length; i++) {
