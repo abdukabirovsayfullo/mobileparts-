@@ -6,6 +6,7 @@ import { apiV1Router } from "./server/apiV1";
 import { requireOwner } from "./server/auth";
 import { installDeviceSync } from "./server/deviceSync";
 import { installCustomerTelegram } from "./server/customerTelegram";
+import { startPromoScheduler } from "./server/promoAuto";
 
 const app = express();
 const localDevice = process.env.POS_LOCAL_DEVICE === '1';
@@ -373,6 +374,7 @@ async function startServer() {
   const host = localDevice ? "127.0.0.1" : process.env.HOST || "0.0.0.0";
   app.listen(PORT, host, () => {
     console.log(`Secure server running on http://${host}:${PORT}`);
+    if (!localDevice) startPromoScheduler();
   });
 }
 

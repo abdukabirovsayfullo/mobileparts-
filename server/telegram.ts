@@ -234,46 +234,60 @@ export async function sendLowStockNotification(overrideConfig?: Partial<Telegram
   };
 }
 
-/** Kanalga reklama: avval muqova rasmi (matn bilan), keyin PDF fayl. Bot kanalda admin bo'lishi kerak. */
-export async function sendTelegramPromo(
+/** Kanalga reklama rasmlari: albom (10 tagacha rasm), matn birinchi rasm ostida. Bot kanalda admin bo'lishi kerak. */
+export async function sendTelegramPromoImages(
   token: string,
   chatId: string,
-  input: { caption: string; pdf: Buffer; fileName: string; cover?: Buffer }
+  input: { caption: string; images: Buffer[] }
 ): Promise<{ success: boolean; error?: string; messageIds?: number[] }> {
   const cleanToken = token.trim();
   const chat = chatId.trim();
   if (!cleanToken) return { success: false, error: "Telegram bot tokeni sozlanmagan (Sozlamalar → Telegram)." };
   if (!chat) return { success: false, error: 'Kanal manzili kiritilmagan (masalan @mobilepartsuz).' };
-  const call = async (method: 'sendPhoto' | 'sendDocument', form: FormData) => {
-    const response = await fetch(`https://api.telegram.org/bot${cleanToken}/${method}`, { method: 'POST', body: form });
-    const result: any = await response.json().catch(() => ({}));
-    if (!result.ok) {
+  if (!input.images.length) return { success: false, error: "Yuboriladigan rasm yo'q." };
+  const call = async (method: 'sendPhoto' | 'sendMediaGroup', form: FormData) => {
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(`https://api.telegram.org/bot${cleanToken}/${method}`, { method: 'POST', body: form });
+      const result: any = await response.json().catch(() => ({}));
+      if (result.ok) {
+        const list = Array.isArray(result.result) ? result.result : [result.result];
+        return list.map((m: any) => m?.message_id as number);
+      }
+      const retry = Number(result.parameters?.retry_after || 0);
+      if (response.status === 429 && retry > 0 && attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, (retry + 1) * 1000));
+        continue;
+      }
       const desc = String(result.description || `Telegram xatosi (${response.status})`);
       if (/not enough rights|administrator|chat not found|member/i.test(desc)) {
         throw new Error(`Bot kanalga yoza olmadi: ${desc}. Botni kanalga admin qilib qo'shing ("Post messages" ruxsati bilan).`);
       }
       throw new Error(desc);
     }
-    return result.result?.message_id as number;
   };
   try {
     const ids: number[] = [];
     const caption = input.caption.slice(0, 1024);
-    if (input.cover) {
-      const photo = new FormData();
-      photo.append('chat_id', chat);
-      photo.append('caption', caption);
-      photo.append('photo', new Blob([new Uint8Array(input.cover)], { type: 'image/jpeg' }), 'muqova.jpg');
-      ids.push(await call('sendPhoto', photo));
+    for (let start = 0; start < input.images.length; start += 10) {
+      const chunk = input.images.slice(start, start + 10);
+      const form = new FormData();
+      form.append('chat_id', chat);
+      if (chunk.length === 1) {
+        if (start === 0) form.append('caption', caption);
+        form.append('photo', new Blob([new Uint8Array(chunk[0])], { type: 'image/png' }), `narxlar-${start + 1}.png`);
+        ids.push(...(await call('sendPhoto', form)));
+        continue;
+      }
+      form.append('media', JSON.stringify(chunk.map((_, i) => ({
+        type: 'photo', media: `attach://p${i}`, ...(start === 0 && i === 0 ? { caption } : {})
+      }))));
+      chunk.forEach((img, i) => form.append(`p${i}`, new Blob([new Uint8Array(img)], { type: 'image/png' }), `narxlar-${start + i + 1}.png`));
+      ids.push(...(await call('sendMediaGroup', form)));
     }
-    const doc = new FormData();
-    doc.append('chat_id', chat);
-    if (!input.cover) doc.append('caption', caption);
-    doc.append('document', new Blob([new Uint8Array(input.pdf)], { type: 'application/pdf' }), input.fileName);
-    ids.push(await call('sendDocument', doc));
     return { success: true, messageIds: ids };
   } catch (err: any) {
     console.error('[Telegram] Reklama yuborilmadi:', err?.message || err);
     return { success: false, error: err?.message || "Telegram bilan bog'lanib bo'lmadi" };
   }
 }
+

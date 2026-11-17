@@ -5,16 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node scripts/copy-promo-fonts.mjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:e2e": "node scripts/e2e-returns.mjs",
-    "test": "node --import tsx --test src/utils/saleAccounting.test.ts src/utils/productSearch.test.ts src/utils/customerSearch.test.ts src/utils/cashBook.test.ts src/utils/customerIdentity.test.ts src/utils/debtStatement.test.ts server/auth.test.ts server/repairStore.test.ts server/expenseLogic.test.ts server/shiftLogic.test.ts server/reportLogic.test.ts server/returnLogic.test.ts server/customerTelegram.test.ts server/miniAppPrice.test.ts src/utils/browserSync.test.ts src/utils/paymentReceipt.test.ts src/utils/promoCatalog.test.ts src/utils/cashFlow.test.ts src/utils/debtOwnership.test.ts src/utils/customerStatement.test.ts src/utils/debtPayments.test.ts server/batchReturn.test.ts server/returnToTotalDebt.test.ts server/checkoutCustomer.test.ts server/currency.test.ts"
+    "test": "node --import tsx --test src/utils/saleAccounting.test.ts src/utils/productSearch.test.ts src/utils/customerSearch.test.ts src/utils/cashBook.test.ts src/utils/customerIdentity.test.ts src/utils/debtStatement.test.ts server/auth.test.ts server/repairStore.test.ts server/expenseLogic.test.ts server/shiftLogic.test.ts server/reportLogic.test.ts server/returnLogic.test.ts server/customerTelegram.test.ts server/miniAppPrice.test.ts src/utils/browserSync.test.ts src/utils/paymentReceipt.test.ts src/utils/promoCatalog.test.ts src/utils/cashFlow.test.ts src/utils/debtOwnership.test.ts src/utils/customerStatement.test.ts src/utils/debtPayments.test.ts server/batchReturn.test.ts server/returnToTotalDebt.test.ts server/checkoutCustomer.test.ts server/currency.test.ts server/promoAuto.test.ts"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.1.1",
     "@google/genai": "^2.4.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
@@ -26,6 +28,7 @@
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "satori": "^0.12.2",
     "vite": "^6.2.3",
     "xlsx": "^0.18.5"
   },

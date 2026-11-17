@@ -42,7 +42,7 @@ interface StockBalanceViewProps {
   onOpenExcelImport?: () => void;
   onOpenPdfReports?: (reportType?: 'out_of_stock' | 'stock_inventory' | 'low_stock') => void;
   onNavigateToAiAnalyst?: () => void;
-  /** Rahbar: kanal uchun reklama PDF. */
+  /** Rahbar: kanal uchun reklama rasmlari. */
   onOpenPromo?: () => void;
 }
 
@@ -447,9 +447,9 @@ export const StockBalanceView: React.FC<StockBalanceViewProps> = ({
                 type="button"
                 onClick={onOpenPromo}
                 className="px-3.5 py-2.5 bg-stone-950 hover:bg-stone-800 text-amber-400 text-xs sm:text-sm font-black rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                title="Kategoriya va brend bo'yicha kanal uchun reklama PDF"
+                title="Kategoriya va brend bo'yicha kanal uchun reklama rasmlari (bot har 3 kunda joylaydi)"
               >
-                <span>📣 Reklama PDF</span>
+                <span>📣 Reklama rasm</span>
               </button>
             )}
 

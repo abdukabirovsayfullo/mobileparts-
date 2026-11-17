@@ -3,7 +3,7 @@ import { miniAppPrice, isAccessoryCategory } from '../src/utils/miniAppPrice';
 import { currencyOf, roundMoney } from '../src/utils/money';
 import { customerDebtTotal } from '../src/utils/saleAccounting';
 import crypto from 'node:crypto';
-import { dataStore, OwnerApprovalRequiredError } from './dataStore';
+import { dataStore, OwnerApprovalRequiredError, PromoSettings } from './dataStore';
 import { forgetCustomerTelegram } from './customerTelegram';
 import { attachSessionUser, authRouter, getRequestUser, requireOwner, requireSession, verifyOwnerApproval } from './auth';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
@@ -17,7 +17,8 @@ import {
   sendTelegramRawMessage, 
   buildLowStockTelegramMessage, 
   buildAiReportTelegramMessage, 
-  sendLowStockNotification, sendTelegramPromo } from './telegram';
+  sendLowStockNotification } from './telegram';
+import { PromoJob, isValidPromoChannel, renderPromoJob, runPromoAuto, sendPromoJob } from './promoAuto';
 import { 
   computeStoreAuditData, 
   runGeminiStoreAudit, 
@@ -815,27 +816,79 @@ apiV1Router.post('/customers/import', requireOwner, (req: Request, res: Response
   res.json({ success: true, data: { added, skipped, total: dataStore.listCustomers('', 100000).length } });
 });
 
-// Kanalga reklama PDF yuborish (rahbar). Kanal manzili so'rovda keladi; bot tokeni Telegram sozlamalaridan olinadi.
-apiV1Router.post('/promo/send', requireOwner, async (req: Request, res: Response) => {
-  const { channel, caption, fileName, pdfBase64, coverBase64 } = req.body || {};
-  const chat = String(channel || '').trim();
-  if (!/^(@[A-Za-z0-9_]{4,}|-100\d{6,})$/.test(chat)) {
+// --- Kanal reklamasi (rahbar): rasmlarni server chizadi, bot kanalga albom qilib yuboradi ---
+const promoJobFrom = (body: any): PromoJob | null => {
+  const category = String(body?.category || '').trim();
+  if (!category) return null;
+  return {
+    category,
+    by: body?.by === 'type' ? 'type' : 'brand',
+    keys: Array.isArray(body?.keys) ? body.keys.map((k: unknown) => String(k)).slice(0, 100) : [],
+    showWholesale: typeof body?.showWholesale === 'boolean' ? body.showWholesale : undefined
+  };
+};
+
+const PROMO_TEXT_FIELDS = ['title', 'phones', 'address', 'link', 'channel', 'extra'] as const;
+
+apiV1Router.get('/promo/settings', requireOwner, (_req: Request, res: Response) => {
+  res.json({ success: true, data: dataStore.getPromoSettings() });
+});
+
+apiV1Router.put('/promo/settings', requireOwner, (req: Request, res: Response) => {
+  const body = req.body || {};
+  const patch: Partial<PromoSettings> = {};
+  for (const key of PROMO_TEXT_FIELDS) {
+    if (typeof body[key] === 'string') patch[key] = body[key].slice(0, key === 'extra' ? 500 : 200);
+  }
+  if (patch.channel !== undefined && patch.channel.trim() && !isValidPromoChannel(patch.channel)) {
     return res.status(400).json({ success: false, error: "Kanal manzili @kanal_nomi yoki -100... ko'rinishida bo'lishi kerak." });
   }
-  const pdf = Buffer.from(String(pdfBase64 || ''), 'base64');
-  if (pdf.length < 1000 || pdf.subarray(0, 4).toString() !== '%PDF') {
-    return res.status(400).json({ success: false, error: 'PDF fayl topilmadi.' });
+  if (typeof body.autoEnabled === 'boolean') patch.autoEnabled = body.autoEnabled;
+  if (body.intervalDays !== undefined) patch.intervalDays = Math.min(30, Math.max(1, Math.round(Number(body.intervalDays) || 3)));
+  if (body.hour !== undefined) patch.hour = Math.min(23, Math.max(0, Math.round(Number(body.hour) || 0)));
+  if (Array.isArray(body.categories)) patch.categories = body.categories.map((c: unknown) => String(c)).slice(0, 200);
+  res.json({ success: true, data: dataStore.setPromoSettings(patch) });
+});
+
+// Oldindan ko'rish: tanlangan kategoriya bo'yicha rasmlar (PNG, base64).
+apiV1Router.post('/promo/render', requireOwner, async (req: Request, res: Response) => {
+  const job = promoJobFrom(req.body);
+  if (!job) return res.status(400).json({ success: false, error: 'Kategoriya tanlanmagan.' });
+  try {
+    const rendered = await renderPromoJob(job);
+    res.json({
+      success: true,
+      data: rendered.map((r) => ({ key: r.unit.key, caption: r.caption, images: r.images.map((img) => img.toString('base64')) }))
+    });
+  } catch (err: any) {
+    console.error('[Promo] Rasm chizilmadi:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Rasm tayyorlanmadi.' });
   }
-  const cover = coverBase64 ? Buffer.from(String(coverBase64), 'base64') : undefined;
-  const safeName = String(fileName || 'narxlar.pdf').replace(/[^\p{L}\p{N} ._-]/gu, '').slice(0, 80) || 'narxlar.pdf';
-  const result = await sendTelegramPromo(dataStore.getTelegramConfig().botToken || '', chat, {
-    caption: String(caption || ''),
-    pdf,
-    fileName: safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`,
-    cover: cover && cover.length > 1000 ? cover : undefined
-  });
-  if (!result.success) return res.status(502).json({ success: false, error: result.error });
-  res.json({ success: true, messageIds: result.messageIds });
+});
+
+// Tanlangan brend/turlarni hozir kanalga yuborish.
+apiV1Router.post('/promo/send', requireOwner, async (req: Request, res: Response) => {
+  const job = promoJobFrom(req.body);
+  if (!job) return res.status(400).json({ success: false, error: 'Kategoriya tanlanmagan.' });
+  const settings = dataStore.getPromoSettings();
+  if (!isValidPromoChannel(settings.channel)) {
+    return res.status(400).json({ success: false, error: "Kanal manzili @kanal_nomi yoki -100... ko'rinishida bo'lishi kerak." });
+  }
+  try {
+    const results = await sendPromoJob(job, settings);
+    res.json({ success: results.every((r) => r.ok), results, error: results.find((r) => r.error)?.error });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Yuborilmadi.' });
+  }
+});
+
+// Avtomatik reklamani hozir ishga tushirish (fon rejimida; natija sozlamalarda ko'rinadi).
+apiV1Router.post('/promo/auto/run', requireOwner, (_req: Request, res: Response) => {
+  if (!isValidPromoChannel(dataStore.getPromoSettings().channel)) {
+    return res.status(400).json({ success: false, error: "Kanal manzili @kanal_nomi yoki -100... ko'rinishida bo'lishi kerak." });
+  }
+  void runPromoAuto('qolda');
+  res.json({ success: true, message: 'Barcha brendlar kanalga yuborilmoqda. Bir necha daqiqa oladi.' });
 });
 
 // Rahbar: mijoz va uning barcha nasiyalarini butunlay o'chirish (izsiz). Savdolar qoladi.
