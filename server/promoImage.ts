@@ -116,7 +116,7 @@ function pageTree(rows: PromoRow[], page: number, total: number, opts: PromoImag
   const strip = h(
     { background: '#fffbeb', borderBottom: '4px solid #fbbf24', padding: '0 48px', height: 70, alignItems: 'center', justifyContent: 'space-between', fontSize: 26, fontWeight: 900, color: '#78350f' },
     h({}, `Omborda bor: ${totals.models} xil model`),
-    h({ background: '#78350f', color: '#fffbeb', padding: '4px 16px', borderRadius: 12 }, `${totals.pieces} dona`)
+    h({ background: '#78350f', color: '#fffbeb', padding: '4px 16px', borderRadius: 12, fontSize: 22 }, 'Sifat kafolati')
   );
 
   const tableHead = h(
@@ -136,7 +136,8 @@ function pageTree(rows: PromoRow[], page: number, total: number, opts: PromoImag
         h({ fontSize: 20, fontWeight: 700, color: '#92400e' }, row.continued ? 'davomi' : `${row.count} xil model`)
       );
     }
-    const c = stockColors(row.item.stock);
+    // Donasi ko'rsatilmaydi: rasmga faqat omborda borlari tushadi, belgi shuni bildiradi.
+    const c = stockColors(5);
     return h(
       { height: ROW_H, alignItems: 'center', padding: '0 20px', background: i % 2 ? '#ffffff' : '#fafaf9', borderBottom: '2px solid #e7e5e4' },
       h(
@@ -146,7 +147,7 @@ function pageTree(rows: PromoRow[], page: number, total: number, opts: PromoImag
       ),
       h(
         { width: stockW, justifyContent: 'center' },
-        h({ background: c.bg, color: c.fg, border: `2px solid ${c.border}`, fontSize: showWholesale ? 23 : 26, fontWeight: 900, padding: '4px 14px', borderRadius: 30, whiteSpace: 'nowrap' }, `${row.item.stock} ta`)
+        h({ background: c.bg, color: c.fg, border: `2px solid ${c.border}`, fontSize: showWholesale ? 23 : 26, fontWeight: 900, padding: '4px 14px', borderRadius: 30, whiteSpace: 'nowrap' }, 'Bor')
       ),
       showWholesale ? h({ width: priceW, justifyContent: 'flex-end', whiteSpace: 'nowrap', fontSize: 25, fontWeight: 700, color: '#57534e' }, row.item.wholesale ? formatMoney(row.item.wholesale, row.item.currency) : '—') : null,
       h({ width: priceW, justifyContent: 'flex-end', whiteSpace: 'nowrap', fontSize: showWholesale ? 28 : 32, fontWeight: 900, color: '#0c0a09' }, formatMoney(row.item.retail, row.item.currency))

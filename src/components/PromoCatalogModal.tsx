@@ -195,7 +195,7 @@ export const PromoCatalogModal: React.FC<Props> = ({ products, categories, onClo
             <div className="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center"><Megaphone className="w-5 h-5 text-stone-950" /></div>
             <div>
               <h3 className="font-black text-sm">Kanal uchun reklama rasmlari</h3>
-              <div className="text-[11px] text-stone-400">Brend bo'yicha · faqat omborda borlari, qoldig'i bilan · har brendga alohida post</div>
+              <div className="text-[11px] text-stone-400">Brend bo'yicha · faqat omborda borlari, narxi bilan · har brendga alohida post</div>
             </div>
           </div>
           <button onClick={onClose} className="text-stone-400 hover:text-white cursor-pointer" aria-label="Yopish"><X className="w-5 h-5" /></button>
