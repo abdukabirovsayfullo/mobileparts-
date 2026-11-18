@@ -187,16 +187,16 @@ export interface PromoContacts {
 
 /** Kanal posti uchun matn (Telegram caption: 1024 belgigacha). */
 export function promoCaption(category: string, brands: string[], groups: PromoGroup[], contacts: PromoContacts, date = new Date(), unitLabel?: string): string {
-  const { models, pieces } = promoTotals(groups);
+  const { models } = promoTotals(groups);
   const day = date.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent' });
   const brandText = brands.length ? brands.join(', ') : groups.slice(0, 6).map((g) => g.brand).join(', ') + (groups.length > 6 ? ' va boshqalar' : '');
   const lines = [
     unitLabel ? `🔥 ${category.toUpperCase()} — ${unitLabel}` : `🔥 ${category.toUpperCase()} — ${brandText}`,
     unitLabel && brandText !== unitLabel ? `📱 ${brandText}` : '',
     '',
-    `✅ Omborda bor: ${models} xil model (${pieces} dona)`,
+    `✅ Omborda bor: ${models} xil model`,
     `📅 Narxlar ${day} holatiga`,
-    `🖼 Narxlar va ombor qoldig'i — rasmlarda 👆`,
+    `🖼 Barcha narxlar — rasmlarda 👆`,
     '',
     contacts.phones ? `📞 ${contacts.phones.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean).join(' | ')}` : '',
     contacts.address ? `📍 ${contacts.address}` : '',

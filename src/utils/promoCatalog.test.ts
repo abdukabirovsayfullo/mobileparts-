@@ -49,7 +49,8 @@ test('promoCaption: qisqa va aloqa ma\'lumotlari bilan', () => {
   const caption = promoCaption('EKRAN', ['SAMSUNG'], [{ brand: 'SAMSUNG', items: [{ id: '1', name: 'A10', stock: 3, retail: 1, currency: 'UZS' }] }],
     { title: 'MobileParts', phones: '+998952001333, +998911741333', address: 'Paxtaobod', link: 't.me/mobilepartsuz' }, new Date('2026-11-14T10:00:00Z'));
   assert.match(caption, /EKRAN — SAMSUNG/);
-  assert.match(caption, /1 xil model \(3 dona\)/);
+  assert.match(caption, /1 xil model$/m);
+  assert.doesNotMatch(caption, /dona/);
   assert.match(caption, /\+998952001333 \| \+998911741333/);
   assert.ok(caption.length <= 1000);
 });

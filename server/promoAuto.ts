@@ -46,7 +46,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Telegram kanalga ~20 xabar/daqiqa cheklovi: har rasmdan keyin ~3 soniya kutiladi. */
 export async function sendPromoJob(job: PromoJob, settings = dataStore.getPromoSettings()) {
-  const token = dataStore.getTelegramConfig().botToken || '';
+  // Asosiy Telegram sozlamasidagi bot, bo'lmasa mijozlar boti.
+  const token = dataStore.getTelegramConfig().botToken || (await import('./customerTelegram')).customerBotToken();
   const results: { key: string; images: number; ok: boolean; error?: string }[] = [];
   const rendered = await renderPromoJob(job, settings);
   for (let i = 0; i < rendered.length; i++) {

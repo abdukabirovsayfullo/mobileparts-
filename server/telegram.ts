@@ -242,7 +242,7 @@ export async function sendTelegramPromoImages(
 ): Promise<{ success: boolean; error?: string; messageIds?: number[] }> {
   const cleanToken = token.trim();
   const chat = chatId.trim();
-  if (!cleanToken) return { success: false, error: "Telegram bot tokeni sozlanmagan (Sozlamalar → Telegram)." };
+  if (!cleanToken) return { success: false, error: "Telegram bot tokeni sozlanmagan: Mijozlar → Telegram bot yoki AI tahlilchi → Telegram bo'limida bot tokenini kiriting." };
   if (!chat) return { success: false, error: 'Kanal manzili kiritilmagan (masalan @mobilepartsuz).' };
   if (!input.images.length) return { success: false, error: "Yuboriladigan rasm yo'q." };
   const call = async (method: 'sendPhoto' | 'sendMediaGroup', form: FormData) => {
