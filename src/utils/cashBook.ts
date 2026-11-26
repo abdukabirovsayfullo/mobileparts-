@@ -36,6 +36,14 @@ export interface CashBook {
   netCash: number;
 }
 
+const PAYMENT_GROUP_WINDOW_MS = 2 * 60 * 1000;
+
+const debtCustomerKey = (d: DebtRecord): string => {
+  const name = String(d.customerName || '').toLowerCase().replace(/[ʻʼ'`‘’]/g, '').replace(/\s+/g, ' ').trim();
+  const digits = String(d.customerPhone || '').replace(/\D/g, '');
+  return `${name}|${digits.length >= 9 ? digits.slice(-9) : ''}`;
+};
+
 const groupMovements = (list: StockMovement[], kind: 'sale' | 'refund'): CashBookEntry[] => {
   const groups = new Map<string, StockMovement[]>();
   for (const m of list) {
@@ -64,22 +72,40 @@ export const buildCashBook = (movements: StockMovement[], debts: DebtRecord[], d
   const sales = groupMovements(todayUzs.filter((m) => m.type === 'chiqim'), 'sale');
   const refunds = groupMovements(todayUzs.filter((m) => m.type === 'vazvrat'), 'refund');
 
-  const debtPayments: CashBookEntry[] = debts
+  // Mijoz bir marta pul bersa, u bir nechta nasiyaga taqsimlanadi (har biriga alohida yozuv).
+  // Kassa kitobida esa bitta qator: mijoz qancha bergani. Bir mijozning 2 daqiqa ichidagi
+  // naqd to'lov yozuvlari bitta to'lov deb qo'shiladi.
+  const rawPayments = debts
     .filter((d) => currencyOf(d) === 'UZS')
     .flatMap((d) =>
       (d.paymentHistory || [])
         .filter((p) => p.method === 'naqd' && p.amount > 0 && tashkentDay(p.date) === date)
-        .map((p, index) => ({
-          key: `debt:${d.id}:${p.date}:${index}`,
-          kind: 'debt_payment' as const,
-          timestamp: p.date,
-          customerName: d.customerName,
-          employeeName: p.employeeName,
-          itemsLabel: 'Nasiya to‘lovi',
-          itemCount: 0,
-          amount: p.amount
-        }))
-    );
+        .map((p) => ({ debt: d, p, customerKey: debtCustomerKey(d) }))
+    )
+    .sort((x, y) => x.p.date.localeCompare(y.p.date));
+  const debtPayments: CashBookEntry[] = [];
+  const openGroup = new Map<string, { entry: CashBookEntry; startMs: number }>();
+  for (const { debt, p, customerKey } of rawPayments) {
+    const ms = new Date(p.date).getTime();
+    const open = openGroup.get(customerKey);
+    if (open && ms - open.startMs <= PAYMENT_GROUP_WINDOW_MS) {
+      open.entry.amount += p.amount;
+      open.entry.itemCount += 1;
+      continue;
+    }
+    const entry: CashBookEntry = {
+      key: `debt:${debt.id}:${p.date}`,
+      kind: 'debt_payment',
+      timestamp: p.date,
+      customerName: debt.customerName,
+      employeeName: p.employeeName,
+      itemsLabel: 'Nasiya to‘lovi',
+      itemCount: 1,
+      amount: p.amount
+    };
+    debtPayments.push(entry);
+    openGroup.set(customerKey, { entry, startMs: ms });
+  }
 
   const total = (list: CashBookEntry[]) => list.reduce((sum, e) => sum + e.amount, 0);
   const salesTotal = total(sales);

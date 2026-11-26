@@ -70,3 +70,24 @@ test('entries are newest first', () => {
   ], [], DAY);
   assert.deepEqual(book.entries.map((e) => e.receiptNumber), ['B', 'A']);
 });
+
+test('one customer payment split across several debts is one cash-book line', () => {
+  const debt = (id: string, name: string, payments: [string, number][]): DebtRecord => ({
+    id, movementId: `m-${id}`, customerName: name, customerPhone: '+998 901234567', totalDebt: 500000, paidAmount: 0,
+    remainingAmount: 0, dueDate: '', createdAt: at('08:00'), status: 'qisman_tolandi',
+    paymentHistory: payments.map(([date, amount]) => ({ date, amount, method: 'naqd' as const, employeeName: 'Rahbar' }))
+  } as DebtRecord);
+  const t = new Date(at('17:01'));
+  const ms = (n: number) => new Date(t.getTime() + n).toISOString();
+  const book = buildCashBook([], [
+    debt('d1', 'UMIDJON 888', [[ms(0), 80000]]),
+    debt('d2', 'UMIDJON 888', [[ms(40), 35000]]),
+    debt('d3', 'UMIDJON 888', [[new Date(t.getTime() + 3600000).toISOString(), 10000]]),
+    debt('d4', 'ABDULMAJID', [[ms(10), 38000]])
+  ], DAY);
+  const payments = book.entries.filter((e) => e.kind === 'debt_payment');
+  assert.equal(payments.length, 3);
+  const umid = payments.filter((e) => e.customerName === 'UMIDJON 888').map((e) => e.amount).sort((a, b) => a - b);
+  assert.deepEqual(umid, [10000, 115000]);
+  assert.equal(book.debtCashTotal, 163000);
+});
