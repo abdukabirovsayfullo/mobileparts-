@@ -1,4 +1,5 @@
 import { debtCustomerError } from '../src/utils/checkoutCustomer';
+import { allocateSplitPayment } from '../src/utils/paymentParts';
 import { protectDebtOwnership } from '../src/utils/debtOwnership';
 import fs from 'fs';
 import path from 'path';
@@ -681,9 +682,11 @@ class DataStore {
     customerName?: string;
     customerPhone?: string;
     customerAddress?: string;
-    paymentMethod?: 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
+    paymentMethod?: 'naqd' | 'click_payme' | 'uzum' | 'nasiya' | 'aralash';
     discount?: number;
     paidNow?: number;
+    /** Faqat 'aralash' to'lovda: mijoz naqd bergan qism (qolgani Click). */
+    cashPart?: number;
     receiptNumber?: string;
     notes?: string;
     employeeId?: string;
@@ -752,6 +755,17 @@ class DataStore {
       return roundMoney(Number(item.unitPrice || p.sellingPrice) * Math.max(1, Math.floor(Number(item.quantity) || 1)), saleCurrency);
     });
     const previewTotal = previewAmounts.reduce((a,b) => a+b, 0);
+    if (!['naqd', 'click_payme', 'uzum', 'nasiya', 'aralash'].includes(paymentMethod)) throw new Error("To'lov turi noto'g'ri.");
+    const isSplit = paymentMethod === 'aralash';
+    if (isSplit) {
+      if (saleCurrency !== 'UZS') throw new Error("Aralash to'lov faqat so'mli savdoda bo'ladi.");
+      const saleTotal = saleAccounting(previewAmounts, previewTotal, discount, saleCurrency).total;
+      const cash = roundMoney(Number(salePayload.cashPart), saleCurrency);
+      if (!Number.isFinite(cash) || cash <= 0 || cash >= saleTotal) {
+        throw new Error(`Aralash to'lovda naqd qism 0 dan katta va chek summasidan (${saleTotal} so'm) kichik bo'lishi kerak.`);
+      }
+      salePayload = { ...salePayload, paidNow: saleTotal };
+    }
     const preview = saleAccounting(previewAmounts, salePayload.paidNow ?? (paymentMethod === 'nasiya' ? 0 : previewTotal), discount, saleCurrency);
     if (preview.remaining > 0) {
       const error = debtCustomerError(customerName, customerPhone);
@@ -829,6 +843,10 @@ class DataStore {
       movement.paymentMethod = accounting.remaining > 0 ? 'nasiya' : paymentMethod;
       movement.profit = roundMoney(movement.totalRevenue - movement.totalCost, saleCurrency);
     });
+    if (isSplit) {
+      const parts = allocateSplitPayment(movements.map(movement => movement.totalRevenue), Number(salePayload.cashPart), saleCurrency);
+      movements.forEach((movement, index) => { movement.paymentMethod = 'aralash'; movement.paymentParts = parts[index]; });
+    }
     totalRevenue = accounting.total;
     const totalProfit = roundMoney(totalRevenue - totalCost, saleCurrency);
 

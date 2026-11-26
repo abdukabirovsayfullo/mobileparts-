@@ -18,7 +18,9 @@ export function thermalReceiptHtml(receipt: SaleReceiptData, store: StoreSetting
   const pad = (value: number) => String(value).padStart(2, '0');
   const dateText = Number.isNaN(date.getTime()) ? receipt.date
     : `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  const payment = { naqd: 'Naqd', click_payme: 'Click / Payme', uzum: 'Uzum Bank', nasiya: 'Nasiya' }[receipt.paymentMethod];
+  const payment = receipt.paymentMethod === 'aralash'
+    ? `Naqd ${money(receipt.paymentParts?.naqd || 0)} + Click ${money(receipt.paymentParts?.click_payme || 0)}`
+    : { naqd: 'Naqd', click_payme: 'Click / Payme', uzum: 'Uzum Bank', nasiya: 'Nasiya' }[receipt.paymentMethod];
   const items = receipt.items.map((item, index) => `<tr>
     <td class="index">${index + 1}</td><td>${escape(item.name)}</td><td class="qty">${escape(item.quantity)}</td>
     ${showPrices ? `<td class="number">${money(item.unitPrice)}</td><td class="number">${money(item.total)}</td>` : ''}

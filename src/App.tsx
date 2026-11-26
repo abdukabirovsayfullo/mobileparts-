@@ -876,7 +876,11 @@ export default function App() {
       cashierName: 'Sayfullo (Hisobchi)',
       isReturn: isReturn,
       returnReason: m.returnReason,
-      ...(!isReturn && m.type === 'chiqim' ? movementPaymentSummary(m, relatedMovements, debts) : {})
+      ...(!isReturn && m.type === 'chiqim' ? movementPaymentSummary(m, relatedMovements, debts) : {}),
+      ...(m.paymentMethod === 'aralash' ? { paymentParts: {
+        naqd: relatedMovements.reduce((sum, row) => sum + (row.paymentParts?.naqd || 0), 0),
+        click_payme: relatedMovements.reduce((sum, row) => sum + (row.paymentParts?.click_payme || 0), 0)
+      } } : {})
     };
 
     setActiveReceiptToPrint(receipt);
@@ -891,7 +895,7 @@ export default function App() {
     customerPhone: string,
     customerAddress: string,
     notes: string,
-    debtDetails?: { paidNow: number; discountAmount?: number; receiptNumber?: string }
+    debtDetails?: { paidNow: number; discountAmount?: number; receiptNumber?: string; cashPart?: number }
   ): Promise<void> => {
     if (!canReachPos()) throw new Error('Internet uzilgan. Savat shu oynada saqlanadi. Aloqa tiklangach qayta urinib ko‘ring.');
     const requestBody = JSON.stringify({
@@ -903,6 +907,7 @@ export default function App() {
         notes,
         discount: debtDetails?.discountAmount,
         paidNow: debtDetails?.paidNow,
+        cashPart: debtDetails?.cashPart,
         receiptNumber: debtDetails?.receiptNumber
     });
     const sendSale = () => fetch('/api/v1/sales', {
@@ -1426,8 +1431,13 @@ export default function App() {
     if (plan.applied <= 0) return false;
     const nowIso = new Date().toISOString();
     const actor = authUser ? { id: authUser.id, name: authUser.name } : undefined;
-    const parts = new Map(plan.allocations.map((a) => [a.debtId, a.amount]));
-    setDebts((prev) => prev.map((d) => (parts.has(d.id) ? applyDebtPayment(d, parts.get(d.id)!, method, nowIso, actor).debt : d)));
+    // Reja eng so'nggi holatdan tuziladi: aralash to'lovda naqd va Click qismlari ketma-ket yoziladi,
+    // ikkinchisi birinchisi yopgan nasiyalarni qayta tanlab qolmasligi kerak.
+    setDebts((prev) => {
+      const fresh = planCustomerPayment(prev, customer.name, customer.phone, customer.currency, amount);
+      const parts = new Map(fresh.allocations.map((a) => [a.debtId, a.amount]));
+      return prev.map((d) => (parts.has(d.id) ? applyDebtPayment(d, parts.get(d.id)!, method, nowIso, actor).debt : d));
+    });
     return true;
   };
 

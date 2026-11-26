@@ -1,5 +1,6 @@
 import type { CashExpense, DebtRecord, StockMovement } from '../src/types';
 import { currencyOf } from '../src/utils/money';
+import { movementMethodAmount } from '../src/utils/paymentParts';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 
 export interface ShiftTotals {
@@ -24,7 +25,7 @@ export const calculateShiftTotals = (
   // Kassa smenasi faqat so'mda: dollarli savdo va nasiya to'lovlari kutilgan so'm naqd pulga qo'shilmaydi.
   const sales = movements.filter(item => item.type === 'chiqim' && currencyOf(item) === 'UZS' && inScope(item.employeeId) && tashkentDate(item.timestamp) === date);
   const refunds = movements.filter(item => item.type === 'vazvrat' && currencyOf(item) === 'UZS' && inScope(item.employeeId) && tashkentDate(item.timestamp) === date);
-  const sum = (method: string) => sales.filter(item => item.paymentMethod === method).reduce((total, item) => total + item.totalRevenue, 0);
+  const sum = (method: string) => sales.reduce((total, item) => total + movementMethodAmount(item, method), 0);
   const activeExpenses = activeExpensesForDate(expenses, date).filter(item => inScope(item.createdById));
   // Nasiyali sotuvda mijoz shu zahoti bergan naqd qism ham kassaga tushadi.
   // Shu qism nasiya to'lovlari tarixida ham turadi — u yerda tashlab ketiladi (ikki marta sanalmasin).

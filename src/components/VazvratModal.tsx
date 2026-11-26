@@ -113,7 +113,7 @@ export const VazvratModal: React.FC<VazvratModalProps> = ({
         setUnitPrice(prefillMovement.unitPrice || 0);
         setCustomerName(prefillMovement.counterparty || '');
         setCustomerPhone(prefillMovement.customerPhone || '+998 ');
-        setPaymentMethod(prefillMovement.paymentMethod || 'naqd');
+        setPaymentMethod(prefillMovement.paymentMethod === 'aralash' ? 'naqd' : prefillMovement.paymentMethod || 'naqd');
         setNotes(prefillMovement.receiptNumber ? `Chek: ${prefillMovement.receiptNumber}` : '');
       } else {
         setSelectedProduct(null);

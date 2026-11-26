@@ -3,7 +3,7 @@ export type Currency = 'UZS' | 'USD';
 
 export type MovementType = 'kirim' | 'chiqim' | 'spisaniye' | 'vazvrat';
 
-export type PaymentMethod = 'naqd' | 'click_payme' | 'uzum' | 'nasiya';
+export type PaymentMethod = 'naqd' | 'click_payme' | 'uzum' | 'nasiya' | 'aralash';
 
 export type UserRole = 'owner' | 'worker' | 'technician';
 
@@ -87,6 +87,8 @@ export interface StockMovement {
   priceType?: 'chakana' | 'optom' | 'maxsus';
   discountAmount?: number;// Qilingan chegirma summasi
   paidAmount?: number; // Ushbu tovar uchun sotuv paytida to'langan qism
+  /** Faqat paymentMethod === 'aralash' da: qator tushumining naqd va Click qismlari. */
+  paymentParts?: { naqd: number; click_payme: number };
   debtRemaining?: number; // Ushbu tovardan qolgan qarz
   previousCustomerDebt?: number; // Savdo oldidan mijozning jami qarzi
   customerTotalDebt?: number; // Savdo paytidagi jami qarzdorlik
@@ -145,6 +147,8 @@ export interface SaleReceiptData {
   discount?: number;
   total: number;
   paidAmount?: number;
+  /** Aralash to'lovda: naqd va Click qismlari. */
+  paymentParts?: { naqd: number; click_payme: number };
   changeAmount?: number;
   notes?: string;
   cashierName?: string;

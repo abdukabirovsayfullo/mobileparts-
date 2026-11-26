@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { movementMethodAmount } from '../utils/paymentParts';
 import { Product, StockMovement, DebtRecord, SupplierDebtRecord, StoreSettings, OrderItem } from '../types';
 import { formatMoney } from '../utils/formatters';
 import { currencyOf } from '../utils/money';
@@ -254,7 +255,8 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       totalProfit += m.profit || 0;
       totalQuantity += m.quantity || 0;
 
-      if (m.paymentMethod === 'naqd') cash += m.totalRevenue;
+      if (m.paymentMethod === 'aralash') { cash += movementMethodAmount(m, 'naqd'); clickPayme += movementMethodAmount(m, 'click_payme'); }
+      else if (m.paymentMethod === 'naqd') cash += m.totalRevenue;
       else if (m.paymentMethod === 'click_payme') clickPayme += m.totalRevenue;
       else if (m.paymentMethod === 'uzum') uzum += m.totalRevenue;
       else if (m.paymentMethod === 'nasiya') debt += m.totalRevenue;
@@ -1216,7 +1218,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                                   m.paymentMethod === 'click_payme' ? 'bg-sky-100 text-sky-800' :
                                   m.paymentMethod === 'uzum' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-amber-800'
                                 }`}>
-                                  {m.paymentMethod === 'naqd' ? 'Naqd' : m.paymentMethod === 'click_payme' ? 'Click' : m.paymentMethod === 'uzum' ? 'Uzum' : 'Nasiya'}
+                                  {m.paymentMethod === 'aralash' ? 'Naqd+Click' : m.paymentMethod === 'naqd' ? 'Naqd' : m.paymentMethod === 'click_payme' ? 'Click' : m.paymentMethod === 'uzum' ? 'Uzum' : 'Nasiya'}
                                 </span>
                               </td>
                               <td className="py-1.5 px-2 text-center font-bold text-stone-900">{m.quantity}</td>

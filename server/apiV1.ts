@@ -19,6 +19,7 @@ import {
   buildAiReportTelegramMessage, 
   sendLowStockNotification } from './telegram';
 import { PromoJob, isValidPromoChannel, renderPromoJob, runPromoAuto, sendPromoJob } from './promoAuto';
+import { movementMethodAmount } from '../src/utils/paymentParts';
 import { 
   computeStoreAuditData, 
   runGeminiStoreAudit, 
@@ -158,7 +159,7 @@ apiV1Router.get('/docs', (req: Request, res: Response) => {
         bodyFormat: {
           customerName: 'Mijoz ismi (masalan: Akmal)',
           customerPhone: 'Mijoz telefoni (+998901234567)',
-          paymentMethod: 'naqd | click_payme | uzum | nasiya',
+          paymentMethod: 'naqd | click_payme | uzum | nasiya | aralash (cashPart bilan)',
           notes: 'Izoh yoki chek ma\'lumoti',
           items: [
             { productId: 'prod-1', quantity: 2, unitPrice: 85000 },
@@ -628,7 +629,7 @@ apiV1Router.delete('/products/:id', (req: Request, res: Response) => {
 // --- Sales (Chiqim) ---
 apiV1Router.post('/sales', (req: Request, res: Response) => {
   try {
-    const { items, customerName, customerPhone, customerAddress, paymentMethod, discount, paidNow, receiptNumber, notes } = req.body;
+    const { items, customerName, customerPhone, customerAddress, paymentMethod, discount, paidNow, cashPart, receiptNumber, notes } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -649,6 +650,7 @@ apiV1Router.post('/sales', (req: Request, res: Response) => {
       paymentMethod,
       discount,
       paidNow,
+      cashPart,
       receiptNumber,
       notes,
       employeeId: employee?.id,
@@ -1066,7 +1068,8 @@ apiV1Router.get('/summary/daily', (_req: Request, res: Response) => {
   todayChiqim.forEach(m => {
     todayRevenue += m.totalRevenue;
     todayProfit += m.profit;
-    if (m.paymentMethod === 'naqd') cashRevenue += m.totalRevenue;
+    if (m.paymentMethod === 'aralash') { cashRevenue += movementMethodAmount(m, 'naqd'); clickRevenue += movementMethodAmount(m, 'click_payme'); }
+    else if (m.paymentMethod === 'naqd') cashRevenue += m.totalRevenue;
     else if (m.paymentMethod === 'click_payme' || m.paymentMethod === 'uzum') clickRevenue += m.totalRevenue;
     else if (m.paymentMethod === 'nasiya') debtRevenue += m.totalRevenue;
   });

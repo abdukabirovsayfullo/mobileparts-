@@ -67,6 +67,7 @@ interface ChiqimFormViewProps {
       paidNow: number;
       discountAmount?: number;
       receiptNumber?: string;
+      cashPart?: number;
     }
   ) => Promise<void>;
   onPrintReceipt?: (movement: StockMovement) => void;
@@ -169,6 +170,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
   const [customerPhone, setCustomerPhone] = useState('+998 ');
   const [customerAddress, setCustomerAddress] = useState('Do\'kondan olib ketildi (Paxtaobod)');
   const [cashReceived, setCashReceived] = useState<number>(0);
+  // Aralash to'lov: naqd va Click qismlari (yig'indisi chek summasiga teng bo'lishi shart).
+  const [splitCash, setSplitCash] = useState<number>(0);
+  const [splitClick, setSplitClick] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
   // Toggle 'Price View' mode for sales receipt: true = full prices, false = only product names, quantities, and categories
@@ -444,6 +448,14 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
   const checkoutCustomerError = unpaidRemaining > 0 ? debtCustomerError(customerName, customerPhone) : '';
 
+  const isSplitPayment = paymentMethod === 'aralash';
+  const splitError = !isSplitPayment ? ''
+    : cartCurrency !== 'UZS' ? "Aralash to'lov faqat so'mli savdoda bo'ladi."
+    : splitCash <= 0 || splitClick <= 0 ? "Naqd va Click summalarini kiriting."
+    : roundMoney(splitCash + splitClick, cartCurrency) !== grandTotalRevenue
+      ? `Naqd + Click (${formatMoney(roundMoney(splitCash + splitClick, cartCurrency), cartCurrency)}) chek summasiga (${formatMoney(grandTotalRevenue, cartCurrency)}) teng bo'lishi kerak.`
+      : '';
+
   const changeAmount = cashReceived > grandTotalRevenue ? roundMoney(cashReceived - grandTotalRevenue, cartCurrency) : 0;
 
   const handleFinalizeSale = async (e: React.FormEvent) => {
@@ -458,8 +470,13 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const currentAddress = customerAddress.trim() || 'Do\'kondan olib ketildi (Paxtaobod)';
     const currentNotes = notes.trim();
 
+    if (isSplitPayment && splitError) {
+      setSaleError(splitError);
+      return;
+    }
+
     // Determine how much is paid and if debt should be generated
-    const effectivePaid = paymentMethod === 'nasiya'
+    const effectivePaid = isSplitPayment ? grandTotalRevenue : paymentMethod === 'nasiya'
       ? Math.min(Math.max(0, cashReceived || 0), grandTotalRevenue)
       : (cashReceived > 0 ? Math.min(cashReceived, grandTotalRevenue) : grandTotalRevenue);
     const effectiveRemainingDebt = roundMoney(Math.max(0, grandTotalRevenue - effectivePaid), cartCurrency);
@@ -478,7 +495,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     const payload = JSON.stringify({
       items: cart.map(({ product, quantity, unitPrice }) => [product.id, quantity, unitPrice]),
       salePaymentMethod, currentCustomer, currentPhone, currentAddress,
-      saleNotesWithDiscount, effectivePaid, discountAmount
+      saleNotesWithDiscount, effectivePaid, discountAmount, splitCash: isSplitPayment ? splitCash : 0
     });
     if (saleAttempt.current?.payload !== payload) {
       saleAttempt.current = {
@@ -498,7 +515,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         currentPhone,
         currentAddress,
         saleNotesWithDiscount,
-        { paidNow: effectivePaid, discountAmount, receiptNumber: receiptNum }
+        { paidNow: effectivePaid, discountAmount, receiptNumber: receiptNum, ...(isSplitPayment ? { cashPart: splitCash } : {}) }
       );
     } catch (error) {
       setSaleError(error instanceof Error ? error.message : 'Savdo saqlanmadi. Internetni tekshirib qayta urinib ko‘ring.');
@@ -517,6 +534,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
         customerPhone: currentPhone,
         customerAddress: currentAddress,
         paymentMethod: salePaymentMethod,
+        ...(isSplitPayment ? { paymentParts: { naqd: splitCash, click_payme: splitClick } } : {}),
         items: cart.map((c) => ({
           id: c.product.id,
           name: c.product.name,
@@ -546,6 +564,8 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
     setCart([]);
     setMobileTab('catalog');
     setCashReceived(0);
+    setSplitCash(0);
+    setSplitClick(0);
     setDiscountValue(0);
     setNotes('');
     setCustomerName('');
@@ -1291,23 +1311,24 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
             </div>
 
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-1"><strong className="block text-sm">{paymentMethod === 'nasiya' ? 'NASIYA SAVDOSI' : 'TO‘LANGAN SAVDO'}</strong>{customerName.trim() ? <p className="text-2xl font-black uppercase tracking-wide text-red-700 break-words leading-tight">{customerName.trim()}</p> : <p className="text-sm font-bold text-red-600">Mijoz tanlanmagan</p>}<p className="text-xs">{paymentMethod === 'nasiya' ? 'To‘lanmagan summa shu mijoz qarziga qo‘shiladi.' : 'To‘lov usulini tekshiring.'}</p></div>
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-1"><strong className="block text-sm">{paymentMethod === 'nasiya' ? 'NASIYA SAVDOSI' : 'TO‘LANGAN SAVDO'}</strong>{customerName.trim() ? <p className="text-2xl font-black uppercase tracking-wide text-red-700 break-words leading-tight">{customerName.trim()}</p> : <p className={`text-sm font-bold ${paymentMethod === 'nasiya' ? 'text-red-600' : 'text-stone-500'}`}>Mijoz tanlanmagan</p>}<p className="text-xs">{paymentMethod === 'nasiya' ? 'To‘lanmagan summa shu mijoz qarziga qo‘shiladi.' : 'To‘lov usulini tekshiring.'}</p></div>
             {/* Payment Method Selector */}
             <div>
               <label className="block font-semibold text-stone-700 mb-1">
                 To'lov turi
               </label>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-5 gap-1.5">
                 {[
                   { id: 'nasiya', label: 'Nasiya' },
                   { id: 'naqd', label: 'Naqd' },
                   { id: 'click_payme', label: 'Click' },
-                  { id: 'uzum', label: 'Uzum' }
+                  { id: 'uzum', label: 'Uzum' },
+                  { id: 'aralash', label: 'Aralash' }
                 ].map((m) => (
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => { setPaymentMethod(m.id as PaymentMethod); setCashReceived(0); setSaleError(''); }}
+                    onClick={() => { setPaymentMethod(m.id as PaymentMethod); setCashReceived(0); setSplitCash(0); setSplitClick(0); setSaleError(''); }}
                     aria-pressed={paymentMethod === m.id}
                     className={`py-2 text-xs rounded-lg font-black text-center cursor-pointer transition-colors ${
                       paymentMethod === m.id
@@ -1323,8 +1344,35 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
             </div>
 
+            {isSplitPayment && (
+              <div className="p-3 bg-sky-50 rounded-xl border border-sky-200 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { id: 'split-cash', label: 'Naqd', value: splitCash, set: (v: number) => { setSplitCash(v); setSplitClick(Math.max(0, roundMoney(grandTotalRevenue - v, cartCurrency))); } },
+                    { id: 'split-click', label: 'Click', value: splitClick, set: (v: number) => { setSplitClick(v); setSplitCash(Math.max(0, roundMoney(grandTotalRevenue - v, cartCurrency))); } }
+                  ]).map((f) => (
+                    <label key={f.id} htmlFor={f.id} className="space-y-1 block">
+                      <span className="font-semibold text-stone-700">{f.label}</span>
+                      <input
+                        id={f.id}
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="0"
+                        value={f.value || ''}
+                        onChange={(e) => { f.set(Math.max(0, Number(e.target.value) || 0)); setSaleError(''); }}
+                        className="w-full px-2 py-2 bg-white border border-stone-300 rounded-lg text-right font-black text-stone-900 text-sm focus:outline-none focus:ring-1 focus:ring-sky-400"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-stone-600">Bittasini yozsangiz, ikkinchisi chek summasidan avtomatik hisoblanadi.</p>
+                {splitError && (splitCash > 0 || splitClick > 0) && <p className="text-[11px] font-bold text-red-700">{splitError}</p>}
+              </div>
+            )}
+
             {/* If Cash or partial payment: Amount Received & Auto-Debt Logic (1-talab) */}
-            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
+            {!isSplitPayment && <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
               <div className="space-y-1.5">
                 <label htmlFor="checkout-paid" className="font-semibold text-stone-700">
                   {paymentMethod === 'nasiya' ? "Avans (ixtiyoriy)" : "To'langan summa"}
@@ -1376,7 +1424,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                 </div>
               )}
 
-            </div>
+            </div>}
 
             {/* Optional checkout details */}
             <button
@@ -1528,9 +1576,9 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
               </div>
               <button
                 type="submit"
-                disabled={cart.length === 0 || isSubmittingSale || !!checkoutCustomerError}
+                disabled={cart.length === 0 || isSubmittingSale || !!checkoutCustomerError || !!splitError}
                 className={`w-full lg:flex-1 py-3.5 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  cart.length > 0 && !isSubmittingSale && !checkoutCustomerError
+                  cart.length > 0 && !isSubmittingSale && !checkoutCustomerError && !splitError
                     ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md active:scale-[0.99]'
                     : 'bg-stone-700 text-stone-400 cursor-not-allowed'
                 }`}

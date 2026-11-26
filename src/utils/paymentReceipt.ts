@@ -9,13 +9,20 @@ export interface PaymentReceiptData {
   customerPhone?: string;
   currency: Currency;
   amount: number;
-  method: 'naqd' | 'click_payme';
+  method: 'naqd' | 'click_payme' | 'aralash';
+  /** Faqat 'aralash' da: naqd va Click qismlari. */
+  parts?: { naqd: number; click_payme: number };
   /** Qaysi nasiyalarga qancha tushgani (eng eskisidan). */
   allocations: { createdAt: string; amount: number; remainingAfter: number; label?: string }[];
   debtBefore: number;
   debtAfter: number;
   cashier?: string;
 }
+
+export const paymentMethodLabel = (r: Pick<PaymentReceiptData, 'method' | 'parts' | 'currency'>): string =>
+  r.method === 'aralash'
+    ? `Naqd ${formatSom(r.parts?.naqd || 0, r.currency)} + Click ${formatSom(r.parts?.click_payme || 0, r.currency)}`
+    : r.method === 'click_payme' ? 'Click/Payme' : 'Naqd';
 
 export const paymentReceiptNumber = (date = new Date()) => {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -60,7 +67,7 @@ export function paymentReceiptHtml(r: PaymentReceiptData): string {
       ${r.customerPhone && r.customerPhone.replace(/\D/g, '').length > 3 ? `<div class="detail"><strong>Telefon:</strong> ${escapeHtml(r.customerPhone)}</div>` : ''}
       ${r.cashier ? `<div class="detail"><strong>Qabul qildi:</strong> ${escapeHtml(r.cashier)}</div>` : ''}
       ${row('Avvalgi qarz', som(r.debtBefore), 'bold')}
-      <div class="paid">${row(`TO'LANDI (${r.method === 'click_payme' ? 'Click/Payme' : 'Naqd'})`, som(r.amount))}</div>
+      <div class="paid">${row(`TO'LANDI (${paymentMethodLabel(r)})`, som(r.amount))}</div>
       <div class="grand">${row('QOLGAN QARZ', r.debtAfter <= 0 ? "0 — to'liq yopildi" : som(r.debtAfter))}</div>
       <div class="sign"><span>Kassir: ________</span><span>Mijoz: ________</span></div>
       <div class="footer">To'lovingiz uchun rahmat!</div>

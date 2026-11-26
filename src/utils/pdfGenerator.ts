@@ -435,7 +435,7 @@ export function createSalesPdf(params: GenerateSalesPdfParams): jsPDF {
 
   // Transactions Table
   const tableRows = transactions.map((t, idx) => {
-    const paymentLabel = t.paymentMethod === 'naqd' ? 'Naqd' : t.paymentMethod === 'click_payme' ? 'Click' : t.paymentMethod === 'uzum' ? 'Uzum' : 'Nasiya';
+    const paymentLabel = t.paymentMethod === 'aralash' ? 'Naqd+Click' : t.paymentMethod === 'naqd' ? 'Naqd' : t.paymentMethod === 'click_payme' ? 'Click' : t.paymentMethod === 'uzum' ? 'Uzum' : 'Nasiya';
 
     return [
       String(idx + 1),

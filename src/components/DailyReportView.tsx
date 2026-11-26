@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { movementMethodAmount } from '../utils/paymentParts';
 import { StockMovement, Product } from '../types';
 import { formatMoney, formatDate, downloadCSV } from '../utils/formatters';
 import { currencyOf, roundMoney, sumByCurrency } from '../utils/money';
@@ -129,20 +130,16 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
 
   // 5. Payment breakdown (deducting refunded cash/card)
   const cashRefund = uzs(vazvratList)
-    .filter((m) => m.paymentMethod === 'naqd')
-    .reduce((sum, m) => sum + m.totalRevenue, 0);
+    .reduce((sum, m) => sum + movementMethodAmount(m, 'naqd'), 0);
 
   const clickRefund = uzs(vazvratList)
-    .filter((m) => m.paymentMethod === 'click_payme' || m.paymentMethod === 'uzum')
-    .reduce((sum, m) => sum + m.totalRevenue, 0);
+    .reduce((sum, m) => sum + movementMethodAmount(m, 'click_payme') + movementMethodAmount(m, 'uzum'), 0);
 
   const cashRevenue = Math.max(0, uzs(chiqimList)
-    .filter((m) => m.paymentMethod === 'naqd')
-    .reduce((sum, m) => sum + m.totalRevenue, 0) - cashRefund);
+    .reduce((sum, m) => sum + movementMethodAmount(m, 'naqd'), 0) - cashRefund);
 
   const clickRevenue = Math.max(0, uzs(chiqimList)
-    .filter((m) => m.paymentMethod === 'click_payme' || m.paymentMethod === 'uzum')
-    .reduce((sum, m) => sum + m.totalRevenue, 0) - clickRefund);
+    .reduce((sum, m) => sum + movementMethodAmount(m, 'click_payme') + movementMethodAmount(m, 'uzum'), 0) - clickRefund);
 
   const debtRevenue = uzs(chiqimList)
     .filter((m) => m.paymentMethod === 'nasiya')

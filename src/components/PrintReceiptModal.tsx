@@ -263,7 +263,8 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     naqd: 'Naqd Pul',
     click_payme: 'Click / Payme',
     uzum: 'Uzum Bank',
-    nasiya: 'Nasiya (Qarzga)'
+    nasiya: 'Nasiya (Qarzga)',
+    aralash: `Naqd ${formatMoney(receipt.paymentParts?.naqd || 0, receipt.currency)} + Click ${formatMoney(receipt.paymentParts?.click_payme || 0, receipt.currency)}`
   }[receipt.paymentMethod];
 
   return (

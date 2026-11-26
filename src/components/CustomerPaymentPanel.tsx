@@ -3,7 +3,7 @@ import { DebtRecord, StockMovement, StoreSettings } from '../types';
 import { customerDebtHistory, groupDebtsByCustomer, planCustomerPayment } from '../utils/saleAccounting';
 import { formatMoney, formatDate } from '../utils/formatters';
 import { printThermalHtml } from '../utils/debtStatementReceipt';
-import { DebtReminderData, PaymentReceiptData, debtReminderHtml, paymentReceiptHtml, paymentReceiptNumber } from '../utils/paymentReceipt';
+import { DebtReminderData, PaymentReceiptData, debtReminderHtml, paymentMethodLabel, paymentReceiptHtml, paymentReceiptNumber } from '../utils/paymentReceipt';
 import { X, Search, Wallet, Printer, CheckCircle2, ArrowLeft, User } from 'lucide-react';
 
 type Currency = 'UZS' | 'USD';
@@ -48,7 +48,9 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<{ name: string; phone: string; currency: Currency } | null>(null);
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<'naqd' | 'click_payme'>('naqd');
+  const [method, setMethod] = useState<'naqd' | 'click_payme' | 'aralash'>('naqd');
+  // Aralash: umumiy summaning naqd qismi (qolgani Click).
+  const [cashPart, setCashPart] = useState('');
   const [saving, setSaving] = useState(false);
   const [autoPrint, setAutoPrint] = useState(readAutoPrint);
   const [receipt, setReceipt] = useState<PaymentReceiptData | null>(null);
@@ -99,6 +101,11 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
       alert(`To'lov qarzdan ko'p. Jami qarz: ${formatMoney(plan.totalRemaining, selected.currency)}`);
       return;
     }
+    const cash = Number(cashPart) || 0;
+    if (method === 'aralash' && (cash <= 0 || cash >= plan.applied)) {
+      alert("Aralash to'lovda naqd qism 0 dan katta va umumiy summadan kichik bo'lishi kerak.");
+      return;
+    }
     const now = new Date();
     const data: PaymentReceiptData = {
       receiptNumber: paymentReceiptNumber(now),
@@ -109,6 +116,7 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
       currency: selected.currency,
       amount: plan.applied,
       method,
+      ...(method === 'aralash' ? { parts: { naqd: cash, click_payme: plan.applied - cash } } : {}),
       allocations: plan.allocations.map((a) => ({
         createdAt: a.createdAt,
         amount: a.amount,
@@ -120,11 +128,22 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
       cashier: cashierName
     };
     setSaving(true);
-    const ok = await onPay({ name: selected.name, phone: selected.phone, currency: selected.currency }, plan.applied, method);
+    const customer = { name: selected.name, phone: selected.phone, currency: selected.currency };
+    let ok: boolean;
+    if (method === 'aralash') {
+      ok = await onPay(customer, cash, 'naqd');
+      if (ok) {
+        ok = await onPay(customer, plan.applied - cash, 'click_payme');
+        if (!ok) alert(`Naqd ${formatMoney(cash, selected.currency)} qabul qilindi, lekin Click qismi saqlanmadi. Click qismini alohida qayta kiriting.`);
+      }
+    } else {
+      ok = await onPay(customer, plan.applied, method);
+    }
     setSaving(false);
     if (!ok) return;
     setReceipt(data);
     setAmount('');
+    setCashPart('');
     if (autoPrint) void printPaymentReceipt(data);
   };
 
@@ -167,7 +186,7 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
             </div>
             <div className="bg-stone-50 border border-stone-200 rounded-2xl p-3 text-xs space-y-1">
               <div className="flex justify-between"><span>Avvalgi qarz</span><b>{formatMoney(receipt.debtBefore, receipt.currency)}</b></div>
-              <div className="flex justify-between text-emerald-700"><span>To'landi ({receipt.method === 'click_payme' ? 'Click/Payme' : 'Naqd'})</span><b>−{formatMoney(receipt.amount, receipt.currency)}</b></div>
+              <div className="flex justify-between text-emerald-700"><span>To'landi ({paymentMethodLabel(receipt)})</span><b>−{formatMoney(receipt.amount, receipt.currency)}</b></div>
               <div className="flex justify-between text-base font-black border-t border-stone-200 pt-1"><span>Qolgan qarz</span><span className={receipt.debtAfter > 0 ? 'text-red-600' : 'text-emerald-700'}>{receipt.debtAfter > 0 ? formatMoney(receipt.debtAfter, receipt.currency) : "Yopildi ✓"}</span></div>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -229,14 +248,32 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {(['naqd', 'click_payme'] as const).map((m) => (
+            <div className="grid grid-cols-3 gap-2">
+              {(['naqd', 'click_payme', 'aralash'] as const).map((m) => (
                 <button key={m} type="button" onClick={() => setMethod(m)}
                   className={`py-2 rounded-xl text-sm font-bold border cursor-pointer ${method === m ? 'bg-stone-950 text-white border-stone-950' : 'bg-white text-stone-700 border-stone-300 hover:bg-stone-50'}`}>
-                  {m === 'naqd' ? 'Naqd' : 'Click / Payme'}
+                  {m === 'naqd' ? 'Naqd' : m === 'click_payme' ? 'Click / Payme' : 'Aralash'}
                 </button>
               ))}
             </div>
+
+            {method === 'aralash' && (
+              <div className="grid grid-cols-2 gap-2 bg-sky-50 border border-sky-200 rounded-xl p-3 text-xs">
+                <label className="space-y-1 block">
+                  <span className="font-bold text-stone-700">Shundan naqd</span>
+                  <input type="text" inputMode="decimal" value={cashPart}
+                    onChange={(e) => setCashPart(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="0"
+                    className="w-full px-2 py-2 border border-stone-300 rounded-lg text-lg font-black text-right bg-white focus:outline-none focus:ring-2 focus:ring-sky-400" />
+                </label>
+                <div className="space-y-1">
+                  <span className="font-bold text-stone-700 block">Click</span>
+                  <div className="px-2 py-2 rounded-lg bg-white border border-stone-200 text-lg font-black text-right">
+                    {formatMoney(Math.max(0, (plan?.applied || 0) - (Number(cashPart) || 0)), selected.currency)}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {plan && plan.applied > 0 && (
               <div className="text-xs bg-stone-50 border border-stone-200 rounded-xl p-3 space-y-1">
@@ -260,7 +297,7 @@ export const CustomerPaymentPanel: React.FC<Props> = ({ debts, movements, store,
               To'lovdan keyin chekni avtomatik chiqarish
             </label>
 
-            <button type="submit" disabled={saving || !plan || plan.applied <= 0 || plan.leftover > 0}
+            <button type="submit" disabled={saving || !plan || plan.applied <= 0 || plan.leftover > 0 || (method === 'aralash' && (!(Number(cashPart) > 0) || Number(cashPart) >= plan.applied))}
               className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black text-base cursor-pointer">
               {saving ? 'Saqlanmoqda…' : `To'lovni qabul qilish${plan && plan.applied > 0 && !plan.leftover ? ` — ${formatMoney(plan.applied, selected.currency)}` : ''}`}
             </button>

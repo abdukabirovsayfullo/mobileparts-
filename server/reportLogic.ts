@@ -1,4 +1,5 @@
 import type { CashExpense, CashShift, Currency, DebtRecord, Product, StockMovement } from '../src/types';
+import { movementMethodAmount } from '../src/utils/paymentParts';
 import { currencyOf, roundMoney } from '../src/utils/money';
 import { activeExpensesForDate, expenseTotal, tashkentDate } from './expenseLogic';
 
@@ -40,7 +41,7 @@ const buildCurrencyReport = (input: ReportInput, from: string, to: string, curre
   const cost = sales.reduce((sum, m) => sum + m.totalCost, 0) - returns.reduce((sum, m) => sum + m.totalCost, 0);
   const grossProfit = revenue - cost;
   const expensesTotal = expenseTotal(expenses);
-  const payment = (method: string) => sales.filter(m => m.paymentMethod === method).reduce((sum, m) => sum + m.totalRevenue, 0) - returns.filter(m => m.paymentMethod === method).reduce((sum, m) => sum + m.totalRevenue, 0);
+  const payment = (method: string) => sales.reduce((sum, m) => sum + movementMethodAmount(m, method), 0) - returns.reduce((sum, m) => sum + movementMethodAmount(m, method), 0);
   const saleIds = new Set(sales.map(m => m.batchSaleId || m.receiptNumber || m.id));
   const productMap = new Map<string, { id: string; name: string; quantity: number; revenue: number; profit: number }>();
   sales.forEach(m => { const row = productMap.get(m.productId) || { id: m.productId, name: m.productName, quantity: 0, revenue: 0, profit: 0 }; row.quantity += m.quantity; row.revenue += m.totalRevenue; row.profit += m.profit; productMap.set(m.productId, row); });

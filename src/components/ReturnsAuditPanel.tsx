@@ -30,7 +30,7 @@ interface RecentRow {
   approvedByName: string;
 }
 
-const methodLabel = (method?: string) => ({ naqd: 'naqd', click_payme: 'Click', uzum: 'Uzum', nasiya: 'nasiyadan ayrildi' }[method || ''] || method || '');
+const methodLabel = (method?: string) => ({ naqd: 'naqd', click_payme: 'Click', uzum: 'Uzum', nasiya: 'nasiyadan ayrildi', aralash: 'Naqd+Click' }[method || ''] || method || '');
 const dateLabel = (iso: string) => new Date(iso).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 /** Rahbar uchun: kim qancha qaytargan. Ko'p yoki katta qaytarishlar belgilanadi, lekin bloklanmaydi. */

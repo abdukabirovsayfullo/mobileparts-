@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { Currency, StockMovement } from '../types';
 import { currencyOf } from '../utils/money';
 import { formatMoney } from '../utils/formatters';
+import { movementMethodAmount } from '../utils/paymentParts';
 import { tashkentDate } from '../../server/expenseLogic';
 
 export function DailySalesPanel({ movements, onPrint }: { movements: StockMovement[]; onPrint?: (m: StockMovement) => void }) {
@@ -10,11 +11,13 @@ export function DailySalesPanel({ movements, onPrint }: { movements: StockMoveme
   const [currency, setCurrency] = useState<Currency>('UZS');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
-  const rows = useMemo(() => movements.filter(m => (m.type === 'chiqim' || m.type === 'vazvrat') && tashkentDate(m.timestamp) === date && currencyOf(m) === currency && (method === 'all' || m.paymentMethod === method) && `${m.productName} ${m.counterparty || ''} ${m.receiptNumber || ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).sort((a,b) => b.timestamp.localeCompare(a.timestamp)), [movements, date, currency, method, query]);
+  const rows = useMemo(() => movements.filter(m => (m.type === 'chiqim' || m.type === 'vazvrat') && tashkentDate(m.timestamp) === date && currencyOf(m) === currency && (method === 'all' || m.paymentMethod === method || movementMethodAmount(m, method) > 0) && `${m.productName} ${m.counterparty || ''} ${m.receiptNumber || ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).sort((a,b) => b.timestamp.localeCompare(a.timestamp)), [movements, date, currency, method, query]);
   const sales = rows.filter(m => m.type === 'chiqim');
   const returns = rows.filter(m => m.type === 'vazvrat');
-  const total = sales.reduce((s,m) => s + m.totalRevenue, 0);
-  const refunded = returns.reduce((s,m) => s + m.totalRevenue, 0);
+  // Aralash to'lovli savdodan tanlangan to'lov turiga tegishli qism olinadi.
+  const amountOf = (m: StockMovement) => method === 'all' ? m.totalRevenue : movementMethodAmount(m, method);
+  const total = sales.reduce((s,m) => s + amountOf(m), 0);
+  const refunded = returns.reduce((s,m) => s + amountOf(m), 0);
   const pages = Math.max(1, Math.ceil(rows.length / 50));
   const currentPage = Math.min(page, pages - 1);
   const money = (v: number) => formatMoney(v, currency);
@@ -33,7 +36,7 @@ export function DailySalesPanel({ movements, onPrint }: { movements: StockMoveme
     <p className="text-xs text-stone-500">Summalar tanlangan filtr bo‘yicha. Savdo summasi chegirmadan keyin. Bu savdo hisoboti; kassa xarajatlari va keyin to‘langan nasiyalar kiritilmagan.</p>
     <div className="overflow-x-auto"><table className="w-full text-xs text-left whitespace-nowrap"><thead className="bg-stone-100"><tr>{['Vaqt / Chek','Tovar / Kategoriya','Soni','Dona narxi','Jami summa','To‘lov','Mijoz / Xodim',''].map((h,i) => <th key={i} className="p-3">{h}</th>)}</tr></thead><tbody className="divide-y">{rows.slice(currentPage*50,currentPage*50+50).map(m => <tr key={m.id} className={m.type === 'vazvrat' ? 'bg-rose-50' : ''}>
       <td className="p-3">{new Date(m.timestamp).toLocaleTimeString('uz-UZ',{timeZone:'Asia/Tashkent',hour:'2-digit',minute:'2-digit'})}<div className="text-stone-500">{m.receiptNumber || '—'}</div>{m.type === 'vazvrat' && <strong className="text-rose-600">QAYTARISH</strong>}</td>
-      <td className="p-3 whitespace-normal min-w-48"><strong>{m.productName}</strong><div className="text-stone-500">{m.category}</div></td><td className="p-3">{m.quantity} ta</td><td className="p-3">{money(m.unitPrice)}</td><td className="p-3 font-black">{m.type === 'vazvrat' ? '−' : ''}{money(m.totalRevenue)}</td><td className="p-3">{{naqd:'Naqd',click_payme:'Click / Payme',uzum:'Uzum',nasiya:'Nasiya'}[m.paymentMethod || 'naqd']}</td><td className="p-3">{m.counterparty || 'Do‘kon mijozi'}<div className="text-stone-500">{m.employeeName || '—'}</div></td><td className="p-3">{onPrint && <button type="button" onClick={() => onPrint(m)} className="border rounded-lg px-3 py-2">Chek</button>}</td>
+      <td className="p-3 whitespace-normal min-w-48"><strong>{m.productName}</strong><div className="text-stone-500">{m.category}</div></td><td className="p-3">{m.quantity} ta</td><td className="p-3">{money(m.unitPrice)}</td><td className="p-3 font-black">{m.type === 'vazvrat' ? '−' : ''}{money(m.totalRevenue)}</td><td className="p-3">{m.paymentMethod === 'aralash' ? `Naqd ${money(m.paymentParts?.naqd || 0)} + Click ${money(m.paymentParts?.click_payme || 0)}` : {naqd:'Naqd',click_payme:'Click / Payme',uzum:'Uzum',nasiya:'Nasiya'}[m.paymentMethod || 'naqd']}</td><td className="p-3">{m.counterparty || 'Do‘kon mijozi'}<div className="text-stone-500">{m.employeeName || '—'}</div></td><td className="p-3">{onPrint && <button type="button" onClick={() => onPrint(m)} className="border rounded-lg px-3 py-2">Chek</button>}</td>
     </tr>)}</tbody></table>{!rows.length && <p className="text-center p-8 text-stone-500">Bu sana va filtr bo‘yicha savdo yo‘q.</p>}</div>
     <div className="flex items-center gap-3 text-xs"><span>Jami {rows.length} qator · {currentPage+1} / {pages} sahifa</span><button type="button" disabled={currentPage===0} onClick={() => setPage(currentPage-1)} className="border rounded-lg p-2 disabled:opacity-40">Oldingi</button><button type="button" disabled={currentPage+1>=pages} onClick={() => setPage(currentPage+1)} className="border rounded-lg p-2 disabled:opacity-40">Keyingi</button></div>
   </section>;

@@ -14,6 +14,7 @@ test("to'langan chekdan nasiyaga qaytarish mijozning jami qarzidan ayriladi", as
   const k = dataStore.recordKirim({ items: [{ name: 'REDMI 10 LCD PRO', quantity: 10, unitCost: 60000, sellingPrice: 90000 }] });
   const productId = k.movements[0].productId;
   const older = dataStore.recordSale({ items: [{ productId, quantity: 1 }], paymentMethod: 'nasiya', customerName: 'Hojambar', customerPhone: '901112233' });
+  await new Promise(r => setTimeout(r, 5)); // ikki chek bir millisekundda yozilsa, qaysi biri "eski"ligi noaniq bo'ladi
   const newer = dataStore.recordSale({ items: [{ productId, quantity: 2 }], paymentMethod: 'nasiya', customerName: 'Hojambar', customerPhone: '901112233' });
   // Mijoz 90 000 to'ladi: eng eski chek yopildi, umumiy qarz 180 000 qoldi.
   dataStore.recordCustomerPayment({ name: 'Hojambar', phone: '901112233', amount: 90000, method: 'naqd' }, user);

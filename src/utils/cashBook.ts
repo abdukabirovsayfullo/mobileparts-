@@ -1,5 +1,6 @@
 import type { DebtRecord, StockMovement } from '../types';
 import { currencyOf } from './money';
+import { movementMethodAmount } from './paymentParts';
 
 /**
  * Kassa kitobi: bugungi naqd (so'm) harakatlar ro'yxati va qoldig'i.
@@ -68,7 +69,10 @@ const groupMovements = (list: StockMovement[], kind: 'sale' | 'refund'): CashBoo
 };
 
 export const buildCashBook = (movements: StockMovement[], debts: DebtRecord[], date = tashkentDay(new Date())): CashBook => {
-  const todayUzs = movements.filter((m) => currencyOf(m) === 'UZS' && m.paymentMethod === 'naqd' && tashkentDay(m.timestamp) === date);
+  // Aralash to'lovli savdodan faqat naqd qismi kassaga tushadi.
+  const todayUzs = movements
+    .filter((m) => currencyOf(m) === 'UZS' && movementMethodAmount(m, 'naqd') > 0 && tashkentDay(m.timestamp) === date)
+    .map((m) => (m.paymentMethod === 'aralash' ? { ...m, totalRevenue: movementMethodAmount(m, 'naqd') } : m));
   const sales = groupMovements(todayUzs.filter((m) => m.type === 'chiqim'), 'sale');
   const refunds = groupMovements(todayUzs.filter((m) => m.type === 'vazvrat'), 'refund');
 
