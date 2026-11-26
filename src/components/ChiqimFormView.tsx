@@ -1143,7 +1143,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
                         setAutoPhoneName('');
                       }
                     }}
-                    className="w-full pl-8 pr-8 py-1.5 bg-white border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    className={`w-full pl-8 pr-8 bg-white rounded-lg font-black uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:normal-case placeholder:font-semibold placeholder:tracking-normal placeholder:text-xs ${customerName.trim() ? 'py-2 text-lg text-red-700 border-2 border-red-500' : 'py-1.5 text-sm text-stone-900 border border-stone-300'}`}
                   />
                   {customerName && (
                     <button
@@ -1291,7 +1291,7 @@ export const ChiqimFormView: React.FC<ChiqimFormViewProps> = ({
 
             </div>
 
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-1"><strong className="block text-sm">{paymentMethod === 'nasiya' ? 'NASIYA SAVDOSI' : 'TO‘LANGAN SAVDO'}</strong><p className="text-xs">{customerName.trim() || 'Mijoz tanlanmagan'} · {paymentMethod === 'nasiya' ? 'To‘lanmagan summa mijoz qarziga qo‘shiladi.' : 'To‘lov usulini tekshiring.'}</p></div>
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-1"><strong className="block text-sm">{paymentMethod === 'nasiya' ? 'NASIYA SAVDOSI' : 'TO‘LANGAN SAVDO'}</strong>{customerName.trim() ? <p className="text-2xl font-black uppercase tracking-wide text-red-700 break-words leading-tight">{customerName.trim()}</p> : <p className="text-sm font-bold text-red-600">Mijoz tanlanmagan</p>}<p className="text-xs">{paymentMethod === 'nasiya' ? 'To‘lanmagan summa shu mijoz qarziga qo‘shiladi.' : 'To‘lov usulini tekshiring.'}</p></div>
             {/* Payment Method Selector */}
             <div>
               <label className="block font-semibold text-stone-700 mb-1">
